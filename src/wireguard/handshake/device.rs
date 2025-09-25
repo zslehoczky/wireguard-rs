@@ -62,7 +62,7 @@ impl<'a, O> Iterator for Iter<'a, O> {
  * It also abstracts away the problem of PublicKey not being hashable.
  */
 impl<O> Device<O> {
-    pub fn clear(&mut self) {
+    pub fn _clear(&mut self) {
         self.id_map.clear();
         self.pk_map.clear();
     }
