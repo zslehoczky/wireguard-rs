@@ -2,7 +2,7 @@ use super::queue::ParallelJob;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 
-use super::super::{tun, udp, Endpoint};
+use super::super::{Endpoint, tun, udp};
 use super::types::Callbacks;
 
 use crossbeam_channel::Receiver;

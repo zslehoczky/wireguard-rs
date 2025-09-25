@@ -2,9 +2,9 @@ use crate::platform::udp::Reader;
 
 use std::net::IpAddr;
 use std::ops::Deref;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::Duration;
 
 use rand::Rng;

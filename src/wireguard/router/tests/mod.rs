@@ -1,8 +1,8 @@
 mod bench;
 mod tests;
 
-use super::message_data_len;
 use super::SIZE_MESSAGE_PREFIX;
+use super::message_data_len;
 use super::{Callbacks, Device};
 use super::{Key, KeyPair};
 

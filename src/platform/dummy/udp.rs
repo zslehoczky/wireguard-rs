@@ -4,12 +4,12 @@ use std::fmt;
 use std::marker;
 
 use log::debug;
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 use super::super::udp::*;
 

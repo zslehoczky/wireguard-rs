@@ -1,11 +1,11 @@
-use std::collections::hash_map;
 use std::collections::HashMap;
+use std::collections::hash_map;
 use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use byteorder::{ByteOrder, LittleEndian};
-use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
 use zerocopy::AsBytes;
 
 use rand::Rng;

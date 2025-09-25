@@ -27,5 +27,5 @@ pub use wireguard::WireGuard;
 #[cfg(test)]
 use super::platform::dummy;
 
-use super::platform::{tun, udp, Endpoint};
+use super::platform::{Endpoint, tun, udp};
 use types::KeyPair;

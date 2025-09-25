@@ -4,8 +4,8 @@ use super::ip::*;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use spin::RwLock;
-use treebitmap::address::Address;
 use treebitmap::IpLookupTable;
+use treebitmap::address::Address;
 use zerocopy::LayoutVerified;
 
 /* Functions for obtaining and validating "cryptokey" routes */

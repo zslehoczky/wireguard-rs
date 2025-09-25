@@ -1,14 +1,14 @@
 use super::super::constants::*;
-use super::super::{tun, udp, Endpoint, KeyPair};
+use super::super::{Endpoint, KeyPair, tun, udp};
 
 use super::anti_replay::AntiReplay;
 use super::device::DecryptionState;
 use super::device::Device;
 use super::device::EncryptionState;
 
+use super::SIZE_MESSAGE_PREFIX;
 use super::constants::*;
 use super::types::{Callbacks, RouterError};
-use super::SIZE_MESSAGE_PREFIX;
 
 use super::queue::Queue;
 use super::receive::ReceiveJob;

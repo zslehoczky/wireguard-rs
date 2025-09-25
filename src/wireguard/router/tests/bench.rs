@@ -3,9 +3,9 @@ extern crate test;
 
 use super::*;
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 // only used in benchmark
 #[cfg(feature = "unstable")]

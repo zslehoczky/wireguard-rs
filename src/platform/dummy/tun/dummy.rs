@@ -12,15 +12,15 @@ use super::*;
 use std::cmp::min;
 use std::error::Error;
 use std::fmt;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::thread;
 use std::time::Duration;
 
 use hex;
 use log::debug;
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
 pub struct TunTest {}
 

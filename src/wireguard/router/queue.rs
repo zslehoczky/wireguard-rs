@@ -100,8 +100,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use rand::thread_rng;
     use rand::Rng;
+    use rand::thread_rng;
 
     #[test]
     fn test_consume_queue() {

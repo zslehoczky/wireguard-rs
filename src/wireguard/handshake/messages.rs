@@ -225,7 +225,8 @@ impl fmt::Debug for CookieReply {
 #[cfg(test)]
 impl fmt::Debug for NoiseInitiation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
+        write!(
+            f,
             "NoiseInitiation {{ type = {}, sender = {}, ephemeral = {}, static = {}, timestamp = {} }}",
             self.f_type.get(),
             self.f_sender.get(),
@@ -239,7 +240,8 @@ impl fmt::Debug for NoiseInitiation {
 #[cfg(test)]
 impl fmt::Debug for NoiseResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
+        write!(
+            f,
             "NoiseResponse {{ type = {}, sender = {}, receiver = {}, ephemeral = {}, empty = |{}  }}",
             self.f_type,
             self.f_sender,

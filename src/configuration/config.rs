@@ -271,11 +271,7 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         };
 
         // restart listener if bound
-        if bound {
-            start_listener(cfg)
-        } else {
-            Ok(())
-        }
+        if bound { start_listener(cfg) } else { Ok(()) }
     }
 
     fn set_fwmark(&self, mark: Option<u32>) -> Result<(), ConfigError> {

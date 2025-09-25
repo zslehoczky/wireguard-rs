@@ -16,14 +16,14 @@ use std::fmt;
 use std::thread;
 
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
 use hjul::Runner;
 use spin::{Mutex, RwLock};

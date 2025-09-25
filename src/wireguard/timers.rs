@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use log::debug;
@@ -7,13 +7,13 @@ use log::debug;
 use hjul::Timer;
 use x25519_dalek::PublicKey;
 
+use super::WireGuard;
 use super::constants::*;
 use super::peer::PeerInner;
-use super::router::{message_data_len, Callbacks};
+use super::router::{Callbacks, message_data_len};
 use super::tun::Tun;
 use super::types::KeyPair;
 use super::udp::UDP;
-use super::WireGuard;
 
 pub struct Timers {
     // only updated during configuration

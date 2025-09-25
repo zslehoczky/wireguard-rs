@@ -142,39 +142,43 @@ fn main() {
     {
         let cfg = cfg.clone();
         let mut status = status;
-        thread::spawn(move || loop {
-            match status.event() {
-                Err(e) => {
-                    log::info!("Tun device error {}", e);
-                    profiler_stop();
-                    exit(0);
-                }
-                Ok(tun::TunEvent::Up(mtu)) => {
-                    log::info!("Tun up (mtu = {})", mtu);
-                    let _ = cfg.up(mtu); // TODO: handle
-                }
-                Ok(tun::TunEvent::Down) => {
-                    log::info!("Tun down");
-                    cfg.down();
+        thread::spawn(move || {
+            loop {
+                match status.event() {
+                    Err(e) => {
+                        log::info!("Tun device error {}", e);
+                        profiler_stop();
+                        exit(0);
+                    }
+                    Ok(tun::TunEvent::Up(mtu)) => {
+                        log::info!("Tun up (mtu = {})", mtu);
+                        let _ = cfg.up(mtu); // TODO: handle
+                    }
+                    Ok(tun::TunEvent::Down) => {
+                        log::info!("Tun down");
+                        cfg.down();
+                    }
                 }
             }
         });
     }
 
     // start UAPI server
-    thread::spawn(move || loop {
-        // accept and handle UAPI config connections
-        match uapi.connect() {
-            Ok(mut stream) => {
-                let cfg = cfg.clone();
-                thread::spawn(move || {
-                    configuration::uapi::handle(&mut stream, &cfg);
-                });
-            }
-            Err(err) => {
-                log::info!("UAPI connection error: {}", err);
-                profiler_stop();
-                exit(-1);
+    thread::spawn(move || {
+        loop {
+            // accept and handle UAPI config connections
+            match uapi.connect() {
+                Ok(mut stream) => {
+                    let cfg = cfg.clone();
+                    thread::spawn(move || {
+                        configuration::uapi::handle(&mut stream, &cfg);
+                    });
+                }
+                Err(err) => {
+                    log::info!("UAPI connection error: {}", err);
+                    profiler_stop();
+                    exit(-1);
+                }
             }
         }
     });
