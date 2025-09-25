@@ -210,15 +210,15 @@ impl LinuxUDPReader {
             iov_base: buf.as_mut_ptr() as *mut core::ffi::c_void,
             iov_len: buf.len(),
         }];
-        let mut src: libc::sockaddr_in6 = unsafe { mem::MaybeUninit::uninit().assume_init() };
-        let mut control: ControlHeaderV6 = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut src = mem::MaybeUninit::<libc::sockaddr_in6>::uninit();
+        let mut control = mem::MaybeUninit::<ControlHeaderV6>::uninit();
         let mut hdr = libc::msghdr {
-            msg_name: safe_cast(&mut src),
-            msg_namelen: mem::size_of_val(&src) as u32,
+            msg_name: src.as_mut_ptr() as *mut libc::c_void,
+            msg_namelen: size_of::<libc::sockaddr_in6>() as u32,
             msg_iov: iovs.as_mut_ptr(),
             msg_iovlen: iovs.len(),
-            msg_control: safe_cast(&mut control),
-            msg_controllen: mem::size_of_val(&control),
+            msg_control: control.as_mut_ptr() as *mut libc::c_void,
+            msg_controllen: size_of::<ControlHeaderV6>(),
             msg_flags: 0,
         };
 
@@ -245,8 +245,8 @@ impl LinuxUDPReader {
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V6(EndpointV6 {
-                info: control.info, // save pktinfo (sticky source)
-                dst: src,           // our future destination is the source address
+                info: unsafe { &control.assume_init() }.info, // save pktinfo (sticky source)
+                dst: unsafe { src.assume_init() }, // our future destination is the source address
             }),
         ))
     }
@@ -264,15 +264,15 @@ impl LinuxUDPReader {
             iov_base: buf.as_mut_ptr() as *mut core::ffi::c_void,
             iov_len: buf.len(),
         }];
-        let mut src: libc::sockaddr_in = unsafe { mem::MaybeUninit::uninit().assume_init() };
-        let mut control: ControlHeaderV4 = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut src = mem::MaybeUninit::<libc::sockaddr_in>::uninit();
+        let mut control = mem::MaybeUninit::<ControlHeaderV4>::uninit();
         let mut hdr = libc::msghdr {
-            msg_name: safe_cast(&mut src),
-            msg_namelen: mem::size_of_val(&src) as u32,
+            msg_name: src.as_mut_ptr() as *mut libc::c_void,
+            msg_namelen: size_of::<libc::sockaddr_in>() as u32,
             msg_iov: iovs.as_mut_ptr(),
             msg_iovlen: iovs.len(),
-            msg_control: safe_cast(&mut control),
-            msg_controllen: mem::size_of_val(&control),
+            msg_control: control.as_mut_ptr() as *mut libc::c_void,
+            msg_controllen: size_of::<ControlHeaderV4>(),
             msg_flags: 0,
         };
 
@@ -298,8 +298,8 @@ impl LinuxUDPReader {
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V4(EndpointV4 {
-                info: control.info, // save pktinfo (sticky source)
-                dst: src,           // our future destination is the source address
+                info: unsafe { &control.assume_init() }.info, // save pktinfo (sticky source)
+                dst: unsafe { src.assume_init() }, // our future destination is the source address
             }),
         ))
     }
