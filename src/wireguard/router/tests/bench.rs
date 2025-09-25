@@ -50,9 +50,9 @@ impl TransmissionCounter {
     }
 }
 
-struct BencherCallbacks {}
+struct _BencherCallbacks {}
 
-impl Callbacks for BencherCallbacks {
+impl Callbacks for _BencherCallbacks {
     type Opaque = Arc<TransmissionCounter>;
     fn send(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         t.sent.fetch_add(size, Ordering::SeqCst);
@@ -101,7 +101,7 @@ fn bench_router_outbound(b: &mut Bencher) {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<_, BencherCallbacks, dummy::TunWriter, dummy::VoidBind> =
+    let router: Device<_, _BencherCallbacks, dummy::TunWriter, dummy::VoidBind> =
         Device::new(num_cpus::get_physical(), tun_writer);
 
     // add peer to router
@@ -321,7 +321,7 @@ fn bench_router_bidirectional(b: &mut Bencher) {
     // route packets in the other direction: peer1 -> peer2
     let mut sizes = vec![0, 1, 1500, MAX_SIZE_BODY];
     for _ in 0..100 {
-        let body_size: usize = rng.gen();
+        let body_size: usize = rng.r#gen();
         let body_size = body_size % MAX_SIZE_BODY;
         sizes.push(body_size);
     }

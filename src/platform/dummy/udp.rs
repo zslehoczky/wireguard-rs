@@ -135,8 +135,8 @@ impl PairBind {
         (PairReader<E>, PairWriter<E>),
         (PairReader<E>, PairWriter<E>),
     ) {
-        let id1: u32 = OsRng.gen();
-        let id2: u32 = OsRng.gen();
+        let id1: u32 = OsRng.r#gen();
+        let id2: u32 = OsRng.r#gen();
 
         let (tx1, rx1) = sync_channel(128);
         let (tx2, rx2) = sync_channel(128);

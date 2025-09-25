@@ -9,4 +9,3 @@ pub enum TunError {
 }
 
 pub use dummy::*;
-pub use void::*;

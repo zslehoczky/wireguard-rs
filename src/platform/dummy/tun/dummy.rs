@@ -172,7 +172,7 @@ impl TunTest {
             sync_channel(1)
         };
 
-        let id: u32 = OsRng.gen();
+        let id: u32 = OsRng.r#gen();
 
         let fake = TunFakeIO {
             id,
