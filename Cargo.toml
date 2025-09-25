@@ -50,6 +50,6 @@ start_up = []
 unstable = []
 
 [dev-dependencies]
-pnet = "^0.27"
+pnet = "0"
 proptest = "^0.10"
 rand_chacha = "^0.2"
