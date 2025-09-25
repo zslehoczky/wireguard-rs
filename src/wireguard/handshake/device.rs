@@ -73,7 +73,7 @@ impl<O> Device<O> {
 
     /// Enables enumeration of (public key, opaque) pairs
     /// without exposing internal peer type.
-    pub fn iter(&self) -> Iter<O> {
+    pub fn iter(&'_ self) -> Iter<'_, O> {
         Iter {
             iter: self.pk_map.iter(),
         }

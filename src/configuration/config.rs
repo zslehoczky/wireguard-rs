@@ -38,7 +38,7 @@ struct Inner<T: tun::Tun, B: udp::PlatformUDP> {
 }
 
 impl<T: tun::Tun, B: udp::PlatformUDP> WireGuardConfig<T, B> {
-    fn lock(&self) -> MutexGuard<Inner<T, B>> {
+    fn lock(&'_ self) -> MutexGuard<'_, Inner<T, B>> {
         self.0.lock().unwrap()
     }
 }
