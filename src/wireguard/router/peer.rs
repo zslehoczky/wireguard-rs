@@ -261,7 +261,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
                     };
                     (None, true)
                 }
-                Some(mut state) => {
+                Some(state) => {
                     // avoid integer overflow in nonce
                     if state.nonce >= REJECT_AFTER_MESSAGES - 1 {
                         log::debug!("encryption key expired");

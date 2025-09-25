@@ -234,7 +234,7 @@ impl<O> Device<O> {
     /// The call might fail if the public key is not found
     pub fn set_psk(&mut self, pk: PublicKey, psk: Psk) -> Result<(), ConfigError> {
         match self.pk_map.get_mut(pk.as_bytes()) {
-            Some(mut peer) => {
+            Some(peer) => {
                 peer.psk = psk;
                 Ok(())
             }
