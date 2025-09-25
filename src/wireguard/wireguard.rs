@@ -217,7 +217,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // create new router peer
         let peer: router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
             self.router.new_peer(PeerInner {
-                id: OsRng.gen(),
+                id: OsRng.r#gen(),
                 pk,
                 wg: self.clone(),
                 walltime_last_handshake: Mutex::new(None),
@@ -281,7 +281,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             inner: Arc::new(WireguardInner {
                 enabled: RwLock::new(false),
                 tun_readers: WaitCounter::new(),
-                id: OsRng.gen(),
+                id: OsRng.r#gen(),
                 mtu: AtomicUsize::new(0),
                 last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
                 router,

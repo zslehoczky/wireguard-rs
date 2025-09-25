@@ -59,7 +59,7 @@ const INITIAL_HS: [u8; SIZE_HS] = [
 const ZERO_NONCE: [u8; 12] = [0u8; 12];
 
 macro_rules! HASH {
-    ( $($input:expr),* ) => {{
+    ( $($input:expr_2021),* ) => {{
         use blake2::Digest;
         let mut hsh = Blake2s::new();
         $(
@@ -70,7 +70,7 @@ macro_rules! HASH {
 }
 
 macro_rules! HMAC {
-    ($key:expr, $($input:expr),*) => {{
+    ($key:expr_2021, $($input:expr_2021),*) => {{
         use hmac::{Mac, NewMac};
         let mut mac = HMACBlake2s::new_varkey($key).unwrap();
         $(
@@ -81,7 +81,7 @@ macro_rules! HMAC {
 }
 
 macro_rules! KDF1 {
-    ($ck:expr, $input:expr) => {{
+    ($ck:expr_2021, $input:expr_2021) => {{
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
         t0.clear();
@@ -90,7 +90,7 @@ macro_rules! KDF1 {
 }
 
 macro_rules! KDF2 {
-    ($ck:expr, $input:expr) => {{
+    ($ck:expr_2021, $input:expr_2021) => {{
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
         let t2 = HMAC!(&t0, &t1, &[0x2]);
@@ -100,7 +100,7 @@ macro_rules! KDF2 {
 }
 
 macro_rules! KDF3 {
-    ($ck:expr, $input:expr) => {{
+    ($ck:expr_2021, $input:expr_2021) => {{
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
         let t2 = HMAC!(&t0, &t1, &[0x2]);
@@ -111,7 +111,7 @@ macro_rules! KDF3 {
 }
 
 macro_rules! SEAL {
-    ($key:expr, $ad:expr, $pt:expr, $ct:expr) => {
+    ($key:expr_2021, $ad:expr_2021, $pt:expr_2021, $ct:expr_2021) => {
         ChaCha20Poly1305::new(GenericArray::from_slice($key))
             .encrypt(&ZERO_NONCE.into(), Payload { msg: $pt, aad: $ad })
             .map(|ct| $ct.copy_from_slice(&ct))
@@ -120,7 +120,7 @@ macro_rules! SEAL {
 }
 
 macro_rules! OPEN {
-    ($key:expr, $ad:expr, $pt:expr, $ct:expr) => {
+    ($key:expr_2021, $ad:expr_2021, $pt:expr_2021, $ct:expr_2021) => {
         ChaCha20Poly1305::new(GenericArray::from_slice($key))
             .decrypt(&ZERO_NONCE.into(), Payload { msg: $ct, aad: $ad })
             .map_err(|_| HandshakeError::DecryptionFailure)

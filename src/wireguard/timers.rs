@@ -237,7 +237,7 @@ impl Timers {
         running: bool,       // timers started
     ) -> Timers {
         macro_rules! fetch_peer {
-            ( $wg:expr, $pk:expr, $peer:ident) => {
+            ( $wg:expr_2021, $pk:expr_2021, $peer:ident) => {
                 let peers = $wg.peers.read();
                 let $peer = match peers.get(&$pk) {
                     None => {

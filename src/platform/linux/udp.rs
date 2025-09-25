@@ -1,5 +1,5 @@
-use super::super::udp::*;
 use super::super::Endpoint;
+use super::super::udp::*;
 
 use std::convert::TryInto;
 use std::io;
@@ -71,11 +71,7 @@ pub enum LinuxEndpoint {
 fn errno() -> libc::c_int {
     unsafe {
         let ptr = libc::__errno_location();
-        if ptr.is_null() {
-            0
-        } else {
-            *ptr
-        }
+        if ptr.is_null() { 0 } else { *ptr }
     }
 }
 
@@ -167,13 +163,13 @@ impl Endpoint for LinuxEndpoint {
 
     fn into_address(&self) -> SocketAddr {
         match self {
-            LinuxEndpoint::V4(EndpointV4 { ref dst, .. }) => {
+            LinuxEndpoint::V4(EndpointV4 { dst, .. }) => {
                 SocketAddr::V4(SocketAddrV4::new(
                     u32::from_be(dst.sin_addr.s_addr).into(), // IPv4 addr
                     u16::from_be(dst.sin_port),               // convert back to native byte-order
                 ))
             }
-            LinuxEndpoint::V6(EndpointV6 { ref dst, .. }) => SocketAddr::V6(SocketAddrV6::new(
+            LinuxEndpoint::V6(EndpointV6 { dst, .. }) => SocketAddr::V6(SocketAddrV6::new(
                 u128::from_ne_bytes(dst.sin6_addr.s6_addr).into(), // IPv6 addr
                 u16::from_be(dst.sin6_port), // convert back to native byte-order
                 dst.sin6_flowinfo,
@@ -184,11 +180,11 @@ impl Endpoint for LinuxEndpoint {
 
     fn clear_src(&mut self) {
         match self {
-            LinuxEndpoint::V4(EndpointV4 { ref mut info, .. }) => {
+            LinuxEndpoint::V4(EndpointV4 { info, .. }) => {
                 info.ipi_ifindex = 0;
                 info.ipi_spec_dst = libc::in_addr { s_addr: 0 };
             }
-            LinuxEndpoint::V6(EndpointV6 { ref mut info, .. }) => {
+            LinuxEndpoint::V6(EndpointV6 { info, .. }) => {
                 info.ipi6_addr = libc::in6_addr { s6_addr: [0; 16] };
                 info.ipi6_ifindex = 0;
             }
@@ -242,11 +238,14 @@ impl LinuxUDPReader {
             ));
         }
 
+        let control_init = unsafe { control.assume_init() };
+        let src_init = unsafe { src.assume_init() };
+
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V6(EndpointV6 {
-                info: unsafe { &control.assume_init() }.info, // save pktinfo (sticky source)
-                dst: unsafe { src.assume_init() }, // our future destination is the source address
+                info: control_init.info, // save pktinfo (sticky source)
+                dst: src_init,           // our future destination is the source address
             }),
         ))
     }
@@ -295,11 +294,14 @@ impl LinuxUDPReader {
             ));
         }
 
+        let control_init = unsafe { control.assume_init() };
+        let src_init = unsafe { src.assume_init() };
+
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V4(EndpointV4 {
-                info: unsafe { &control.assume_init() }.info, // save pktinfo (sticky source)
-                dst: unsafe { src.assume_init() }, // our future destination is the source address
+                info: control_init.info, // save pktinfo (sticky source)
+                dst: src_init,           // our future destination is the source address
             }),
         ))
     }
@@ -453,8 +455,8 @@ impl Writer<LinuxEndpoint> for LinuxUDPWriter {
 
     fn write(&self, buf: &[u8], dst: &mut LinuxEndpoint) -> Result<(), Self::Error> {
         match dst {
-            LinuxEndpoint::V4(ref mut end) => Self::write4(self.sock4.0, buf, end),
-            LinuxEndpoint::V6(ref mut end) => Self::write6(self.sock6.0, buf, end),
+            LinuxEndpoint::V4(end) => Self::write4(self.sock4.0, buf, end),
+            LinuxEndpoint::V6(end) => Self::write6(self.sock6.0, buf, end),
         }
     }
 }

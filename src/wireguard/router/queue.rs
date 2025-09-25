@@ -125,11 +125,11 @@ mod tests {
             let mut jobs = 0;
             let mut rng = thread_rng();
             for _ in 0..10_000 {
-                if rng.gen() {
-                    let wait_sequential: u64 = rng.gen();
+                if rng.r#gen() {
+                    let wait_sequential: u64 = rng.r#gen();
                     let wait_sequential = wait_sequential % 1000;
 
-                    let wait_parallel: u64 = rng.gen();
+                    let wait_parallel: u64 = rng.r#gen();
                     let wait_parallel = wait_parallel % 1000;
 
                     thread::sleep(Duration::from_micros(wait_parallel));
@@ -184,7 +184,7 @@ mod tests {
         fn hammer(queue: &Arc<Queue<TestJob>>) {
             let mut rng = thread_rng();
             for _ in 0..1_000_000 {
-                if rng.gen() {
+                if rng.r#gen() {
                     queue.push(TestJob {});
                 } else {
                     queue.consume();
