@@ -22,7 +22,7 @@ pub struct Queue<J: SequentialJob> {
     contenders: AtomicUsize,
     queue: Mutex<ArrayDeque<[J; INORDER_QUEUE_SIZE]>>,
 
-    #[cfg(debug)]
+    #[cfg(debug_assertions)]
     _flag: Mutex<()>,
 }
 
@@ -32,7 +32,7 @@ impl<J: SequentialJob> Queue<J> {
             contenders: AtomicUsize::new(0),
             queue: Mutex::new(ArrayDeque::new()),
 
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             _flag: Mutex::new(()),
         }
     }
@@ -53,7 +53,7 @@ impl<J: SequentialJob> Queue<J> {
         let mut contenders = 1; // myself
         while contenders > 0 {
             // check soundness in debug builds
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             let _flag = self
                 ._flag
                 .try_lock()
@@ -82,7 +82,7 @@ impl<J: SequentialJob> Queue<J> {
                 job.sequential_work();
             }
 
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             mem::drop(_flag);
 
             // decrease contenders
