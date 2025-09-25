@@ -47,6 +47,7 @@ version = "^2.4"
 [features]
 profiler = ["cpuprofiler"]
 start_up = []
+unstable = []
 
 [dev-dependencies]
 pnet = "^0.27"
