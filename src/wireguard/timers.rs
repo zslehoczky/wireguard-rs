@@ -1,6 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 
 use log::debug;
 
@@ -9,10 +8,7 @@ use x25519_dalek::PublicKey;
 
 use super::WireGuard;
 use super::constants::*;
-use super::peer::PeerInner;
-use super::router::{Callbacks, message_data_len};
 use super::tun::Tun;
-use super::types::KeyPair;
 use super::udp::UDP;
 
 pub struct Timers {
@@ -36,201 +32,7 @@ impl Timers {
     fn need_another_keepalive(&self) -> bool {
         self.need_another_keepalive.swap(false, Ordering::SeqCst)
     }
-}
 
-impl<T: Tun, B: UDP> PeerInner<T, B> {
-    pub fn get_keepalive_interval(&self) -> u64 {
-        self.timers().keepalive_interval
-    }
-
-    pub fn stop_timers(&self) {
-        // take a write lock preventing simultaneous timer events or "start_timers" call
-        let mut timers = self.timers_mut();
-
-        // set flag to prevent future timer events
-        if !timers.enabled {
-            return;
-        }
-        timers.enabled = false;
-
-        // stop all pending timers
-        timers.retransmit_handshake.stop();
-        timers.send_keepalive.stop();
-        timers.send_persistent_keepalive.stop();
-        timers.zero_key_material.stop();
-        timers.new_handshake.stop();
-
-        // reset all timer state
-        timers.handshake_attempts.store(0, Ordering::SeqCst);
-        timers
-            .sent_lastminute_handshake
-            .store(false, Ordering::SeqCst);
-        timers.need_another_keepalive.store(false, Ordering::SeqCst);
-    }
-
-    pub fn start_timers(&self) {
-        // take a write lock preventing simultaneous "stop_timers" call
-        let mut timers = self.timers_mut();
-
-        // set flag to reenable timer events
-        if timers.enabled {
-            return;
-        }
-        timers.enabled = true;
-
-        // start send_persistent_keepalive
-        if timers.keepalive_interval > 0 {
-            timers
-                .send_persistent_keepalive
-                .start(Duration::from_secs(0));
-        }
-    }
-
-    /* should be called after an authenticated data packet is sent */
-    pub fn timers_data_sent(&self) {
-        let timers = self.timers();
-        if timers.enabled {
-            timers
-                .new_handshake
-                .start(KEEPALIVE_TIMEOUT + REKEY_TIMEOUT);
-        }
-    }
-
-    /* should be called after an authenticated data packet is received */
-    pub fn timers_data_received(&self) {
-        let timers = self.timers();
-        if timers.enabled && !timers.send_keepalive.start(KEEPALIVE_TIMEOUT) {
-            timers.need_another_keepalive.store(true, Ordering::SeqCst)
-        }
-    }
-
-    /* Should be called after any type of authenticated packet is sent, whether:
-     * - keepalive
-     * - data
-     * - handshake
-     */
-    pub fn timers_any_authenticated_packet_sent(&self) {
-        log::trace!("timers_any_authenticated_packet_sent");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.send_keepalive.stop()
-        }
-    }
-
-    /* Should be called after any type of authenticated packet is received, whether:
-     * - keepalive
-     * - data
-     * - handshake
-     */
-    pub fn timers_any_authenticated_packet_received(&self) {
-        log::trace!("timers_any_authenticated_packet_received");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.new_handshake.stop();
-        }
-    }
-
-    /* Should be called after a handshake initiation message is sent. */
-    pub fn timers_handshake_initiated(&self) {
-        log::trace!("timers_handshake_initiated");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.send_keepalive.stop();
-            timers.retransmit_handshake.reset(REKEY_TIMEOUT);
-        }
-    }
-
-    /* Should be called after a handshake response message is received and processed
-     * or when getting key confirmation via the first data message.
-     */
-    pub fn timers_handshake_complete(&self) {
-        log::trace!("timers_handshake_complete");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.retransmit_handshake.stop();
-            timers.handshake_attempts.store(0, Ordering::SeqCst);
-            timers
-                .sent_lastminute_handshake
-                .store(false, Ordering::SeqCst);
-            *self.walltime_last_handshake.lock() = Some(SystemTime::now());
-        }
-    }
-
-    /* Should be called after an ephemeral key is created, which is before sending a
-     * handshake response or after receiving a handshake response.
-     */
-    pub fn timers_session_derived(&self) {
-        log::trace!("timers_session_derived");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.zero_key_material.reset(REJECT_AFTER_TIME * 3);
-        }
-    }
-
-    /* Should be called before a packet with authentication, whether
-     * keepalive, data, or handshake is sent, or after one is received.
-     */
-    pub fn timers_any_authenticated_packet_traversal(&self) {
-        log::trace!("timers_any_authenticated_packet_traversal");
-        let timers = self.timers();
-        if timers.enabled && timers.keepalive_interval > 0 {
-            // push persistent_keepalive into the future
-            timers
-                .send_persistent_keepalive
-                .reset(Duration::from_secs(timers.keepalive_interval));
-        }
-    }
-
-    fn timers_set_retransmit_handshake(&self) {
-        log::trace!("timers_set_retransmit_handshake");
-        let timers = self.timers();
-        if timers.enabled {
-            timers.retransmit_handshake.reset(REKEY_TIMEOUT);
-        }
-    }
-
-    /* Called after a handshake worker sends a handshake initiation to the peer
-     */
-    pub fn sent_handshake_initiation(&self) {
-        *self.last_handshake_sent.lock() = Instant::now();
-        self.timers_handshake_initiated();
-        self.timers_set_retransmit_handshake();
-        self.timers_any_authenticated_packet_traversal();
-        self.timers_any_authenticated_packet_sent();
-    }
-
-    pub fn sent_handshake_response(&self) {
-        *self.last_handshake_sent.lock() = Instant::now();
-        self.timers_any_authenticated_packet_traversal();
-        self.timers_any_authenticated_packet_sent();
-    }
-
-    pub fn set_persistent_keepalive_interval(&self, secs: u64) {
-        let mut timers = self.timers_mut();
-
-        // update the stored keepalive_interval
-        timers.keepalive_interval = secs;
-
-        // stop the keepalive timer with the old interval
-        timers.send_persistent_keepalive.stop();
-
-        // cause immediate expiry of persistent_keepalive timer
-        if secs > 0 && timers.enabled {
-            timers
-                .send_persistent_keepalive
-                .reset(Duration::from_secs(0));
-        }
-    }
-
-    fn packet_send_queued_handshake_initiation(&self, is_retry: bool) {
-        if !is_retry {
-            self.timers().handshake_attempts.store(0, Ordering::SeqCst);
-        }
-        self.packet_send_handshake_initiation();
-    }
-}
-
-impl Timers {
     pub fn new<T: Tun, B: UDP>(
         wg: WireGuard<T, B>, // WireGuard device
         pk: PublicKey,       // public key of peer
@@ -360,91 +162,120 @@ impl Timers {
             },
         }
     }
-}
 
-impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
-    type Opaque = Self;
+    pub fn get_keepalive_interval(&self) -> u64 {
+        self.keepalive_interval
+    }
 
-    /* Called after the router encrypts a transport message destined for the peer.
-     * This method is called, even if the encrypted payload is empty (keepalive)
-     */
-    #[inline(always)]
-    fn send(peer: &Self::Opaque, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
-        log::trace!("{} : EVENT(send)", peer);
-
-        // update timers and stats
-
-        peer.timers_any_authenticated_packet_traversal();
-        peer.timers_any_authenticated_packet_sent();
-        peer.tx_bytes.fetch_add(size as u64, Ordering::Relaxed);
-        if size > message_data_len(0) && sent {
-            peer.timers_data_sent();
+    pub fn enable(&mut self) {
+        // set flag to reenable timer events
+        if self.enabled {
+            return;
         }
+        self.enabled = true;
 
-        // keep_key_fresh
-
-        fn keep_key_fresh(keypair: &Arc<KeyPair>, counter: u64) -> bool {
-            counter > REKEY_AFTER_MESSAGES
-                || (keypair.initiator && Instant::now() - keypair.birth > REKEY_AFTER_TIME)
-        }
-
-        if keep_key_fresh(keypair, counter) {
-            peer.packet_send_queued_handshake_initiation(false);
+        // start send_persistent_keepalive
+        if self.keepalive_interval > 0 {
+            self.send_persistent_keepalive.start(Duration::from_secs(0));
         }
     }
 
-    /* Called after the router successfully decrypts a transport message from a peer.
-     * This method is called, even if the decrypted packet is:
-     *
-     * - A keepalive
-     * - A malformed IP packet
-     * - Fails to cryptkey route
-     */
-    #[inline(always)]
-    fn recv(peer: &Self::Opaque, size: usize, sent: bool, keypair: &Arc<KeyPair>) {
-        log::trace!("{} : EVENT(recv)", peer);
-
-        // update timers and stats
-
-        peer.timers_any_authenticated_packet_traversal();
-        peer.timers_any_authenticated_packet_received();
-        peer.rx_bytes.fetch_add(size as u64, Ordering::Relaxed);
-        if size > 0 && sent {
-            peer.timers_data_received();
+    pub fn disable(&mut self) {
+        // set flag to prevent future timer events
+        if !self.enabled {
+            return;
         }
+        self.enabled = false;
 
-        // keep_key_fresh
+        // stop all pending timers
+        self.retransmit_handshake.stop();
+        self.send_keepalive.stop();
+        self.send_persistent_keepalive.stop();
+        self.zero_key_material.stop();
+        self.new_handshake.stop();
 
-        #[inline(always)]
-        fn keep_key_fresh(keypair: &Arc<KeyPair>) -> bool {
-            Instant::now() - keypair.birth > REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
-        }
+        // reset all timer state
+        self.handshake_attempts.store(0, Ordering::SeqCst);
+        self.sent_lastminute_handshake
+            .store(false, Ordering::SeqCst);
+        self.need_another_keepalive.store(false, Ordering::SeqCst);
+    }
 
-        if keep_key_fresh(keypair)
-            && !peer
-                .timers()
-                .sent_lastminute_handshake
-                .swap(true, Ordering::Acquire)
-        {
-            peer.packet_send_queued_handshake_initiation(false);
+    pub fn start_new_handshake_timer(&self) {
+        if self.enabled {
+            self.new_handshake.start(KEEPALIVE_TIMEOUT + REKEY_TIMEOUT);
         }
     }
 
-    /* Called every time the router detects that a key is required,
-     * but no valid key-material is available for the particular peer.
-     *
-     * The message is called continuously
-     * (e.g. for every packet that must be encrypted, until a key becomes available)
-     */
-    #[inline(always)]
-    fn need_key(peer: &Self::Opaque) {
-        log::trace!("{} : EVENT(need_key)", peer);
-        peer.packet_send_queued_handshake_initiation(false);
+    pub fn queue_another_keepalive(&self) {
+        if self.enabled && !self.send_keepalive.start(KEEPALIVE_TIMEOUT) {
+            self.need_another_keepalive.store(true, Ordering::SeqCst)
+        }
     }
 
-    #[inline(always)]
-    fn key_confirmed(peer: &Self::Opaque) {
-        log::trace!("{} : EVENT(key_confirmed)", peer);
-        peer.timers_handshake_complete();
+    pub fn stop_send_keepalive_timer(&self) {
+        if self.enabled {
+            self.send_keepalive.stop()
+        }
+    }
+
+    pub fn stop_new_handshake_timer(&self) {
+        if self.enabled {
+            self.new_handshake.stop();
+        }
+    }
+
+    pub fn restart_retransmit_handshake_timer(&self) {
+        if self.enabled {
+            self.send_keepalive.stop();
+            self.retransmit_handshake.reset(REKEY_TIMEOUT);
+        }
+    }
+
+    pub fn stop_retransmit_handshake_timer(&self) -> bool {
+        if self.enabled {
+            self.retransmit_handshake.stop();
+            self.handshake_attempts.store(0, Ordering::SeqCst);
+            self.sent_lastminute_handshake
+                .store(false, Ordering::SeqCst);
+
+            return true;
+        }
+
+        false
+    }
+
+    pub fn restart_zero_key_material_timer(&self) {
+        if self.enabled {
+            self.zero_key_material.reset(REJECT_AFTER_TIME * 3);
+        }
+    }
+
+    pub fn push_persistent_keepalive_into_future(&self) {
+        if self.enabled && self.keepalive_interval > 0 {
+            self.send_persistent_keepalive
+                .reset(Duration::from_secs(self.keepalive_interval));
+        }
+    }
+
+    pub fn set_persistent_keepalive_interval(&mut self, secs: u64) {
+        // update the stored keepalive_interval
+        self.keepalive_interval = secs;
+
+        // stop the keepalive timer with the old interval
+        self.send_persistent_keepalive.stop();
+
+        // cause immediate expiry of persistent_keepalive timer
+        if secs > 0 && self.enabled {
+            self.send_persistent_keepalive.reset(Duration::from_secs(0));
+        }
+    }
+
+    pub fn reset_handshake_attempts(&self) {
+        self.handshake_attempts.store(0, Ordering::SeqCst);
+    }
+
+    pub fn register_lastminute_handshake_sent(&self) -> bool {
+        !self.sent_lastminute_handshake.swap(true, Ordering::Acquire)
     }
 }
