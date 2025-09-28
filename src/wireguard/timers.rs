@@ -34,9 +34,9 @@ impl Timers {
     }
 
     pub fn new<T: Tun, B: UDP>(
-        wg: WireGuard<T, B>, // WireGuard device
-        pk: PublicKey,       // public key of peer
-        running: bool,       // timers started
+        wireguard_device: WireGuard<T, B>,
+        public_key_of_peer: PublicKey,
+        timers_started: bool,
     ) -> Timers {
         macro_rules! fetch_peer {
             ( $wg:expr_2021, $pk:expr_2021, $peer:ident) => {
@@ -59,20 +59,20 @@ impl Timers {
             };
         }
 
-        let runner = wg.runner.lock();
+        let runner = wireguard_device.runner.lock();
 
         // create a timer instance for the provided peer
         Timers {
-            enabled: running,
+            enabled: timers_started,
             keepalive_interval: 0, // disabled
             need_another_keepalive: AtomicBool::new(false),
             sent_lastminute_handshake: AtomicBool::new(false),
             handshake_attempts: AtomicUsize::new(0),
             retransmit_handshake: {
-                let wg = wg.clone();
+                let wg = wireguard_device.clone();
                 runner.timer(move || {
                     // fetch peer by public key
-                    fetch_peer!(wg, pk, peer);
+                    fetch_peer!(wg, public_key_of_peer, peer);
                     fetch_timers!(peer, timers);
 
                     // check if handshake attempts remaining
@@ -100,10 +100,10 @@ impl Timers {
                 })
             },
             send_keepalive: {
-                let wg = wg.clone();
+                let wg = wireguard_device.clone();
                 runner.timer(move || {
                     // fetch peer by public key
-                    fetch_peer!(wg, pk, peer);
+                    fetch_peer!(wg, public_key_of_peer, peer);
                     fetch_timers!(peer, timers);
 
                     // send keepalive and schedule next keepalive
@@ -114,10 +114,10 @@ impl Timers {
                 })
             },
             new_handshake: {
-                let wg = wg.clone();
+                let wg = wireguard_device.clone();
                 runner.timer(move || {
                     // fetch peer by public key
-                    fetch_peer!(wg, pk, peer);
+                    fetch_peer!(wg, public_key_of_peer, peer);
                     fetch_timers!(peer, timers);
 
                     // clear source and retry
@@ -131,10 +131,10 @@ impl Timers {
                 })
             },
             zero_key_material: {
-                let wg = wg.clone();
+                let wg = wireguard_device.clone();
                 runner.timer(move || {
                     // fetch peer by public key
-                    fetch_peer!(wg, pk, peer);
+                    fetch_peer!(wg, public_key_of_peer, peer);
                     log::trace!("{} : timer fired (zero_key_material)", peer);
 
                     // null all key-material
@@ -142,10 +142,10 @@ impl Timers {
                 })
             },
             send_persistent_keepalive: {
-                let wg = wg.clone();
+                let wg = wireguard_device.clone();
                 runner.timer(move || {
                     // fetch peer by public key
-                    fetch_peer!(wg, pk, peer);
+                    fetch_peer!(wg, public_key_of_peer, peer);
                     fetch_timers!(peer, timers);
                     log::trace!("{} : timer fired (send_persistent_keepalive)", peer);
 
