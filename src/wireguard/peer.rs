@@ -1,14 +1,3 @@
-use super::timers::Timers;
-
-use super::tun::Tun;
-use super::udp::UDP;
-
-use super::constants::*;
-use super::router::{Callbacks, message_data_len};
-use super::types::KeyPair;
-use super::wireguard::WireGuard;
-use super::workers::HandshakeJob;
-
 use std::fmt;
 use std::sync::{
     Arc,
@@ -19,6 +8,15 @@ use std::time::{Instant, SystemTime};
 use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use x25519_dalek::PublicKey;
+
+use super::constants::*;
+use super::router::{Callbacks, message_data_len};
+use super::timers::Timers;
+use super::tun::Tun;
+use super::types::KeyPair;
+use super::udp::UDP;
+use super::wireguard::WireGuard;
+use super::workers::HandshakeJob;
 
 pub struct PeerInner<T: Tun, B: UDP> {
     // internal id (for logging)
