@@ -29,7 +29,7 @@ pub struct Timers {
 
 impl Timers {
     #[inline(always)]
-    fn need_another_keepalive(&self) -> bool {
+    fn needs_another_keepalive(&self) -> bool {
         self.need_another_keepalive.swap(false, Ordering::SeqCst)
     }
 
@@ -108,7 +108,7 @@ impl Timers {
 
                     // send keepalive and schedule next keepalive
                     peer.send_keepalive();
-                    if timers.need_another_keepalive() {
+                    if timers.needs_another_keepalive() {
                         timers.send_keepalive.start(KEEPALIVE_TIMEOUT);
                     }
                 })
