@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use byteorder::{ByteOrder, LittleEndian};
 use crossbeam_channel::Receiver;
-use log::debug;
+use log::{debug, error};
 use rand::rngs::OsRng;
 use x25519_dalek::PublicKey;
 
@@ -65,7 +65,7 @@ pub fn tun_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: T::Reader) {
         let payload = match reader.read(&mut msg[..], SIZE_MESSAGE_PREFIX) {
             Ok(payload) => payload,
             Err(e) => {
-                debug!("TUN worker, failed to read from tun device: {}", e);
+                error!("TUN worker, failed to read from tun device: {}", e);
                 break;
             }
         };
