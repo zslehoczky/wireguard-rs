@@ -277,18 +277,18 @@ impl Timers {
         }
     }
 
-    /// Return true if timers are enabled, false otherwise
-    pub fn stop_retransmit_handshake_timer(&self) -> bool {
+    /// Return Some(()) if timers are enabled, None otherwise
+    pub fn stop_retransmit_handshake_timer(&self) -> Option<()> {
         if self.enabled {
             self.retransmit_handshake.stop();
             self.handshake_attempts.store(0, Ordering::SeqCst);
             self.sent_lastminute_handshake
                 .store(false, Ordering::SeqCst);
 
-            return true;
+            return Some(());
         }
 
-        false
+        return None;
     }
 
     pub fn restart_zero_key_material_timer(&self) {

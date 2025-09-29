@@ -139,7 +139,8 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
      */
     pub fn timers_handshake_complete(&self) {
         log::trace!("timers_handshake_complete");
-        if self.timers().stop_retransmit_handshake_timer() {
+        let timers_update_result = self.timers().stop_retransmit_handshake_timer();
+        if timers_update_result.is_some() {
             *self.walltime_last_handshake.lock() = Some(SystemTime::now());
         }
     }
