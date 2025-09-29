@@ -1,5 +1,23 @@
 use std::process::{ExitCode, Termination};
 
+#[repr(i8)]
+pub enum MainExitCode {
+    Good = 0,
+    NoDeviceNameSupplied = -1,
+    UAPIListenerCreationFailed = -2,
+    TUNDeviceCreationFailed = -3,
+    DropPriviligesFailed = -4,
+    DaemonizeFailed = -5,
+    TUNDeviceError = -6,
+    UAPIConnectionError = -7,
+}
+
+impl Into<ExitCode> for MainExitCode {
+    fn into(self) -> ExitCode {
+        ExitCode::from(self as u8)
+    }
+}
+
 pub enum MainResult {
     Good,
     NoDeviceNameSupplied,
@@ -12,31 +30,27 @@ pub enum MainResult {
 impl Termination for MainResult {
     fn report(self) -> ExitCode {
         match self {
-            MainResult::Good => ExitCode::from(0),
+            MainResult::Good => MainExitCode::Good.into(),
             MainResult::NoDeviceNameSupplied => {
                 eprintln!("No device name supplied");
-                ExitCode::from(wrap_to_u8(-1))
+                MainExitCode::NoDeviceNameSupplied.into()
             }
             MainResult::UAPIListenerCreationFailed(e) => {
                 eprintln!("Failed to create UAPI listener: {}", e);
-                ExitCode::from(wrap_to_u8(-2))
+                MainExitCode::UAPIListenerCreationFailed.into()
             }
             MainResult::TUNDeviceCreationFailed(e) => {
                 eprintln!("Failed to create TUN device: {}", e);
-                ExitCode::from(wrap_to_u8(-3))
+                MainExitCode::TUNDeviceCreationFailed.into()
             }
             MainResult::DropPriviligesFailed(e) => {
                 eprintln!("Failed to drop privileges: {}", e);
-                ExitCode::from(wrap_to_u8(-4))
+                MainExitCode::DropPriviligesFailed.into()
             }
             MainResult::DaemonizeFailed(e) => {
                 eprintln!("Failed to daemonize: {}", e);
-                ExitCode::from(wrap_to_u8(-5))
+                MainExitCode::DaemonizeFailed.into()
             }
         }
     }
-}
-
-fn wrap_to_u8(value: i8) -> u8 {
-    0u8.wrapping_add_signed(value)
 }

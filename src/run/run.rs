@@ -1,7 +1,7 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
 use super::config::Config;
-use super::main_result::MainResult;
+use super::main_result::{MainExitCode, MainResult};
 use super::profiler::{profiler_start, profiler_stop};
 
 use std::io::{Read, Write};
@@ -88,7 +88,7 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
                 Err(e) => {
                     log::error!("Tun device error {}", e);
                     profiler_stop();
-                    exit(-6);
+                    exit(MainExitCode::TUNDeviceError as i32);
                 }
                 Ok(TunEvent::Up(mtu)) => {
                     log::info!("Tun up (mtu = {})", mtu);
@@ -121,7 +121,7 @@ where
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
                     profiler_stop();
-                    exit(-7);
+                    exit(MainExitCode::UAPIConnectionError as i32);
                 }
             }
         }
