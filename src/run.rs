@@ -46,6 +46,9 @@ fn profiler_start(name: &str) {
     }
 }
 
+#[cfg(not(feature = "profiler"))]
+fn profiler_start(_name: &str) {}
+
 pub enum MainResult {
     Good,
     NoDeviceNameSupplied,
@@ -150,7 +153,6 @@ fn run(config: Config) -> Result<(), MainResult> {
     log::info!("Starting {} WireGuard device.", name);
 
     // start profiler (if enabled)
-    #[cfg(feature = "profiler")]
     profiler_start(name.as_str());
 
     // create WireGuard device
