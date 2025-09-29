@@ -39,8 +39,10 @@ macro_rules! fetch_peer {
     };
 }
 
-macro_rules! fetch_timers {
-    ( $peer:ident, $timers:ident) => {
+macro_rules! fetch_peer_and_timers {
+    ( $wireguard_device:expr_2021, $public_key_of_peer:expr_2021, $peer:ident, $timers:ident) => {
+        fetch_peer!($wireguard_device, $public_key_of_peer, $peer);
+
         let $timers = $peer.timers();
         if !$timers.enabled {
             return;
@@ -102,9 +104,8 @@ impl Timers {
         runner: &Runner,
     ) -> Timer {
         runner.timer(move || {
-            // fetch peer by public key
-            fetch_peer!(wireguard_device, public_key_of_peer, peer);
-            fetch_timers!(peer, timers);
+            // create variables 'peer' and 'timers'
+            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
 
             // check if handshake attempts remaining
             let attempts = timers.handshake_attempts.fetch_add(1, Ordering::SeqCst);
@@ -137,9 +138,8 @@ impl Timers {
         runner: &Runner,
     ) -> Timer {
         runner.timer(move || {
-            // fetch peer by public key
-            fetch_peer!(wireguard_device, public_key_of_peer, peer);
-            fetch_timers!(peer, timers);
+            // create variables 'peer' and 'timers'
+            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
 
             // send keepalive and schedule next keepalive
             peer.send_keepalive();
@@ -155,9 +155,8 @@ impl Timers {
         runner: &Runner,
     ) -> Timer {
         runner.timer(move || {
-            // fetch peer by public key
+            // create variable 'peer'
             fetch_peer!(wireguard_device, public_key_of_peer, peer);
-            fetch_timers!(peer, timers);
 
             // clear source and retry
             log::debug!(
@@ -176,8 +175,9 @@ impl Timers {
         runner: &Runner,
     ) -> Timer {
         runner.timer(move || {
-            // fetch peer by public key
+            // create variable 'peer'
             fetch_peer!(wireguard_device, public_key_of_peer, peer);
+
             log::trace!("{} : timer fired (zero_key_material)", peer);
 
             // null all key-material
@@ -191,9 +191,9 @@ impl Timers {
         runner: &Runner,
     ) -> Timer {
         runner.timer(move || {
-            // fetch peer by public key
-            fetch_peer!(wireguard_device, public_key_of_peer, peer);
-            fetch_timers!(peer, timers);
+            // create variables 'peer' and 'timers'
+            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
+
             log::trace!("{} : timer fired (send_persistent_keepalive)", peer);
 
             // send and schedule persistent keepalive
