@@ -85,7 +85,7 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
         loop {
             match tun_status.event() {
                 Err(e) => {
-                    log::info!("Tun device error {}", e);
+                    log::error!("Tun device error {}", e);
                     profiler_stop();
                     exit(0);
                 }
@@ -121,7 +121,7 @@ where
                     });
                 }
                 Err(err) => {
-                    log::info!("UAPI connection error: {}", err);
+                    log::error!("UAPI connection error: {}", err);
                     profiler_stop();
                     exit(-1);
                 }
