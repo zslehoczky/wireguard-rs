@@ -3,6 +3,7 @@
 use super::config::Config;
 use super::main_result::{MainExitCode, MainResult};
 use super::profiler::{profiler_start, profiler_stop};
+use super::util;
 
 use std::io::{Read, Write};
 use std::thread::JoinHandle;
@@ -17,7 +18,6 @@ use crate::platform::{
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
-use crate::util;
 use crate::wireguard::WireGuard;
 
 pub fn create_config_and_run() -> Result<(), MainResult> {

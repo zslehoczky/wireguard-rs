@@ -7,5 +7,4 @@ pub mod run;
 
 mod configuration;
 mod platform;
-mod util;
 mod wireguard;
