@@ -52,35 +52,46 @@ fn profiler_start(name: &str) {
     }
 }
 
-fn main() {
-    // parse command line arguments
-    let mut name = None;
-    let mut drop_privileges = true;
-    let mut foreground = false;
-    let mut args = env::args();
+struct Config {
+    name: String,
+    drop_privileges: bool,
+    foreground: bool,
+}
 
-    // skip path (argv[0])
-    args.next();
-    for arg in args {
-        match arg.as_str() {
-            "--foreground" | "-f" => {
-                foreground = true;
+impl Config {
+    fn from_args(mut args: env::Args) -> anyhow::Result<Config> {
+        let mut name = None;
+        let mut drop_privileges = true;
+        let mut foreground = false;
+
+        // skip path (argv[0])
+        args.next();
+        for arg in args {
+            match arg.as_str() {
+                "--foreground" | "-f" => {
+                    foreground = true;
+                }
+                "--disable-drop-privileges" => {
+                    drop_privileges = false;
+                }
+                dev => name = Some(dev.to_owned()),
             }
-            "--disable-drop-privileges" => {
-                drop_privileges = false;
-            }
-            dev => name = Some(dev.to_owned()),
         }
+
+        let name = name.ok_or(anyhow::anyhow!("No device name supplied"))?;
+
+        Ok(Config {
+            name,
+            drop_privileges,
+            foreground,
+        })
     }
+}
 
-    // unwrap device name
-    let name = match name {
-        None => {
-            eprintln!("No device name supplied");
-            exit(-1);
-        }
-        Some(name) => name,
-    };
+fn run(config: Config) -> anyhow::Result<()> {
+    let name = &config.name;
+    let drop_privileges = config.drop_privileges;
+    let foreground = config.foreground;
 
     // create UAPI socket
     let uapi = plt::UAPI::bind(name.as_str()).unwrap_or_else(|e| {
@@ -186,4 +197,15 @@ fn main() {
     // block until all tun readers closed
     wg.wait();
     profiler_stop();
+
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    // parse command line arguments
+    let config = Config::from_args(env::args())?;
+
+    run(config)?;
+
+    Ok(())
 }
