@@ -277,6 +277,7 @@ impl Timers {
         }
     }
 
+    /// Return true if timers are enabled, false otherwise
     pub fn stop_retransmit_handshake_timer(&self) -> bool {
         if self.enabled {
             self.retransmit_handshake.stop();
@@ -320,6 +321,7 @@ impl Timers {
         self.handshake_attempts.store(0, Ordering::SeqCst);
     }
 
+    /// Return true if the event hasn't been registered before this call, otherwise false
     pub fn register_lastminute_handshake_sent(&self) -> bool {
         !self.sent_lastminute_handshake.swap(true, Ordering::Acquire)
     }
