@@ -4,6 +4,7 @@ use super::config::Config;
 use super::main_result::MainResult;
 use super::profiler::{profiler_start, profiler_stop};
 
+use std::thread::JoinHandle;
 use std::{env, process::exit, thread};
 
 use anyhow::anyhow;
@@ -11,8 +12,9 @@ use anyhow::anyhow;
 use crate::configuration::{Configuration, WireGuardConfig, uapi};
 use crate::platform::{
     plt,
-    tun::{PlatformTun, Status, TunEvent},
+    tun::{PlatformTun, Status, Tun, TunEvent},
     uapi::{BindUAPI, PlatformUAPI},
+    udp::PlatformUDP,
 };
 use crate::util;
 use crate::wireguard::WireGuard;
@@ -69,31 +71,51 @@ fn run(config: Config) -> Result<(), MainResult> {
     let cfg = WireGuardConfig::new(wg.clone());
 
     // start Tun event thread
-    {
-        let cfg = cfg.clone();
-        let mut status = status;
-        thread::spawn(move || {
-            loop {
-                match status.event() {
-                    Err(e) => {
-                        log::info!("Tun device error {}", e);
-                        profiler_stop();
-                        exit(0);
-                    }
-                    Ok(TunEvent::Up(mtu)) => {
-                        log::info!("Tun up (mtu = {})", mtu);
-                        let _ = cfg.up(mtu); // TODO: handle
-                    }
-                    Ok(TunEvent::Down) => {
-                        log::info!("Tun down");
-                        cfg.down();
-                    }
-                }
-            }
-        });
-    }
+    spawn_tun_event_loop(cfg.clone(), status);
 
     // start UAPI server
+    spawn_uapi_server(cfg, uapi);
+
+    // block until all tun readers closed
+    wg.wait();
+    profiler_stop();
+
+    Ok(())
+}
+
+fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
+    cfg: WireGuardConfig<T, B>,
+    mut status: S,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        loop {
+            match status.event() {
+                Err(e) => {
+                    log::info!("Tun device error {}", e);
+                    profiler_stop();
+                    exit(0);
+                }
+                Ok(TunEvent::Up(mtu)) => {
+                    log::info!("Tun up (mtu = {})", mtu);
+                    let _ = cfg.up(mtu); // TODO: handle
+                }
+                Ok(TunEvent::Down) => {
+                    log::info!("Tun down");
+                    cfg.down();
+                }
+            }
+        }
+    })
+}
+
+fn spawn_uapi_server<T: Tun, B: PlatformUDP, U: BindUAPI + Send + 'static>(
+    cfg: WireGuardConfig<T, B>,
+    uapi: U,
+) -> JoinHandle<()>
+where
+    <U as BindUAPI>::Stream: Send,
+    <U as BindUAPI>::Stream: 'static,
+{
     thread::spawn(move || {
         loop {
             // accept and handle UAPI config connections
@@ -111,11 +133,5 @@ fn run(config: Config) -> Result<(), MainResult> {
                 }
             }
         }
-    });
-
-    // block until all tun readers closed
-    wg.wait();
-    profiler_stop();
-
-    Ok(())
+    })
 }
