@@ -87,7 +87,7 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
                 Err(e) => {
                     log::error!("Tun device error {}", e);
                     profiler_stop();
-                    exit(0);
+                    exit(0); // TODO unique non-zero error code
                 }
                 Ok(TunEvent::Up(mtu)) => {
                     log::info!("Tun up (mtu = {})", mtu);
@@ -123,7 +123,7 @@ where
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
                     profiler_stop();
-                    exit(-1);
+                    exit(-1); // TODO unique error code
                 }
             }
         }
