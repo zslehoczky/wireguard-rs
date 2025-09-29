@@ -1,10 +1,5 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-use super::config::Config;
-use super::main_result::{MainExitCode, MainResult};
-use super::profiler::{profiler_start, profiler_stop};
-use super::util;
-
 use std::io::{Read, Write};
 use std::thread::JoinHandle;
 use std::{env, process::exit, thread};
@@ -19,6 +14,11 @@ use crate::platform::{
     udp::PlatformUDP,
 };
 use crate::wireguard::WireGuard;
+
+use super::config::Config;
+use super::main_result::{MainExitCode, MainResult};
+use super::profiler::{profiler_start, profiler_stop};
+use super::util;
 
 pub fn create_config_and_run() -> Result<(), MainResult> {
     // parse command line arguments
