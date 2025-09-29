@@ -67,7 +67,11 @@ pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &C) {
 
     // process operation
     let res = operation(stream, config);
-    log::debug!("UAPI, Result of operation: {:?}", res);
+
+    match res {
+        Ok(_) => log::debug!("UAPI, Result of operation: OK"),
+        Err(ref e) => log::error!("UAPI, Result of operation: {}", e),
+    }
 
     // return errno
     let _ = stream.write("errno=".as_ref());
