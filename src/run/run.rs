@@ -49,10 +49,7 @@ fn run(config: Config) -> Result<(), MainResult> {
         util::daemonize().map_err(|e| return MainResult::DaemonizeFailed(anyhow!(e)))?;
     }
 
-    // start logging
-    env_logger::builder()
-        .try_init()
-        .expect("Failed to initialize event logger");
+    initialize_logger();
 
     log::info!("Starting {} WireGuard device.", name);
 
@@ -81,6 +78,12 @@ fn run(config: Config) -> Result<(), MainResult> {
     profiler_stop();
 
     Ok(())
+}
+
+fn initialize_logger() {
+    env_logger::builder()
+        .try_init()
+        .expect("Failed to initialize event logger");
 }
 
 fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
