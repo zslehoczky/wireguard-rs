@@ -4,6 +4,7 @@ use super::config::Config;
 use super::main_result::MainResult;
 use super::profiler::{profiler_start, profiler_stop};
 
+use std::io::{Read, Write};
 use std::thread::JoinHandle;
 use std::{env, process::exit, thread};
 
@@ -114,11 +115,8 @@ where
         loop {
             // accept and handle UAPI config connections
             match uapi.connect() {
-                Ok(mut stream) => {
-                    let cfg = wireguard_config.clone();
-                    thread::spawn(move || {
-                        uapi::handle(&mut stream, &cfg);
-                    });
+                Ok(stream) => {
+                    spawn_uapi_handler(wireguard_config.clone(), stream);
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
@@ -127,5 +125,14 @@ where
                 }
             }
         }
+    })
+}
+
+fn spawn_uapi_handler<T: Tun, B: PlatformUDP, S: Read + Write + Send + 'static>(
+    wireguard_config: WireGuardConfig<T, B>,
+    mut stream: S,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        uapi::handle(&mut stream, &wireguard_config);
     })
 }
