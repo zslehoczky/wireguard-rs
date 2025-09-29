@@ -31,20 +31,16 @@ fn run(config: Config) -> Result<(), MainResult> {
     let drop_privileges = config.drop_privileges;
     let foreground = config.foreground;
 
-    // create UAPI socket
-    let uapi = plt::UAPI::bind(name.as_str())
+    let uapi_socket = plt::UAPI::bind(name.as_str())
         .map_err(|e| return MainResult::UAPIListenerCreationFailed(anyhow!(e)))?;
 
-    // create TUN device
-    let (mut readers, writer, status) = plt::Tun::create(name.as_str())
+    let (mut tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
         .map_err(|e| return MainResult::TUNDeviceCreationFailed(anyhow!(e)))?;
 
-    // drop privileges
     if drop_privileges {
         util::drop_privileges().map_err(|e| return MainResult::DropPriviligesFailed(anyhow!(e)))?;
     }
 
-    // daemonize to background
     if !foreground {
         util::daemonize().map_err(|e| return MainResult::DaemonizeFailed(anyhow!(e)))?;
     }
@@ -53,28 +49,23 @@ fn run(config: Config) -> Result<(), MainResult> {
 
     log::info!("Starting {} WireGuard device.", name);
 
-    // start profiler (if enabled)
     profiler_start(name.as_str());
 
-    // create WireGuard device
-    let wg: WireGuard<plt::Tun, plt::UDP> = WireGuard::new(writer);
+    let wireguard_device: WireGuard<plt::Tun, plt::UDP> = WireGuard::new(tun_writer);
 
-    // add all Tun readers
-    while let Some(reader) = readers.pop() {
-        wg.add_tun_reader(reader);
+    while let Some(reader) = tun_readers.pop() {
+        wireguard_device.add_tun_reader(reader);
     }
 
-    // wrap in configuration interface
-    let cfg = WireGuardConfig::new(wg.clone());
+    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
 
-    // start Tun event thread
-    spawn_tun_event_loop(cfg.clone(), status);
+    spawn_tun_event_loop(wireguard_config.clone(), tun_status);
 
-    // start UAPI server
-    spawn_uapi_server(cfg, uapi);
+    spawn_uapi_server(wireguard_config, uapi_socket);
 
     // block until all tun readers closed
-    wg.wait();
+    wireguard_device.wait();
+
     profiler_stop();
 
     Ok(())
@@ -87,12 +78,12 @@ fn initialize_logger() {
 }
 
 fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
-    cfg: WireGuardConfig<T, B>,
-    mut status: S,
+    wireguard_config: WireGuardConfig<T, B>,
+    mut tun_status: S,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         loop {
-            match status.event() {
+            match tun_status.event() {
                 Err(e) => {
                     log::info!("Tun device error {}", e);
                     profiler_stop();
@@ -100,11 +91,11 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
                 }
                 Ok(TunEvent::Up(mtu)) => {
                     log::info!("Tun up (mtu = {})", mtu);
-                    let _ = cfg.up(mtu); // TODO: handle
+                    let _ = wireguard_config.up(mtu); // TODO: handle
                 }
                 Ok(TunEvent::Down) => {
                     log::info!("Tun down");
-                    cfg.down();
+                    wireguard_config.down();
                 }
             }
         }
@@ -112,7 +103,7 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
 }
 
 fn spawn_uapi_server<T: Tun, B: PlatformUDP, U: BindUAPI + Send + 'static>(
-    cfg: WireGuardConfig<T, B>,
+    wireguard_config: WireGuardConfig<T, B>,
     uapi: U,
 ) -> JoinHandle<()>
 where
@@ -124,7 +115,7 @@ where
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(mut stream) => {
-                    let cfg = cfg.clone();
+                    let cfg = wireguard_config.clone();
                     thread::spawn(move || {
                         uapi::handle(&mut stream, &cfg);
                     });
