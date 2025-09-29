@@ -1,10 +1,8 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-#[cfg(feature = "profiler")]
-use cpuprofiler::PROFILER;
-
 use super::config::Config;
 use super::main_result::MainResult;
+use super::profiler::{profiler_start, profiler_stop};
 
 use std::{env, process::exit, thread};
 
@@ -24,35 +22,6 @@ pub fn create_config_and_run() -> Result<(), MainResult> {
     let config = Config::from_args(env::args())?;
 
     run(config)
-}
-
-#[cfg(not(feature = "profiler"))]
-fn profiler_start(_name: &str) {}
-
-#[cfg(feature = "profiler")]
-fn profiler_start(name: &str) {
-    use std::path::Path;
-
-    // find first available path to save profiler output
-    let mut n = 0;
-    loop {
-        let path = format!("./{}-{}.profile", name, n);
-        if !Path::new(path.as_str()).exists() {
-            println!("Starting profiler: {}", path);
-            PROFILER.lock().unwrap().start(path).unwrap();
-            break;
-        };
-        n += 1;
-    }
-}
-
-#[cfg(not(feature = "profiler"))]
-fn profiler_stop() {}
-
-#[cfg(feature = "profiler")]
-fn profiler_stop() {
-    println!("Stopping profiler");
-    PROFILER.lock().unwrap().stop().unwrap();
 }
 
 fn run(config: Config) -> Result<(), MainResult> {
