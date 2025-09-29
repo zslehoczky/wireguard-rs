@@ -27,6 +27,8 @@ pub struct Timers {
     new_handshake: Timer,
 }
 
+/// Find peer based on public key and assign to variable, or call return from parent scope if
+/// not found
 macro_rules! fetch_peer {
     ( $wireguard_device:expr_2021, $public_key_of_peer:expr_2021, $peer:ident) => {
         let peers = $wireguard_device.peers.read();
@@ -39,6 +41,8 @@ macro_rules! fetch_peer {
     };
 }
 
+/// Find peer and timers based on public key and assign them to variables, or call return from
+/// parent scope if peer not found or timers not enabled
 macro_rules! fetch_peer_and_timers {
     ( $wireguard_device:expr_2021, $public_key_of_peer:expr_2021, $peer:ident, $timers:ident) => {
         fetch_peer!($wireguard_device, $public_key_of_peer, $peer);
