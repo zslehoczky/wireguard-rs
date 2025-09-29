@@ -20,14 +20,8 @@ use crate::platform::{
 use crate::util;
 use crate::wireguard::WireGuard;
 
-#[cfg(feature = "profiler")]
-fn profiler_stop() {
-    println!("Stopping profiler");
-    PROFILER.lock().unwrap().stop().unwrap();
-}
-
 #[cfg(not(feature = "profiler"))]
-fn profiler_stop() {}
+fn profiler_start(_name: &str) {}
 
 #[cfg(feature = "profiler")]
 fn profiler_start(name: &str) {
@@ -47,7 +41,13 @@ fn profiler_start(name: &str) {
 }
 
 #[cfg(not(feature = "profiler"))]
-fn profiler_start(_name: &str) {}
+fn profiler_stop() {}
+
+#[cfg(feature = "profiler")]
+fn profiler_stop() {
+    println!("Stopping profiler");
+    PROFILER.lock().unwrap().stop().unwrap();
+}
 
 pub enum MainResult {
     Good,
