@@ -1,4 +1,4 @@
-use wireguard_rs::run::{MainResult, create_config_and_run};
+use wireguard_rs::run::{main_result::MainResult, run::create_config_and_run};
 
 fn main() -> MainResult {
     if let Err(result) = create_config_and_run() {

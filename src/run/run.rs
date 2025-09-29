@@ -3,11 +3,10 @@
 #[cfg(feature = "profiler")]
 use cpuprofiler::PROFILER;
 
-use std::{
-    env,
-    process::{ExitCode, Termination, exit},
-    thread,
-};
+use super::config::Config;
+use super::main_result::MainResult;
+
+use std::{env, process::exit, thread};
 
 use anyhow::anyhow;
 
@@ -19,6 +18,13 @@ use crate::platform::{
 };
 use crate::util;
 use crate::wireguard::WireGuard;
+
+pub fn create_config_and_run() -> Result<(), MainResult> {
+    // parse command line arguments
+    let config = Config::from_args(env::args())?;
+
+    run(config)
+}
 
 #[cfg(not(feature = "profiler"))]
 fn profiler_start(_name: &str) {}
@@ -47,79 +53,6 @@ fn profiler_stop() {}
 fn profiler_stop() {
     println!("Stopping profiler");
     PROFILER.lock().unwrap().stop().unwrap();
-}
-
-pub enum MainResult {
-    Good,
-    NoDeviceNameSupplied,
-    UAPIListenerCreationFailed(anyhow::Error),
-    TUNDeviceCreationFailed(anyhow::Error),
-    DropPriviligesFailed(anyhow::Error),
-    DaemonizeFailed(anyhow::Error),
-}
-
-impl Termination for MainResult {
-    fn report(self) -> ExitCode {
-        match self {
-            MainResult::Good => ExitCode::from(0),
-            MainResult::NoDeviceNameSupplied => {
-                eprintln!("No device name supplied");
-                ExitCode::from(1)
-            }
-            MainResult::UAPIListenerCreationFailed(e) => {
-                eprintln!("Failed to create UAPI listener: {}", e);
-                ExitCode::from(2)
-            }
-            MainResult::TUNDeviceCreationFailed(e) => {
-                eprintln!("Failed to create TUN device: {}", e);
-                ExitCode::from(3)
-            }
-            MainResult::DropPriviligesFailed(e) => {
-                eprintln!("Failed to drop privileges: {}", e);
-                ExitCode::from(4)
-            }
-            MainResult::DaemonizeFailed(e) => {
-                eprintln!("Failed to daemonize: {}", e);
-                ExitCode::from(5)
-            }
-        }
-    }
-}
-
-struct Config {
-    name: String,
-    drop_privileges: bool,
-    foreground: bool,
-}
-
-impl Config {
-    fn from_args(mut args: env::Args) -> Result<Config, MainResult> {
-        let mut name = None;
-        let mut drop_privileges = true;
-        let mut foreground = false;
-
-        // skip path (argv[0])
-        args.next();
-        for arg in args {
-            match arg.as_str() {
-                "--foreground" | "-f" => {
-                    foreground = true;
-                }
-                "--disable-drop-privileges" => {
-                    drop_privileges = false;
-                }
-                dev => name = Some(dev.to_owned()),
-            }
-        }
-
-        let name = name.ok_or(MainResult::NoDeviceNameSupplied)?;
-
-        Ok(Config {
-            name,
-            drop_privileges,
-            foreground,
-        })
-    }
 }
 
 fn run(config: Config) -> Result<(), MainResult> {
@@ -216,11 +149,4 @@ fn run(config: Config) -> Result<(), MainResult> {
     profiler_stop();
 
     Ok(())
-}
-
-pub fn create_config_and_run() -> Result<(), MainResult> {
-    // parse command line arguments
-    let config = Config::from_args(env::args())?;
-
-    run(config)
 }
