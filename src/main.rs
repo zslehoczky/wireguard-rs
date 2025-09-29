@@ -14,9 +14,13 @@ mod wireguard;
 
 mod util;
 
-use std::env;
-use std::process::exit;
-use std::thread;
+use std::{
+    env,
+    process::{ExitCode, Termination, exit},
+    thread,
+};
+
+use anyhow::anyhow;
 
 use configuration::Configuration;
 
@@ -52,6 +56,43 @@ fn profiler_start(name: &str) {
     }
 }
 
+enum MainResult {
+    Good,
+    NoDeviceNameSupplied,
+    UAPIListenerCreationFailed(anyhow::Error),
+    TUNDeviceCreationFailed(anyhow::Error),
+    DropPriviligesFailed(anyhow::Error),
+    DaemonizeFailed(anyhow::Error),
+}
+
+impl Termination for MainResult {
+    fn report(self) -> ExitCode {
+        match self {
+            MainResult::Good => ExitCode::from(0),
+            MainResult::NoDeviceNameSupplied => {
+                eprintln!("No device name supplied");
+                ExitCode::from(1)
+            }
+            MainResult::UAPIListenerCreationFailed(e) => {
+                eprintln!("Failed to create UAPI listener: {}", e);
+                ExitCode::from(2)
+            }
+            MainResult::TUNDeviceCreationFailed(e) => {
+                eprintln!("Failed to create TUN device: {}", e);
+                ExitCode::from(3)
+            }
+            MainResult::DropPriviligesFailed(e) => {
+                eprintln!("Failed to drop privileges: {}", e);
+                ExitCode::from(4)
+            }
+            MainResult::DaemonizeFailed(e) => {
+                eprintln!("Failed to daemonize: {}", e);
+                ExitCode::from(5)
+            }
+        }
+    }
+}
+
 struct Config {
     name: String,
     drop_privileges: bool,
@@ -59,7 +100,7 @@ struct Config {
 }
 
 impl Config {
-    fn from_args(mut args: env::Args) -> anyhow::Result<Config> {
+    fn from_args(mut args: env::Args) -> Result<Config, MainResult> {
         let mut name = None;
         let mut drop_privileges = true;
         let mut foreground = false;
@@ -78,7 +119,7 @@ impl Config {
             }
         }
 
-        let name = name.ok_or(anyhow::anyhow!("No device name supplied"))?;
+        let name = name.ok_or(MainResult::NoDeviceNameSupplied)?;
 
         Ok(Config {
             name,
@@ -88,43 +129,27 @@ impl Config {
     }
 }
 
-fn run(config: Config) -> anyhow::Result<()> {
+fn run(config: Config) -> Result<(), MainResult> {
     let name = &config.name;
     let drop_privileges = config.drop_privileges;
     let foreground = config.foreground;
 
     // create UAPI socket
-    let uapi = plt::UAPI::bind(name.as_str()).unwrap_or_else(|e| {
-        eprintln!("Failed to create UAPI listener: {}", e);
-        exit(-2);
-    });
+    let uapi = plt::UAPI::bind(name.as_str())
+        .map_err(|e| return MainResult::UAPIListenerCreationFailed(anyhow!(e)))?;
 
     // create TUN device
-    let (mut readers, writer, status) = plt::Tun::create(name.as_str()).unwrap_or_else(|e| {
-        eprintln!("Failed to create TUN device: {}", e);
-        exit(-3);
-    });
+    let (mut readers, writer, status) = plt::Tun::create(name.as_str())
+        .map_err(|e| return MainResult::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     // drop privileges
     if drop_privileges {
-        match util::drop_privileges() {
-            Ok(_) => (),
-            Err(e) => {
-                eprintln!("Failed to drop privileges: {}", e);
-                exit(-4);
-            }
-        }
+        util::drop_privileges().map_err(|e| return MainResult::DropPriviligesFailed(anyhow!(e)))?;
     }
 
     // daemonize to background
     if !foreground {
-        match util::daemonize() {
-            Ok(_) => (),
-            Err(e) => {
-                eprintln!("Failed to daemonize: {}", e);
-                exit(-5);
-            }
-        }
+        util::daemonize().map_err(|e| return MainResult::DaemonizeFailed(anyhow!(e)))?;
     }
 
     // start logging
@@ -201,11 +226,17 @@ fn run(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+fn create_config_and_run() -> Result<(), MainResult> {
     // parse command line arguments
     let config = Config::from_args(env::args())?;
 
-    run(config)?;
+    run(config)
+}
 
-    Ok(())
+fn main() -> MainResult {
+    if let Err(result) = create_config_and_run() {
+        return result;
+    }
+
+    MainResult::Good
 }
