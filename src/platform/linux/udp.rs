@@ -238,14 +238,14 @@ impl LinuxUDPReader {
             ));
         }
 
-        let control_init = unsafe { control.assume_init() };
-        let src_init = unsafe { src.assume_init() };
+        let control = unsafe { control.assume_init() };
+        let src = unsafe { src.assume_init() };
 
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V6(EndpointV6 {
-                info: control_init.info, // save pktinfo (sticky source)
-                dst: src_init,           // our future destination is the source address
+                info: control.info, // save pktinfo (sticky source)
+                dst: src,           // our future destination is the source address
             }),
         ))
     }
@@ -294,14 +294,14 @@ impl LinuxUDPReader {
             ));
         }
 
-        let control_init = unsafe { control.assume_init() };
-        let src_init = unsafe { src.assume_init() };
+        let control = unsafe { control.assume_init() };
+        let src = unsafe { src.assume_init() };
 
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V4(EndpointV4 {
-                info: control_init.info, // save pktinfo (sticky source)
-                dst: src_init,           // our future destination is the source address
+                info: control.info, // save pktinfo (sticky source)
+                dst: src,           // our future destination is the source address
             }),
         ))
     }
