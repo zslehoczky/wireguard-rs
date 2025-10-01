@@ -1,6 +1,6 @@
 [package]
 authors = ["Mathias Hall-Andersen <mathias@hall-andersen.dk>"]
-edition = "2018"
+edition = "2024"
 license = "MIT"
 name = "wireguard-rs"
 version = "0.1.4"
@@ -47,8 +47,9 @@ version = "^2.4"
 [features]
 profiler = ["cpuprofiler"]
 start_up = []
+unstable = []
 
 [dev-dependencies]
-pnet = "^0.27"
+pnet = "0.35"
 proptest = "^0.10"
 rand_chacha = "^0.2"

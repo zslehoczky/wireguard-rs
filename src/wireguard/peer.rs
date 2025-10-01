@@ -74,12 +74,12 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
     }
 
     #[inline(always)]
-    pub fn timers(&self) -> RwLockReadGuard<Timers> {
+    pub fn timers(&'_ self) -> RwLockReadGuard<'_, Timers> {
         self.timers.read()
     }
 
     #[inline(always)]
-    pub fn timers_mut(&self) -> RwLockWriteGuard<Timers> {
+    pub fn timers_mut(&'_ self) -> RwLockWriteGuard<'_, Timers> {
         self.timers.write()
     }
 }

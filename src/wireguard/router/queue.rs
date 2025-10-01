@@ -22,7 +22,7 @@ pub struct Queue<J: SequentialJob> {
     contenders: AtomicUsize,
     queue: Mutex<ArrayDeque<[J; INORDER_QUEUE_SIZE]>>,
 
-    #[cfg(debug)]
+    #[cfg(debug_assertions)]
     _flag: Mutex<()>,
 }
 
@@ -32,7 +32,7 @@ impl<J: SequentialJob> Queue<J> {
             contenders: AtomicUsize::new(0),
             queue: Mutex::new(ArrayDeque::new()),
 
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             _flag: Mutex::new(()),
         }
     }
@@ -53,7 +53,7 @@ impl<J: SequentialJob> Queue<J> {
         let mut contenders = 1; // myself
         while contenders > 0 {
             // check soundness in debug builds
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             let _flag = self
                 ._flag
                 .try_lock()
@@ -82,7 +82,7 @@ impl<J: SequentialJob> Queue<J> {
                 job.sequential_work();
             }
 
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             mem::drop(_flag);
 
             // decrease contenders
@@ -100,8 +100,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use rand::thread_rng;
     use rand::Rng;
+    use rand::thread_rng;
 
     #[test]
     fn test_consume_queue() {
@@ -125,11 +125,11 @@ mod tests {
             let mut jobs = 0;
             let mut rng = thread_rng();
             for _ in 0..10_000 {
-                if rng.gen() {
-                    let wait_sequential: u64 = rng.gen();
+                if rng.r#gen() {
+                    let wait_sequential: u64 = rng.r#gen();
                     let wait_sequential = wait_sequential % 1000;
 
-                    let wait_parallel: u64 = rng.gen();
+                    let wait_parallel: u64 = rng.r#gen();
                     let wait_parallel = wait_parallel % 1000;
 
                     thread::sleep(Duration::from_micros(wait_parallel));
@@ -184,7 +184,7 @@ mod tests {
         fn hammer(queue: &Arc<Queue<TestJob>>) {
             let mut rng = thread_rng();
             for _ in 0..1_000_000 {
-                if rng.gen() {
+                if rng.r#gen() {
                     queue.push(TestJob {});
                 } else {
                     queue.consume();

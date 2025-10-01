@@ -30,7 +30,7 @@ const SIZE_TAG: usize = 16; // xchacha20poly1305 tag
 const COOKIE_UPDATE_INTERVAL: Duration = Duration::from_secs(120);
 
 macro_rules! HASH {
-    ( $($input:expr),* ) => {{
+    ( $($input:expr_2021),* ) => {{
         use blake2::Digest;
         let mut hsh = Blake2s::new();
         $(
@@ -41,7 +41,7 @@ macro_rules! HASH {
 }
 
 macro_rules! MAC {
-    ( $key:expr, $($input:expr),* ) => {{
+    ( $key:expr_2021, $($input:expr_2021),* ) => {{
         use blake2::VarBlake2s;
         use blake2::digest::{Update, VariableOutput};
         let mut tag = [0u8; SIZE_MAC];
@@ -55,7 +55,7 @@ macro_rules! MAC {
 }
 
 macro_rules! XSEAL {
-    ($key:expr, $nonce:expr, $ad:expr, $pt:expr, $ct:expr) => {{
+    ($key:expr_2021, $nonce:expr_2021, $ad:expr_2021, $pt:expr_2021, $ct:expr_2021) => {{
         let ct = XChaCha20Poly1305::new(GenericArray::from_slice($key))
             .encrypt(
                 GenericArray::from_slice($nonce),
@@ -68,7 +68,7 @@ macro_rules! XSEAL {
 }
 
 macro_rules! XOPEN {
-    ($key:expr, $nonce:expr, $ad:expr, $pt:expr, $ct:expr) => {{
+    ($key:expr_2021, $nonce:expr_2021, $ad:expr_2021, $pt:expr_2021, $ct:expr_2021) => {{
         debug_assert_eq!($ct.len(), $pt.len() + SIZE_TAG);
         XChaCha20Poly1305::new(GenericArray::from_slice($key))
             .decrypt(

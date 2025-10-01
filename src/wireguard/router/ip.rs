@@ -1,8 +1,8 @@
 use core::mem;
 
 use byteorder::BigEndian;
-use zerocopy::byteorder::U16;
 use zerocopy::LayoutVerified;
+use zerocopy::byteorder::U16;
 use zerocopy::{AsBytes, FromBytes};
 
 pub const VERSION_IP4: u8 = 4;

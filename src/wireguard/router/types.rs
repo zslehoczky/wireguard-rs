@@ -15,16 +15,16 @@ impl<T> Opaque for T where T: Send + Sync + 'static {}
 /// * `0`, a reference to the opaque value assigned to the peer
 /// * `1`, a bool indicating whether the message contained data (not just keepalive)
 /// * `2`, a bool indicating whether the message was transmitted (i.e. did the peer have an associated endpoint?)
-pub trait Callback<T>: Fn(&T, usize, bool) + Sync + Send + 'static {}
+pub trait _Callback<T>: Fn(&T, usize, bool) + Sync + Send + 'static {}
 
-impl<T, F> Callback<T> for F where F: Fn(&T, usize, bool) + Sync + Send + 'static {}
+impl<T, F> _Callback<T> for F where F: Fn(&T, usize, bool) + Sync + Send + 'static {}
 
 /// A key callback takes 1 argument
 ///
 /// * `0`, a reference to the opaque value assigned to the peer
-pub trait KeyCallback<T>: Fn(&T) + Sync + Send + 'static {}
+pub trait _KeyCallback<T>: Fn(&T) + Sync + Send + 'static {}
 
-impl<T, F> KeyCallback<T> for F where F: Fn(&T) + Sync + Send + 'static {}
+impl<T, F> _KeyCallback<T> for F where F: Fn(&T) + Sync + Send + 'static {}
 
 pub trait Callbacks: Send + Sync + 'static {
     type Opaque: Opaque;

@@ -1,5 +1,5 @@
-use super::super::udp::*;
 use super::super::Endpoint;
+use super::super::udp::*;
 
 use std::convert::TryInto;
 use std::io;
@@ -71,11 +71,7 @@ pub enum LinuxEndpoint {
 fn errno() -> libc::c_int {
     unsafe {
         let ptr = libc::__errno_location();
-        if ptr.is_null() {
-            0
-        } else {
-            *ptr
-        }
+        if ptr.is_null() { 0 } else { *ptr }
     }
 }
 
@@ -167,13 +163,13 @@ impl Endpoint for LinuxEndpoint {
 
     fn into_address(&self) -> SocketAddr {
         match self {
-            LinuxEndpoint::V4(EndpointV4 { ref dst, .. }) => {
+            LinuxEndpoint::V4(EndpointV4 { dst, .. }) => {
                 SocketAddr::V4(SocketAddrV4::new(
                     u32::from_be(dst.sin_addr.s_addr).into(), // IPv4 addr
                     u16::from_be(dst.sin_port),               // convert back to native byte-order
                 ))
             }
-            LinuxEndpoint::V6(EndpointV6 { ref dst, .. }) => SocketAddr::V6(SocketAddrV6::new(
+            LinuxEndpoint::V6(EndpointV6 { dst, .. }) => SocketAddr::V6(SocketAddrV6::new(
                 u128::from_ne_bytes(dst.sin6_addr.s6_addr).into(), // IPv6 addr
                 u16::from_be(dst.sin6_port), // convert back to native byte-order
                 dst.sin6_flowinfo,
@@ -184,11 +180,11 @@ impl Endpoint for LinuxEndpoint {
 
     fn clear_src(&mut self) {
         match self {
-            LinuxEndpoint::V4(EndpointV4 { ref mut info, .. }) => {
+            LinuxEndpoint::V4(EndpointV4 { info, .. }) => {
                 info.ipi_ifindex = 0;
                 info.ipi_spec_dst = libc::in_addr { s_addr: 0 };
             }
-            LinuxEndpoint::V6(EndpointV6 { ref mut info, .. }) => {
+            LinuxEndpoint::V6(EndpointV6 { info, .. }) => {
                 info.ipi6_addr = libc::in6_addr { s6_addr: [0; 16] };
                 info.ipi6_ifindex = 0;
             }
@@ -210,15 +206,15 @@ impl LinuxUDPReader {
             iov_base: buf.as_mut_ptr() as *mut core::ffi::c_void,
             iov_len: buf.len(),
         }];
-        let mut src: libc::sockaddr_in6 = unsafe { mem::MaybeUninit::uninit().assume_init() };
-        let mut control: ControlHeaderV6 = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut src = mem::MaybeUninit::<libc::sockaddr_in6>::uninit();
+        let mut control = mem::MaybeUninit::<ControlHeaderV6>::uninit();
         let mut hdr = libc::msghdr {
-            msg_name: safe_cast(&mut src),
-            msg_namelen: mem::size_of_val(&src) as u32,
+            msg_name: src.as_mut_ptr() as *mut libc::c_void,
+            msg_namelen: size_of::<libc::sockaddr_in6>() as u32,
             msg_iov: iovs.as_mut_ptr(),
             msg_iovlen: iovs.len(),
-            msg_control: safe_cast(&mut control),
-            msg_controllen: mem::size_of_val(&control),
+            msg_control: control.as_mut_ptr() as *mut libc::c_void,
+            msg_controllen: size_of::<ControlHeaderV6>(),
             msg_flags: 0,
         };
 
@@ -242,6 +238,9 @@ impl LinuxUDPReader {
             ));
         }
 
+        let control = unsafe { control.assume_init() };
+        let src = unsafe { src.assume_init() };
+
         Ok((
             len.try_into().unwrap(),
             LinuxEndpoint::V6(EndpointV6 {
@@ -264,15 +263,15 @@ impl LinuxUDPReader {
             iov_base: buf.as_mut_ptr() as *mut core::ffi::c_void,
             iov_len: buf.len(),
         }];
-        let mut src: libc::sockaddr_in = unsafe { mem::MaybeUninit::uninit().assume_init() };
-        let mut control: ControlHeaderV4 = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut src = mem::MaybeUninit::<libc::sockaddr_in>::uninit();
+        let mut control = mem::MaybeUninit::<ControlHeaderV4>::uninit();
         let mut hdr = libc::msghdr {
-            msg_name: safe_cast(&mut src),
-            msg_namelen: mem::size_of_val(&src) as u32,
+            msg_name: src.as_mut_ptr() as *mut libc::c_void,
+            msg_namelen: size_of::<libc::sockaddr_in>() as u32,
             msg_iov: iovs.as_mut_ptr(),
             msg_iovlen: iovs.len(),
-            msg_control: safe_cast(&mut control),
-            msg_controllen: mem::size_of_val(&control),
+            msg_control: control.as_mut_ptr() as *mut libc::c_void,
+            msg_controllen: size_of::<ControlHeaderV4>(),
             msg_flags: 0,
         };
 
@@ -294,6 +293,9 @@ impl LinuxUDPReader {
                 ),
             ));
         }
+
+        let control = unsafe { control.assume_init() };
+        let src = unsafe { src.assume_init() };
 
         Ok((
             len.try_into().unwrap(),
@@ -453,8 +455,8 @@ impl Writer<LinuxEndpoint> for LinuxUDPWriter {
 
     fn write(&self, buf: &[u8], dst: &mut LinuxEndpoint) -> Result<(), Self::Error> {
         match dst {
-            LinuxEndpoint::V4(ref mut end) => Self::write4(self.sock4.0, buf, end),
-            LinuxEndpoint::V6(ref mut end) => Self::write6(self.sock6.0, buf, end),
+            LinuxEndpoint::V4(end) => Self::write4(self.sock4.0, buf, end),
+            LinuxEndpoint::V6(end) => Self::write6(self.sock6.0, buf, end),
         }
     }
 }

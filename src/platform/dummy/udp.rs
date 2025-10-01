@@ -4,12 +4,12 @@ use std::fmt;
 use std::marker;
 
 use log::debug;
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 use super::super::udp::*;
 
@@ -135,8 +135,8 @@ impl PairBind {
         (PairReader<E>, PairWriter<E>),
         (PairReader<E>, PairWriter<E>),
     ) {
-        let id1: u32 = OsRng.gen();
-        let id2: u32 = OsRng.gen();
+        let id1: u32 = OsRng.r#gen();
+        let id2: u32 = OsRng.r#gen();
 
         let (tx1, rx1) = sync_channel(128);
         let (tx2, rx2) = sync_channel(128);

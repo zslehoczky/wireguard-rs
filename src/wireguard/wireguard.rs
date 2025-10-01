@@ -16,14 +16,14 @@ use std::fmt;
 use std::thread;
 
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
 use hjul::Runner;
 use spin::{Mutex, RwLock};
@@ -174,8 +174,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         *enabled = true;
     }
 
-    pub fn clear_peers(&self) {
-        self.peers.write().clear();
+    pub fn _clear_peers(&self) {
+        self.peers.write()._clear();
     }
 
     pub fn remove_peer(&self, pk: &PublicKey) {
@@ -217,7 +217,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // create new router peer
         let peer: router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
             self.router.new_peer(PeerInner {
-                id: OsRng.gen(),
+                id: OsRng.r#gen(),
                 pk,
                 wg: self.clone(),
                 walltime_last_handshake: Mutex::new(None),
@@ -281,7 +281,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             inner: Arc::new(WireguardInner {
                 enabled: RwLock::new(false),
                 tun_readers: WaitCounter::new(),
-                id: OsRng.gen(),
+                id: OsRng.r#gen(),
                 mtu: AtomicUsize::new(0),
                 last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
                 router,

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use spin::{Mutex, RwLock};
@@ -9,17 +9,17 @@ use zerocopy::LayoutVerified;
 
 use super::anti_replay::AntiReplay;
 
-use super::constants::PARALLEL_QUEUE_SIZE;
-use super::messages::{TransportHeader, TYPE_TRANSPORT};
-use super::peer::{new_peer, Peer, PeerHandle};
-use super::types::{Callbacks, RouterError};
 use super::SIZE_MESSAGE_PREFIX;
+use super::constants::PARALLEL_QUEUE_SIZE;
+use super::messages::{TYPE_TRANSPORT, TransportHeader};
+use super::peer::{Peer, PeerHandle, new_peer};
+use super::types::{Callbacks, RouterError};
 
 use super::receive::ReceiveJob;
 use super::route::RoutingTable;
-use super::worker::{worker, JobUnion};
+use super::worker::{JobUnion, worker};
 
-use super::super::{tun, udp, Endpoint, KeyPair};
+use super::super::{Endpoint, KeyPair, tun, udp};
 use super::ParallelQueue;
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {

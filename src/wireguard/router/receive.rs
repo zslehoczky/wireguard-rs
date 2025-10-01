@@ -5,11 +5,11 @@ use super::queue::{ParallelJob, Queue, SequentialJob};
 use super::types::Callbacks;
 use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
-use super::super::{tun, udp, Endpoint};
+use super::super::{Endpoint, tun, udp};
 
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, CHACHA20_POLY1305};
+use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use spin::Mutex;
 use zerocopy::{AsBytes, LayoutVerified};
 

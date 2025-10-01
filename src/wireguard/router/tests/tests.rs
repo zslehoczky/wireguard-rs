@@ -2,9 +2,9 @@ use crate::platform::udp::Reader;
 
 use std::net::IpAddr;
 use std::ops::Deref;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::Duration;
 
 use rand::Rng;
@@ -425,7 +425,7 @@ fn test_bidirectional() {
             // route packets in the other direction: peer1 -> peer2
             let mut sizes = vec![0, 1, 1500, MAX_SIZE_BODY];
             for _ in 0..100 {
-                let body_size: usize = rng.gen();
+                let body_size: usize = rng.r#gen();
                 let body_size = body_size % MAX_SIZE_BODY;
                 sizes.push(body_size);
             }

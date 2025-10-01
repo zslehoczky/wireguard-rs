@@ -1,14 +1,14 @@
 use super::super::constants::*;
-use super::super::{tun, udp, Endpoint, KeyPair};
+use super::super::{Endpoint, KeyPair, tun, udp};
 
 use super::anti_replay::AntiReplay;
 use super::device::DecryptionState;
 use super::device::Device;
 use super::device::EncryptionState;
 
+use super::SIZE_MESSAGE_PREFIX;
 use super::constants::*;
 use super::types::{Callbacks, RouterError};
-use super::SIZE_MESSAGE_PREFIX;
 
 use super::queue::Queue;
 use super::receive::ReceiveJob;
@@ -261,7 +261,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
                     };
                     (None, true)
                 }
-                Some(mut state) => {
+                Some(state) => {
                     // avoid integer overflow in nonce
                     if state.nonce >= REJECT_AFTER_MESSAGES - 1 {
                         log::debug!("encryption key expired");
@@ -535,7 +535,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     /// Clear subnets mapped to the peer.
     /// After the call, no subnets will be cryptkey routed to the peer.
     /// Used for the UAPI command "replace_allowed_ips=true"
-    pub fn remove_allowed_ips(&self) {
+    pub fn _remove_allowed_ips(&self) {
         self.peer.device.table.remove(&self.peer)
     }
 

@@ -53,7 +53,7 @@ impl<'a, C: Configuration> LineParser<'a, C> {
     }
 
     pub fn parse_line(&mut self, key: &str, value: &str) -> Result<(), ConfigError> {
-        #[cfg(debug)]
+        #[cfg(debug_assertions)]
         {
             if key.len() > 0 {
                 log::debug!("UAPI: {}={}", key, value);
@@ -101,7 +101,7 @@ impl<'a, C: Configuration> LineParser<'a, C> {
             };
 
             None
-        };
+        }
 
         // parse line and update parser state
         match self.state {

@@ -1,11 +1,11 @@
-use std::collections::hash_map;
 use std::collections::HashMap;
+use std::collections::hash_map;
 use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use byteorder::{ByteOrder, LittleEndian};
-use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
 use zerocopy::AsBytes;
 
 use rand::Rng;
@@ -62,7 +62,7 @@ impl<'a, O> Iterator for Iter<'a, O> {
  * It also abstracts away the problem of PublicKey not being hashable.
  */
 impl<O> Device<O> {
-    pub fn clear(&mut self) {
+    pub fn _clear(&mut self) {
         self.id_map.clear();
         self.pk_map.clear();
     }
@@ -73,7 +73,7 @@ impl<O> Device<O> {
 
     /// Enables enumeration of (public key, opaque) pairs
     /// without exposing internal peer type.
-    pub fn iter(&self) -> Iter<O> {
+    pub fn iter(&'_ self) -> Iter<'_, O> {
         Iter {
             iter: self.pk_map.iter(),
         }
@@ -234,7 +234,7 @@ impl<O> Device<O> {
     /// The call might fail if the public key is not found
     pub fn set_psk(&mut self, pk: PublicKey, psk: Psk) -> Result<(), ConfigError> {
         match self.pk_map.get_mut(pk.as_bytes()) {
-            Some(mut peer) => {
+            Some(peer) => {
                 peer.psk = psk;
                 Ok(())
             }
@@ -462,7 +462,7 @@ impl<O> Device<O> {
     // Implemented via rejection sampling.
     fn allocate<R: RngCore + CryptoRng>(&self, rng: &mut R, pk: &PublicKey) -> u32 {
         loop {
-            let id = rng.gen();
+            let id = rng.r#gen();
 
             // read lock the shard and do quick check
             if self.id_map.contains_key(&id) {

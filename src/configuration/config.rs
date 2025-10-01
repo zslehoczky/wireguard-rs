@@ -38,7 +38,7 @@ struct Inner<T: tun::Tun, B: udp::PlatformUDP> {
 }
 
 impl<T: tun::Tun, B: udp::PlatformUDP> WireGuardConfig<T, B> {
-    fn lock(&self) -> MutexGuard<Inner<T, B>> {
+    fn lock(&'_ self) -> MutexGuard<'_, Inner<T, B>> {
         self.0.lock().unwrap()
     }
 }
@@ -102,7 +102,7 @@ pub trait Configuration {
     fn set_fwmark(&self, mark: Option<u32>) -> Result<(), ConfigError>;
 
     /// Removes all peers from the device
-    fn replace_peers(&self);
+    fn _replace_peers(&self);
 
     /// Remove the peer from the
     ///
@@ -165,7 +165,7 @@ pub trait Configuration {
     /// # Returns
     ///
     /// An error if no such peer exists
-    fn replace_allowed_ips(&self, peer: &PublicKey);
+    fn _replace_allowed_ips(&self, peer: &PublicKey);
 
     /// Add a new allowed subnet to the peer
     ///
@@ -271,11 +271,7 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         };
 
         // restart listener if bound
-        if bound {
-            start_listener(cfg)
-        } else {
-            Ok(())
-        }
+        if bound { start_listener(cfg) } else { Ok(()) }
     }
 
     fn set_fwmark(&self, mark: Option<u32>) -> Result<(), ConfigError> {
@@ -292,8 +288,8 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         }
     }
 
-    fn replace_peers(&self) {
-        self.lock().wireguard.clear_peers();
+    fn _replace_peers(&self) {
+        self.lock().wireguard._clear_peers();
     }
 
     fn remove_peer(&self, peer: &PublicKey) {
@@ -320,9 +316,9 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         }
     }
 
-    fn replace_allowed_ips(&self, peer: &PublicKey) {
+    fn _replace_allowed_ips(&self, peer: &PublicKey) {
         if let Some(peer) = self.lock().wireguard.peers.read().get(peer) {
-            peer.remove_allowed_ips();
+            peer._remove_allowed_ips();
         }
     }
 
