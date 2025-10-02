@@ -197,70 +197,68 @@ impl Default for NoiseResponse {
 #[cfg(test)]
 impl fmt::Debug for Initiation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Initiation {{ {:?} || {:?} }}", self.noise, self.macs)
+        f.debug_struct("Initiation")
+            .field("noise", &self.noise)
+            .field("macs", &self.macs)
+            .finish()
     }
 }
 
 #[cfg(test)]
 impl fmt::Debug for Response {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Response {{ {:?} || {:?} }}", self.noise, self.macs)
+        f.debug_struct("Response")
+            .field("noise", &self.noise)
+            .field("macs", &self.macs)
+            .finish()
     }
 }
 
 #[cfg(test)]
 impl fmt::Debug for CookieReply {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "CookieReply {{ type = {}, receiver = {}, nonce = {}, cookie = {}  }}",
-            self.f_type,
-            self.f_receiver,
-            hex::encode(&self.f_nonce[..]),
-            hex::encode(&self.f_cookie[..]),
-        )
+        f.debug_struct("CookieReply")
+            .field("type", &self.f_type)
+            .field("receiver", &self.f_receiver)
+            .field("nonce", &hex::encode(&self.f_nonce[..]))
+            .field("cookie", &hex::encode(&self.f_cookie[..]))
+            .finish()
     }
 }
 
 #[cfg(test)]
 impl fmt::Debug for NoiseInitiation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "NoiseInitiation {{ type = {}, sender = {}, ephemeral = {}, static = {}, timestamp = {} }}",
-            self.f_type.get(),
-            self.f_sender.get(),
-            hex::encode(&self.f_ephemeral[..]),
-            hex::encode(&self.f_static[..]),
-            hex::encode(&self.f_timestamp[..]),
-        )
+        f.debug_struct("NoiseInitiation")
+            .field("type", &self.f_type)
+            .field("sender", &self.f_sender)
+            .field("ephemeral", &hex::encode(&self.f_ephemeral[..]))
+            .field("static", &hex::encode(&self.f_static[..]))
+            .field("timestamp", &hex::encode(&self.f_timestamp[..]))
+            .finish()
     }
 }
 
 #[cfg(test)]
 impl fmt::Debug for NoiseResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "NoiseResponse {{ type = {}, sender = {}, receiver = {}, ephemeral = {}, empty = |{}  }}",
-            self.f_type,
-            self.f_sender,
-            self.f_receiver,
-            hex::encode(&self.f_ephemeral[..]),
-            hex::encode(&self.f_empty[..])
-        )
+        f.debug_struct("NoiseResponse")
+            .field("type", &self.f_type)
+            .field("sender", &self.f_sender)
+            .field("receiver", &self.f_receiver)
+            .field("ephemeral", &hex::encode(&self.f_ephemeral[..]))
+            .field("empty", &hex::encode(&self.f_empty[..]))
+            .finish()
     }
 }
 
 #[cfg(test)]
 impl fmt::Debug for MacsFooter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Macs {{ mac1 = {}, mac2 = {} }}",
-            hex::encode(&self.f_mac1[..]),
-            hex::encode(&self.f_mac2[..])
-        )
+        f.debug_struct("Macs")
+            .field("mac1", &hex::encode(&self.f_mac1[..]))
+            .field("mac2", &hex::encode(&self.f_mac2[..]))
+            .finish()
     }
 }
 
