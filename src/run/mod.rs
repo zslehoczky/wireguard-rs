@@ -1,4 +1,4 @@
-pub mod main_error;
+pub mod error;
 pub mod run;
 
 mod config;

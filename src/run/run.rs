@@ -15,32 +15,32 @@ use crate::platform::{
 use crate::wireguard::WireGuard;
 
 use super::config::Config;
-use super::main_error::{MainError, MainExitCode};
+use super::error::{ErrorReason, ExitCode};
 use super::profiler::{profiler_start, profiler_stop};
 use super::util;
 
-pub fn create_config_and_run() -> Result<(), MainError> {
+pub fn create_config_and_run() -> Result<(), ErrorReason> {
     // parse command line arguments
     let config = Config::from_args(env::args())?;
 
     run(config)
 }
 
-fn run(config: Config) -> Result<(), MainError> {
+fn run(config: Config) -> Result<(), ErrorReason> {
     let name = &config.name;
 
     let uapi_socket = plt::UAPI::bind(name.as_str())
-        .map_err(|e| MainError::UAPIListenerCreationFailed(anyhow!(e)))?;
+        .map_err(|e| ErrorReason::UAPIListenerCreationFailed(anyhow!(e)))?;
 
     let (mut tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
-        .map_err(|e| MainError::TUNDeviceCreationFailed(anyhow!(e)))?;
+        .map_err(|e| ErrorReason::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     if config.drop_privileges {
-        util::drop_privileges().map_err(|e| MainError::DropPriviligesFailed(anyhow!(e)))?;
+        util::drop_privileges().map_err(|e| ErrorReason::DropPriviligesFailed(anyhow!(e)))?;
     }
 
     if !config.foreground {
-        util::daemonize().map_err(|e| MainError::DaemonizeFailed(anyhow!(e)))?;
+        util::daemonize().map_err(|e| ErrorReason::DaemonizeFailed(anyhow!(e)))?;
     }
 
     initialize_logger();
@@ -85,7 +85,7 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
                 Err(e) => {
                     log::error!("Tun device error {}", e);
                     profiler_stop();
-                    exit(MainExitCode::TUNDeviceError as i32);
+                    exit(ExitCode::TUNDeviceError as i32);
                 }
                 Ok(TunEvent::Up(mtu)) => {
                     log::info!("Tun up (mtu = {})", mtu);
@@ -121,7 +121,7 @@ where
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
                     profiler_stop();
-                    exit(MainExitCode::UAPIConnectionError as i32);
+                    exit(ExitCode::UAPIConnectionError as i32);
                 }
             }
         }
