@@ -1,4 +1,4 @@
-use crate::run::main_result::MainResult;
+use crate::run::main_error::MainError;
 
 use std::env;
 
@@ -9,7 +9,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_args(mut args: env::Args) -> Result<Config, MainResult> {
+    pub fn from_args(mut args: env::Args) -> Result<Config, MainError> {
         let mut name = None;
         let mut drop_privileges = true;
         let mut foreground = false;
@@ -28,7 +28,7 @@ impl Config {
             }
         }
 
-        let name = name.ok_or(MainResult::NoDeviceNameSupplied)?;
+        let name = name.ok_or(MainError::NoDeviceNameSupplied)?;
 
         Ok(Config {
             name,

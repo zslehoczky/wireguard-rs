@@ -18,8 +18,8 @@ impl Into<ExitCode> for MainExitCode {
     }
 }
 
-pub enum MainResult {
-    Good,
+pub enum MainError {
+    None,
     NoDeviceNameSupplied,
     UAPIListenerCreationFailed(anyhow::Error),
     TUNDeviceCreationFailed(anyhow::Error),
@@ -27,27 +27,27 @@ pub enum MainResult {
     DaemonizeFailed(anyhow::Error),
 }
 
-impl Termination for MainResult {
+impl Termination for MainError {
     fn report(self) -> ExitCode {
         match self {
-            MainResult::Good => MainExitCode::Good.into(),
-            MainResult::NoDeviceNameSupplied => {
+            MainError::None => MainExitCode::Good.into(),
+            MainError::NoDeviceNameSupplied => {
                 eprintln!("No device name supplied");
                 MainExitCode::NoDeviceNameSupplied.into()
             }
-            MainResult::UAPIListenerCreationFailed(e) => {
+            MainError::UAPIListenerCreationFailed(e) => {
                 eprintln!("Failed to create UAPI listener: {}", e);
                 MainExitCode::UAPIListenerCreationFailed.into()
             }
-            MainResult::TUNDeviceCreationFailed(e) => {
+            MainError::TUNDeviceCreationFailed(e) => {
                 eprintln!("Failed to create TUN device: {}", e);
                 MainExitCode::TUNDeviceCreationFailed.into()
             }
-            MainResult::DropPriviligesFailed(e) => {
+            MainError::DropPriviligesFailed(e) => {
                 eprintln!("Failed to drop privileges: {}", e);
                 MainExitCode::DropPriviligesFailed.into()
             }
-            MainResult::DaemonizeFailed(e) => {
+            MainError::DaemonizeFailed(e) => {
                 eprintln!("Failed to daemonize: {}", e);
                 MainExitCode::DaemonizeFailed.into()
             }

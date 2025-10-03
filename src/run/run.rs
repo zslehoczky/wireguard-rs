@@ -1,6 +1,5 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-use std::io::{Read, Write};
 use std::thread::JoinHandle;
 use std::{env, process::exit, thread};
 
@@ -16,34 +15,32 @@ use crate::platform::{
 use crate::wireguard::WireGuard;
 
 use super::config::Config;
-use super::main_result::{MainExitCode, MainResult};
+use super::main_error::{MainError, MainExitCode};
 use super::profiler::{profiler_start, profiler_stop};
 use super::util;
 
-pub fn create_config_and_run() -> Result<(), MainResult> {
+pub fn create_config_and_run() -> Result<(), MainError> {
     // parse command line arguments
     let config = Config::from_args(env::args())?;
 
     run(config)
 }
 
-fn run(config: Config) -> Result<(), MainResult> {
+fn run(config: Config) -> Result<(), MainError> {
     let name = &config.name;
-    let drop_privileges = config.drop_privileges;
-    let foreground = config.foreground;
 
     let uapi_socket = plt::UAPI::bind(name.as_str())
-        .map_err(|e| return MainResult::UAPIListenerCreationFailed(anyhow!(e)))?;
+        .map_err(|e| MainError::UAPIListenerCreationFailed(anyhow!(e)))?;
 
     let (mut tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
-        .map_err(|e| return MainResult::TUNDeviceCreationFailed(anyhow!(e)))?;
+        .map_err(|e| MainError::TUNDeviceCreationFailed(anyhow!(e)))?;
 
-    if drop_privileges {
-        util::drop_privileges().map_err(|e| return MainResult::DropPriviligesFailed(anyhow!(e)))?;
+    if config.drop_privileges {
+        util::drop_privileges().map_err(|e| MainError::DropPriviligesFailed(anyhow!(e)))?;
     }
 
-    if !foreground {
-        util::daemonize().map_err(|e| return MainResult::DaemonizeFailed(anyhow!(e)))?;
+    if !config.foreground {
+        util::daemonize().map_err(|e| MainError::DaemonizeFailed(anyhow!(e)))?;
     }
 
     initialize_logger();
@@ -115,8 +112,11 @@ where
         loop {
             // accept and handle UAPI config connections
             match uapi.connect() {
-                Ok(stream) => {
-                    spawn_uapi_handler(wireguard_config.clone(), stream);
+                Ok(mut stream) => {
+                    let wireguard_config = wireguard_config.clone();
+                    thread::spawn(move || {
+                        uapi::handle(&mut stream, &wireguard_config);
+                    });
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
@@ -125,14 +125,5 @@ where
                 }
             }
         }
-    })
-}
-
-fn spawn_uapi_handler<T: Tun, B: PlatformUDP, S: Read + Write + Send + 'static>(
-    wireguard_config: WireGuardConfig<T, B>,
-    mut stream: S,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        uapi::handle(&mut stream, &wireguard_config);
     })
 }
