@@ -1,4 +1,4 @@
-use crate::platform::unix::UnixAPI;
+use crate::platform::uapi::*;
 
 use std::fs;
 use std::io;
@@ -6,15 +6,15 @@ use std::os::unix::net::{UnixListener, UnixStream};
 
 const SOCK_DIR: &str = "/var/run/wireguard/";
 
-pub struct LinuxUAPI {}
+pub struct UnixUAPI {}
 
-impl PlatformUAPI for LinuxUAPI {
+impl PlatformUAPI for UnixUAPI {
     type Error = io::Error;
     type Bind = UnixListener;
 
     fn bind(name: &str) -> Result<UnixListener, io::Error> {
         let socket_path = format!("{}{}.sock", SOCK_DIR, name);
-        fs::create_dir_all(SOCK_DIR)?;
+        let _ = fs::create_dir_all(SOCK_DIR);
         let _ = fs::remove_file(&socket_path);
         UnixListener::bind(socket_path)
     }
