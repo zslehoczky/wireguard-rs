@@ -2,7 +2,6 @@ use std::sync::{Condvar, Mutex};
 
 pub struct WaitCounter(Mutex<usize>, Condvar);
 
-#[allow(clippy::mutex_atomic)]
 impl WaitCounter {
     pub fn wait(&self) {
         let mut nread = self.0.lock().unwrap();
