@@ -39,22 +39,13 @@ mod tests {
             Arc,
             atomic::{AtomicBool, Ordering},
         },
-        thread::{sleep, spawn},
+        thread::{JoinHandle, sleep, spawn},
         time::Duration,
     };
 
     use super::*;
 
-    const THREAD_INIT_UPPER_BOUND: Duration = Duration::from_millis(100);
-
-    #[test]
-    fn test_new() {
-        let wait_counter = WaitCounter::new();
-
-        assert_eq!(*wait_counter.get_guard(), 0);
-
-        // test that wait() runs without blocking
-
+    fn start_wait(wait_counter: Arc<WaitCounter>) -> JoinHandle<()> {
         let wait_thread;
         let wait_thread_started = Arc::new(AtomicBool::new(false));
 
@@ -67,12 +58,30 @@ mod tests {
             });
         }
 
+        // wait for thread init
+
+        const THREAD_INIT_UPPER_BOUND: Duration = Duration::from_millis(100);
+
         sleep(THREAD_INIT_UPPER_BOUND);
 
         assert!(
             wait_thread_started.load(Ordering::SeqCst),
             "thread hasn't started in {THREAD_INIT_UPPER_BOUND:?} ms"
         );
+
+        wait_thread
+    }
+
+    #[test]
+    fn test_new() {
+        let wait_counter = Arc::new(WaitCounter::new());
+
+        assert_eq!(*wait_counter.get_guard(), 0);
+
+        // test that wait() runs without blocking
+
+        let wait_thread = start_wait(wait_counter.clone());
+
         assert!(wait_thread.is_finished());
     }
 
@@ -133,28 +142,13 @@ mod tests {
     #[test]
     fn test_wait() {
         let wait_counter = Arc::new(WaitCounter::new());
+
         wait_counter.increase();
 
-        let wait_thread;
-        let wait_thread_started = Arc::new(AtomicBool::new(false));
+        // test that wait blocks before decrease is called, and doesn't afterward
 
-        {
-            let wait_counter = wait_counter.clone();
+        let wait_thread = start_wait(wait_counter.clone());
 
-            let started = wait_thread_started.clone();
-
-            wait_thread = spawn(move || {
-                started.swap(true, Ordering::SeqCst);
-                wait_counter.wait();
-            });
-        }
-
-        sleep(THREAD_INIT_UPPER_BOUND);
-
-        assert!(
-            wait_thread_started.load(Ordering::SeqCst),
-            "thread hasn't started in {THREAD_INIT_UPPER_BOUND:?} ms"
-        );
         assert!(!wait_thread.is_finished());
 
         wait_counter.decrease();
