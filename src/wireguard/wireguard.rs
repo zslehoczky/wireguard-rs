@@ -10,6 +10,8 @@ use super::workers::HandshakeJob;
 use super::tun::Tun;
 use super::udp::UDP;
 
+use super::wait_counter::WaitCounter;
+
 use super::workers::{handshake_worker, tun_worker, udp_worker};
 
 use std::fmt;
@@ -17,8 +19,6 @@ use std::thread;
 
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::Condvar;
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -64,8 +64,6 @@ pub struct WireGuard<T: Tun, B: UDP> {
     inner: Arc<WireguardInner<T, B>>,
 }
 
-pub struct WaitCounter(StdMutex<usize>, Condvar);
-
 impl<T: Tun, B: UDP> fmt::Display for WireGuard<T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "wireguard({:x})", self.id)
@@ -84,33 +82,6 @@ impl<T: Tun, B: UDP> Clone for WireGuard<T, B> {
         WireGuard {
             inner: self.inner.clone(),
         }
-    }
-}
-
-#[allow(clippy::mutex_atomic)]
-impl WaitCounter {
-    pub fn wait(&self) {
-        let mut nread = self.0.lock().unwrap();
-        while *nread > 0 {
-            nread = self.1.wait(nread).unwrap();
-        }
-    }
-
-    fn new() -> Self {
-        Self(StdMutex::new(0), Condvar::new())
-    }
-
-    fn decrease(&self) {
-        let mut nread = self.0.lock().unwrap();
-        assert!(*nread > 0);
-        *nread -= 1;
-        if *nread == 0 {
-            self.1.notify_all();
-        }
-    }
-
-    fn increase(&self) {
-        *self.0.lock().unwrap() += 1;
     }
 }
 

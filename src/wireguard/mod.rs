@@ -13,6 +13,7 @@ mod queue;
 mod router;
 mod timers;
 mod types;
+mod wait_counter;
 mod workers;
 
 #[cfg(test)]
