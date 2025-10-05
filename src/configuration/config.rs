@@ -1,4 +1,3 @@
-use std::mem;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -262,16 +261,28 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
     fn set_listen_port(&self, port: u16) -> Result<(), ConfigError> {
         log::trace!("Config, Set listen port: {:?}", port);
 
-        // update port and take old bind
         let mut cfg = self.lock();
-        let bound: bool = {
-            let old = mem::replace(&mut cfg.bind, None);
-            cfg.port = port;
-            old.is_some()
-        };
+        cfg.port = port;
 
-        // restart listener if bound
-        if bound { start_listener(cfg) } else { Ok(()) }
+        // start or restart listener
+        // Always call start_listener to ensure the port is bound
+        let result = start_listener(cfg);
+
+        // Workaround for macOS: manually bring device up if not already
+        // On macOS, RTM_IFINFO events aren't always sent when ifconfig is run
+        // so we manually check and set the MTU here
+        #[cfg(target_os = "macos")]
+        {
+            let cfg = self.lock();
+            if cfg.wireguard.mtu.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                // Try to bring up with a default MTU
+                // The TUN event handler should update this if the real MTU changes
+                drop(cfg);
+                let _ = self.up(1420); // Standard WireGuard MTU
+            }
+        }
+
+        result
     }
 
     fn set_fwmark(&self, mark: Option<u32>) -> Result<(), ConfigError> {
