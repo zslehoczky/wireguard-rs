@@ -28,7 +28,7 @@ fi
 program="$1"
 
 if [ ! -x "$program" ]; then
-    echo "Error: $program does not exist or is not executable"
+    echo "[-] Error: $program does not exist or is not executable"
     exit 1
 fi
 
@@ -54,12 +54,12 @@ mkdir -p wireguard/wg_confs
 cat > wireguard/wg_confs/wg0.conf <<EOF
 [Interface]
 PrivateKey = $SERVER_SECRET_KEY
-Address = 10.100.0.1/24
+Address = 10.100.0.1/24, fd00::1/64
 ListenPort = 51820
 
 [Peer]
 PublicKey = $CLIENT_PUBLIC_KEY
-AllowedIPs = 10.100.0.2/32
+AllowedIPs = 10.100.0.2/32, fd00::2/128
 EOF
 
 # cleanup any existing wireguard-rs
@@ -89,13 +89,14 @@ for i in {1..20}; do
 done
 
 if ! ifconfig utun10 >/dev/null 2>&1; then
-    echo "Error: utun10 did not come up"
+    echo "[-] Error: utun10 did not come up"
     cat /tmp/wg_client.log
     exit 1
 fi
 
 # configure interface
 sudo ifconfig utun10 inet 10.100.0.2/24 10.100.0.2
+sudo ifconfig utun10 inet6 fd00::2/64
 sudo ifconfig utun10 up
 
 # configure WireGuard peer for the server
@@ -104,14 +105,16 @@ sudo wg set utun10 \
     private-key client-sk.key \
     listen-port 0 \
     peer "$SERVER_PUBLIC_KEY" \
-        allowed-ips 10.100.0.1/32 \
+        allowed-ips 10.100.0.1/32,fd00::1/128 \
         endpoint 127.0.0.1:51821 \
         persistent-keepalive 25
 
-# Add route
+# Add routes
 echo "[+] Updating routing table"
 sudo route -n delete -host 10.100.0.1 2>/dev/null || true
 sudo route -n add -host 10.100.0.1 -interface utun10
+sudo route -n delete -inet6 -host fd00::1 2>/dev/null || true
+sudo route -n add -inet6 -host fd00::1 -interface utun10
 
 echo "[+] WireGuard Configuration:"
 sudo wg show utun10
@@ -126,7 +129,7 @@ sudo wg show utun10
 
 # Check if handshake happened
 if ! sudo wg show utun10 | grep -q "latest handshake"; then
-	echo "Handshake Failed."
+	echo "[-] Handshake Failed."
     echo ""
     echo "Client logs:"
     cat /tmp/wg_client.log
@@ -135,10 +138,16 @@ if ! sudo wg show utun10 | grep -q "latest handshake"; then
     docker compose -f docker-compose.yml logs wireguard-server
 	exit -1
 fi
-echo "[+] Testing ping to server (10.100.0.1)..."
+echo "[+] Testing IPv4 ping to server (10.100.0.1)..."
 if ! ping -c 10 -W 2 10.100.0.1; then
-	echo "Ping failed"
+	echo "[-] IPv4 ping failed"
 	exit -1
 fi
 
-echo "[+] Test successful."
+echo "[+] Testing IPv6 ping to server (fd00::1)..."
+if ! ping6 -c 10 -i 1 fd00::1%utun10; then
+	echo "[-] IPv6 ping failed"
+	exit -1
+fi
+
+echo "[+] All tests successful (IPv4 and IPv6)."
