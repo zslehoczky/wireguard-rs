@@ -12,7 +12,7 @@ use crate::platform::{
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
-use crate::wireguard::WireGuard;
+use crate::wireguard::WireGuardHandle;
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -32,7 +32,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     let uapi_socket = plt::UAPI::bind(name.as_str())
         .map_err(|e| ErrorReason::UAPIListenerCreationFailed(anyhow!(e)))?;
 
-    let (mut tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
+    let (tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
         .map_err(|e| ErrorReason::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     if config.drop_privileges {
@@ -49,20 +49,17 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let wireguard_device: WireGuard<plt::Tun, plt::UDP> = WireGuard::new(tun_writer);
+    let wireguard_handle: WireGuardHandle<plt::Tun, plt::UDP> =
+        WireGuardHandle::new(tun_readers, tun_writer);
 
-    while let Some(reader) = tun_readers.pop() {
-        wireguard_device.add_tun_reader(reader);
-    }
-
-    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+    let wireguard_config = WireGuardConfig::new(wireguard_handle.get_device().clone());
 
     spawn_tun_event_loop(wireguard_config.clone(), tun_status);
 
     spawn_uapi_server(wireguard_config, uapi_socket);
 
     // block until all tun readers closed
-    wireguard_device.wait();
+    wireguard_handle.wait();
 
     profiler_stop();
 
