@@ -271,6 +271,7 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         // Workaround for macOS: manually bring device up if not already
         // On macOS, RTM_IFINFO events aren't always sent when ifconfig is run
         // so we manually check and set the MTU here
+        // TODO: Investigate why RTM_IFINFO events are not reliably delivered on macOS
         #[cfg(target_os = "macos")]
         {
             let cfg = self.lock();
@@ -278,7 +279,7 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
                 // Try to bring up with a default MTU
                 // The TUN event handler should update this if the real MTU changes
                 drop(cfg);
-                let _ = self.up(1420); // Standard WireGuard MTU
+                self.up(1420)?; // Standard WireGuard MTU
             }
         }
 

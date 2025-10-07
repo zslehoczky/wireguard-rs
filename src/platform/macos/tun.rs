@@ -251,7 +251,7 @@ impl PlatformTun for MacosTun {
             info.ctl_name[i] = byte as libc::c_char;
         }
 
-        unsafe { ctliocginfo(tun.raw_fd(), &mut info as *mut _ as *mut _) }
+        unsafe { ctliocginfo(tun.as_raw_fd(), &mut info as *mut _ as *mut _) }
             .map_err(|e| MacosTunError::CtliocginfoError(io::Error::from_raw_os_error(e as i32)))?;
 
         let addr = libc::sockaddr_ctl {
@@ -265,7 +265,7 @@ impl PlatformTun for MacosTun {
 
         if unsafe {
             libc::connect(
-                tun.raw_fd(),
+                tun.as_raw_fd(),
                 &addr as *const libc::sockaddr_ctl as *const libc::sockaddr,
                 mem::size_of::<libc::sockaddr_ctl>() as socklen_t,
             )
@@ -279,7 +279,7 @@ impl PlatformTun for MacosTun {
 
         if unsafe {
             libc::getsockopt(
-                tun.raw_fd(),
+                tun.as_raw_fd(),
                 libc::SYSPROTO_CONTROL,
                 libc::UTUN_OPT_IFNAME,
                 interface_name.as_mut_ptr() as *mut libc::c_void,
