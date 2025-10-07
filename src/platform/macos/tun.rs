@@ -2,17 +2,18 @@ use crate::{
     plt::{fd::Fd, sys::*},
     tun::*,
 };
+
 use std::{
     fmt,
     fs::File,
-    io::{self, Read, Write},
+    io::{self, Read},
     mem,
     os::unix::io::FromRawFd,
 };
 
-pub const UTUN_CONTROL_NAME: &[u8] = b"com.apple.net.utun_control";
+const UTUN_CONTROL_NAME: &[u8] = b"com.apple.net.utun_control";
 
-use libc::{socklen_t, IFNAMSIZ};
+use libc::{IFNAMSIZ, socklen_t};
 
 #[derive(Debug)]
 pub enum MacosTunError {
@@ -93,9 +94,10 @@ impl fmt::Display for StatusError {
 
 impl std::error::Error for StatusError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        use StatusError::*;
         match self {
-            GetInterfaceIndex(err) | Open(err) | Read(err) => Some(err),
+            StatusError::GetInterfaceIndex(err)
+            | StatusError::Open(err)
+            | StatusError::Read(err) => Some(err),
         }
     }
 }
@@ -201,7 +203,9 @@ impl Reader for MacosTunReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, Self::Error> {
-        let bytes_read = self.tun.read(&mut buf[offset.saturating_sub(AF_HEADER_SIZE)..])?;
+        let bytes_read = self
+            .tun
+            .read(&mut buf[offset.saturating_sub(AF_HEADER_SIZE)..])?;
         if bytes_read < AF_HEADER_SIZE {
             return Ok(0);
         }
@@ -219,12 +223,16 @@ impl PlatformTun for MacosTun {
     type Status = MacosTunStatus;
 
     fn create(name: &str) -> Result<(Vec<Self::Reader>, Self::Writer, Self::Status), Self::Error> {
-        if name.as_bytes().len() > IFNAMSIZ {
+        if name.as_bytes().len() >= IFNAMSIZ {
             return Err(MacosTunError::InvalidName);
         }
         let name_index: u32 = name
             .strip_prefix("utun")
             .and_then(|index| index.parse().ok())
+            .ok_or(MacosTunError::InvalidName)?;
+
+        let sc_unit = name_index
+            .checked_add(1)
             .ok_or(MacosTunError::InvalidName)?;
 
         let tun_fd =
@@ -236,11 +244,9 @@ impl PlatformTun for MacosTun {
 
         let mut info = ctl_info {
             ctl_id: 0,
-            ctl_name: [0; 96],
+            ctl_name: [0; MAX_KCTL_NAME],
         };
-        (&mut info.ctl_name[..])
-            .write(UTUN_CONTROL_NAME)
-            .expect("failed to control name into ctl_info buffer");
+        info.ctl_name[..UTUN_CONTROL_NAME.len()].copy_from_slice(UTUN_CONTROL_NAME);
 
         if unsafe { ctliocginfo(tun.raw_fd(), &mut info as *mut _ as *mut _) } < 0 {
             return Err(MacosTunError::last_os_error(
@@ -253,7 +259,7 @@ impl PlatformTun for MacosTun {
             sc_len: mem::size_of::<libc::sockaddr_ctl>() as _,
             sc_family: libc::AF_SYSTEM as u8,
             ss_sysaddr: libc::AF_SYS_CONTROL as u16,
-            sc_unit: name_index + 1,
+            sc_unit,
             sc_reserved: [0; 5],
         };
 

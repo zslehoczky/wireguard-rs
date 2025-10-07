@@ -1,8 +1,12 @@
 #![allow(non_camel_case_types)]
+
+// From sys/kern_control.h
+pub const MAX_KCTL_NAME: usize = 96;
+
 #[repr(C)]
 pub struct ctl_info {
     pub ctl_id: u32,
-    pub ctl_name: [u8; 96],
+    pub ctl_name: [u8; MAX_KCTL_NAME],
 }
 ioctl_sys::ioctl!(readwrite ctliocginfo with 'N', 3; ctl_info);
 
