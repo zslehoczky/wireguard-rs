@@ -165,6 +165,10 @@ impl Status for MacosTunStatus {
         }
     }
 }
+
+// macOS utun devices prepend a 4-byte address family header to all packets
+const AF_HEADER_SIZE: usize = std::mem::size_of::<u32>();
+
 pub struct MacosTunWriter {
     tun: Fd,
 }
@@ -172,7 +176,8 @@ pub struct MacosTunWriter {
 impl Writer for MacosTunWriter {
     type Error = io::Error;
     fn write(&self, src: &[u8]) -> Result<(), Self::Error> {
-        let mut buf = vec![0u8; src.len() + 4];
+        // TODO: Avoid additional allocation per packet
+        let mut buf = vec![0u8; src.len() + AF_HEADER_SIZE];
         buf[0] = 0x00;
         buf[1] = 0x00;
         buf[2] = 0x00;
@@ -182,7 +187,7 @@ impl Writer for MacosTunWriter {
         } else {
             buf[3] = libc::AF_INET as u8;
         }
-        buf[4..].copy_from_slice(src);
+        buf[AF_HEADER_SIZE..].copy_from_slice(src);
 
         let _ = self.tun.write(&buf)?;
         Ok(())
@@ -196,11 +201,11 @@ impl Reader for MacosTunReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, Self::Error> {
-        let bytes_read = self.tun.read(&mut buf[(offset.saturating_sub(4))..])?;
-        if bytes_read < 4 {
+        let bytes_read = self.tun.read(&mut buf[offset.saturating_sub(AF_HEADER_SIZE)..])?;
+        if bytes_read < AF_HEADER_SIZE {
             return Ok(0);
         }
-        Ok(bytes_read - 4)
+        Ok(bytes_read - AF_HEADER_SIZE)
     }
 }
 
