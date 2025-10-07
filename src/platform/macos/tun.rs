@@ -1,8 +1,7 @@
-use crate::{
-    plt::{fd::Fd, sys::*},
-    tun::*,
-};
+use crate::{plt::fd::Fd, tun::*};
 
+use libc::{IFNAMSIZ, socklen_t};
+use nix::ioctl_readwrite;
 use std::{
     fmt,
     fs::File,
@@ -11,9 +10,16 @@ use std::{
     os::unix::io::FromRawFd,
 };
 
-const UTUN_CONTROL_NAME: &[u8] = b"com.apple.net.utun_control";
+// CTLIOCGINFO ioctl: get id from a control name
+// From sys/kern_control.h: _IOWR('N', 3, struct ctl_info)
+ioctl_readwrite!(ctliocginfo, b'N', 3, libc::ctl_info);
 
-use libc::{IFNAMSIZ, socklen_t};
+const AF_HEADER_SIZE: usize = std::mem::size_of::<u32>();
+const UTUN_CONTROL_NAME: &str = "com.apple.net.utun_control";
+
+pub struct MacosTunWriter {
+    tun: Fd,
+}
 
 #[derive(Debug)]
 pub enum MacosTunError {
@@ -47,11 +53,13 @@ impl fmt::Display for MacosTunError {
 
 impl std::error::Error for MacosTunError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        use MacosTunError::*;
         match self {
-            Open(err) | CtliocginfoError(err) | Connect(err) | GetName(err) => Some(err),
-            TunStatusError(err) => Some(err),
-            InvalidName => None,
+            MacosTunError::Open(err)
+            | MacosTunError::CtliocginfoError(err)
+            | MacosTunError::Connect(err)
+            | MacosTunError::GetName(err) => Some(err),
+            MacosTunError::TunStatusError(err) => Some(err),
+            MacosTunError::InvalidName => None,
         }
     }
 }
@@ -132,47 +140,30 @@ impl Status for MacosTunStatus {
     type Error = StatusError;
 
     fn event(&mut self) -> Result<TunEvent, Self::Error> {
-        let mut buffer = vec![0u8; page_size::get()];
+        let mut buffer = vec![0u8; 2048];
         loop {
-            let route_read = self.route_socket.read(buffer.as_mut_slice());
-            let bytes_read = match route_read {
+            // read from route socket
+            let bytes_read = match self.route_socket.read(buffer.as_mut_slice()) {
                 Ok(bytes_read) => bytes_read,
-                Err(err) => {
-                    if err.kind() == io::ErrorKind::Interrupted {
-                        continue;
-                    }
-                    return Err(StatusError::Read(err));
-                }
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => break Err(StatusError::Read(err)),
             };
 
-            if bytes_read < mem::size_of::<rt_msghdr>()
-                || bytes_read < mem::size_of::<libc::if_msghdr>()
-            {
+            // cast into libc::if_msghdr
+            if bytes_read < mem::size_of::<libc::if_msghdr>() {
                 continue;
             }
-            let msg_header: &rt_msghdr = unsafe { &*(buffer.as_ptr() as *const rt_msghdr) };
-            if msg_header.rtm_type != libc::RTM_IFINFO as u8 {
-                continue;
-            }
-
             let if_msg: &libc::if_msghdr = unsafe { &*(buffer.as_ptr() as *const libc::if_msghdr) };
-            if if_msg.ifm_index as u32 != self.interface_index {
-                continue;
+
+            // ignore events not related to the interface
+            match if_msg {
+                msg if msg.ifm_type != libc::RTM_IFINFO as u8 => continue,
+                msg if msg.ifm_index as u32 != self.interface_index => continue,
+                msg if msg.ifm_flags & libc::IFF_UP == 0 => break Ok(TunEvent::Down),
+                msg => break Ok(TunEvent::Up(msg.ifm_data.ifi_mtu as usize)),
             }
-            if if_msg.ifm_flags & libc::IFF_UP == 0 {
-                return Ok(TunEvent::Down);
-            }
-            let mtu = if_msg.ifm_data.ifi_mtu;
-            return Ok(TunEvent::Up(mtu as usize));
         }
     }
-}
-
-// macOS utun devices prepend a 4-byte address family header to all packets
-const AF_HEADER_SIZE: usize = std::mem::size_of::<u32>();
-
-pub struct MacosTunWriter {
-    tun: Fd,
 }
 
 impl Writer for MacosTunWriter {
@@ -242,17 +233,26 @@ impl PlatformTun for MacosTun {
         }
         let tun = Fd::new(tun_fd);
 
-        let mut info = ctl_info {
+        let mut info = libc::ctl_info {
             ctl_id: 0,
-            ctl_name: [0; MAX_KCTL_NAME],
+            ctl_name: [0; libc::MAX_KCTL_NAME],
         };
-        info.ctl_name[..UTUN_CONTROL_NAME.len()].copy_from_slice(UTUN_CONTROL_NAME);
 
-        if unsafe { ctliocginfo(tun.raw_fd(), &mut info as *mut _ as *mut _) } < 0 {
-            return Err(MacosTunError::last_os_error(
-                MacosTunError::CtliocginfoError,
-            ));
+        // copy the control name as c_char (i8 on macOS)
+        assert!(
+            UTUN_CONTROL_NAME.is_ascii(), //
+            "control name must be ASCII"
+        );
+        assert!(
+            UTUN_CONTROL_NAME.len() <= libc::MAX_KCTL_NAME,
+            "control name too long"
+        );
+        for (i, &byte) in UTUN_CONTROL_NAME.as_bytes().iter().enumerate() {
+            info.ctl_name[i] = byte as libc::c_char;
         }
+
+        unsafe { ctliocginfo(tun.raw_fd(), &mut info as *mut _ as *mut _) }
+            .map_err(|e| MacosTunError::CtliocginfoError(io::Error::from_raw_os_error(e as i32)))?;
 
         let addr = libc::sockaddr_ctl {
             sc_id: info.ctl_id,

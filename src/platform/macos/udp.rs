@@ -2,17 +2,16 @@ use super::super::udp::*;
 use super::super::Endpoint;
 
 use std::fmt;
+use std::io::{IoSlice, IoSliceMut};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::os::unix::io::RawFd;
+use std::os::fd::{IntoRawFd, RawFd};
 
-use nix::sys::{
-    socket::{
-        bind, getsockname, recvmsg, sendmsg, setsockopt, socket,
-        sockopt::{Ipv4RecvDstAddr, Ipv4RecvIf, Ipv6RecvPacketInfo, ReuseAddr, ReusePort},
-        AddressFamily, ControlMessage, ControlMessageOwned, InetAddr, IpAddr, MsgFlags, SockAddr,
-        SockFlag, SockProtocol, SockType,
-    },
-    uio::IoVec,
+use nix::cmsg_space;
+use nix::sys::socket::{
+    self, bind, getsockname, recvmsg, sendmsg, setsockopt, socket,
+    sockopt::{Ipv4RecvDstAddr, Ipv4RecvIf, Ipv6RecvPacketInfo, ReuseAddr, ReusePort},
+    AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockProtocol,
+    SockType, SockaddrIn, SockaddrIn6,
 };
 use std::sync::Arc;
 
@@ -32,7 +31,7 @@ pub enum UdpError {
     RecvMsg(nix::Error),
     UnexpectedControlMessage(ControlMessageOwned),
     NoControlMessage,
-    InvalidAddress(Option<SockAddr>),
+    InvalidAddress(String),
     UnsupportedProtocol(&'static str),
     InsufficientSourceInfo(Option<libc::in_addr>, Option<u32>),
 }
@@ -59,11 +58,8 @@ impl std::fmt::Display for UdpError {
             RecvMsg(err) => {
                 write!(f, "failed to receive message: {}", err)
             }
-            InvalidAddress(Some(invalid_addr)) => {
-                write!(f, "expected socket address, got {}", invalid_addr)
-            }
-            InvalidAddress(None) => {
-                write!(f, "expected socket address")
+            InvalidAddress(invalid_addr) => {
+                write!(f, "invalid socket address: {}", invalid_addr)
             }
             UnexpectedControlMessage(unexpected_message) => {
                 write!(
@@ -117,10 +113,10 @@ impl UdpSocket {
         } else {
             AddressFamily::Inet6
         };
-        let inet_addr = InetAddr::new(IpAddr::from_std(&ip_addr), port);
-        let socket_addr = SockAddr::new_inet(inet_addr);
 
-        let socket: RawFd = socket(
+        let socket_addr: socket::SockaddrStorage = SocketAddr::new(ip_addr, port).into();
+
+        let socket_fd = socket(
             addr_family,
             SockType::Datagram,
             SockFlag::empty(),
@@ -129,19 +125,21 @@ impl UdpSocket {
         .map_err(UdpError::OpenSocket)?;
 
         if ip_addr.is_ipv4() {
-            setsockopt(socket, Ipv4RecvDstAddr, &true).map_err(UdpError::SetSocketOpt)?;
-            setsockopt(socket, Ipv4RecvIf, &true).map_err(UdpError::SetSocketOpt)?;
+            setsockopt(&socket_fd, Ipv4RecvDstAddr, &true).map_err(UdpError::SetSocketOpt)?;
+            setsockopt(&socket_fd, Ipv4RecvIf, &true).map_err(UdpError::SetSocketOpt)?;
         } else {
-            setsockopt(socket, Ipv6RecvPacketInfo, &true).map_err(UdpError::SetSocketOpt)?;
+            setsockopt(&socket_fd, Ipv6RecvPacketInfo, &true).map_err(UdpError::SetSocketOpt)?;
         }
 
-        setsockopt(socket, ReuseAddr, &true).map_err(UdpError::SetSocketOpt)?;
-        setsockopt(socket, ReusePort, &true).map_err(UdpError::SetSocketOpt)?;
+        setsockopt(&socket_fd, ReuseAddr, &true).map_err(UdpError::SetSocketOpt)?;
+        setsockopt(&socket_fd, ReusePort, &true).map_err(UdpError::SetSocketOpt)?;
+
+        let socket: RawFd = socket_fd.into_raw_fd();
 
         bind(socket, &socket_addr).map_err(UdpError::BindSocket)?;
         let bound_port = if port == 0 {
             let sockaddr = getsockname(socket).map_err(UdpError::GetSockName)?;
-            Self::validate_sockaddr(Some(sockaddr))?.port()
+            Self::validate_sockaddr(sockaddr)?.port()
         } else {
             port
         };
@@ -155,33 +153,34 @@ impl UdpSocket {
         ))
     }
 
-    fn validate_sockaddr(addr: Option<SockAddr>) -> Result<InetAddr> {
-        match addr {
-            Some(SockAddr::Inet(inet)) => Ok(inet),
-            anything_else => Err(UdpError::InvalidAddress(anything_else)),
-        }
+    fn validate_sockaddr(addr: socket::SockaddrStorage) -> Result<SocketAddr> {
+        addr.as_sockaddr_in()
+            .map(|sin| SocketAddr::V4((*sin).into()))
+            .or_else(|| addr.as_sockaddr_in6().map(|sin6| SocketAddr::V6((*sin6).into())))
+            .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", addr)))
     }
 
     fn send_to(&self, buf: &[u8], endpoint: &MacosEndpoint) -> Result<usize> {
-        let iov = [IoVec::from_slice(buf)];
+        let iov = [IoSlice::new(buf)];
         let packet_info = PacketInfo::new(endpoint);
         let control_messages = [packet_info.control_message()];
+        let dest_addr: socket::SockaddrStorage = endpoint.destination_sockaddr();
         sendmsg(
             self.socket,
             &iov,
             &control_messages,
             MsgFlags::empty(),
-            Some(&SockAddr::new_inet(endpoint.destination())),
+            Some(&dest_addr),
         )
         .map_err(UdpError::SendMsg)
     }
 
     fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, MacosEndpoint)> {
-        let iov = [IoVec::from_mut_slice(buf)];
+        let mut iov = [IoSliceMut::new(buf)];
         let mut control_messages_buffer = self.control_message_buffer();
-        let msg = recvmsg(
+        let msg = recvmsg::<socket::SockaddrStorage>(
             self.socket,
-            &iov,
+            &mut iov,
             Some(&mut control_messages_buffer),
             MsgFlags::empty(),
         )
@@ -190,13 +189,12 @@ impl UdpSocket {
         let endpoint = if self.is_ipv4 {
             let mut destination_addr = None;
             let mut if_index = None;
-            let src_addr_info = match msg.address {
-                Some(SockAddr::Inet(InetAddr::V4(sockaddr_in))) => sockaddr_in,
-                anything_else => {
-                    return Err(UdpError::InvalidAddress(anything_else));
-                }
-            };
-            let control_messages = msg.cmsgs();
+
+            let src_addr_info = msg.address
+                .and_then(|addr| addr.as_sockaddr_in().copied())
+                .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", msg.address)))?;
+
+            let control_messages = msg.cmsgs().map_err(UdpError::RecvMsg)?;
             for message in control_messages {
                 match message {
                     ControlMessageOwned::Ipv4RecvIf(if_sockaddr) => {
@@ -213,7 +211,7 @@ impl UdpSocket {
             }
             match (destination_addr, if_index) {
                 (Some(incoming_destination), Some(src_if_index)) => MacosEndpoint::V4 {
-                    destination: src_addr_info,
+                    destination: (*src_addr_info.as_ref()).clone(),
                     src_if_index: src_if_index,
                     src_addr: incoming_destination,
                 },
@@ -222,14 +220,12 @@ impl UdpSocket {
                 }
             }
         } else {
-            let src_addr_info = match msg.address {
-                Some(SockAddr::Inet(InetAddr::V6(inet_addr))) => inet_addr,
-                anything_else => {
-                    return Err(UdpError::InvalidAddress(anything_else));
-                }
-            };
+            let src_addr_info = msg.address
+                .and_then(|addr| addr.as_sockaddr_in6().copied())
+                .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", msg.address)))?;
 
-            let src_if_index = match msg.cmsgs().next() {
+            let mut cmsgs = msg.cmsgs().map_err(UdpError::RecvMsg)?;
+            let src_if_index = match cmsgs.next() {
                 Some(ControlMessageOwned::Ipv6PacketInfo(packet_info)) => packet_info.ipi6_ifindex,
                 Some(any_other_cmsg) => {
                     return Err(UdpError::UnexpectedControlMessage(any_other_cmsg));
@@ -239,7 +235,7 @@ impl UdpSocket {
                 }
             };
             MacosEndpoint::V6 {
-                destination: src_addr_info,
+                destination: (*src_addr_info.as_ref()).clone(),
                 src_if_index,
             }
         };
@@ -248,9 +244,9 @@ impl UdpSocket {
 
     fn control_message_buffer(&self) -> Vec<u8> {
         if self.is_ipv4 {
-            nix::cmsg_space![libc::in_addr, libc::sockaddr_dl]
+            cmsg_space!(libc::in_addr, libc::sockaddr_dl)
         } else {
-            nix::cmsg_space![libc::in6_pktinfo]
+            cmsg_space!(libc::in6_pktinfo)
         }
     }
 }
@@ -351,12 +347,26 @@ pub enum MacosEndpoint {
 }
 
 impl MacosEndpoint {
-    fn destination(&self) -> InetAddr {
+    fn destination_sockaddr(&self) -> socket::SockaddrStorage {
         match self {
-            Self::V4 { destination, .. } => InetAddr::V4(*destination),
-            Self::V6 { destination, .. } => InetAddr::V6(*destination),
+            Self::V4 { destination, .. } => {
+                let sin = SockaddrIn::from(*destination);
+                SocketAddr::V4(sin.into()).into()
+            }
+            Self::V6 { destination, .. } => {
+                let sin6 = SockaddrIn6::from(*destination);
+                SocketAddr::V6(sin6.into()).into()
+            }
         }
     }
+
+    fn destination(&self) -> SocketAddr {
+        match self {
+            Self::V4 { destination, .. } => SocketAddr::V4(SockaddrIn::from(*destination).into()),
+            Self::V6 { destination, .. } => SocketAddr::V6(SockaddrIn6::from(*destination).into()),
+        }
+    }
+
     fn is_ipv4(&self) -> bool {
         match self {
             Self::V4 { .. } => true,
@@ -367,15 +377,14 @@ impl MacosEndpoint {
 
 impl Endpoint for MacosEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
-        let sock_addr = InetAddr::from_std(&addr);
-        match sock_addr {
-            InetAddr::V4(destination) => Self::V4 {
-                destination,
+        match addr {
+            SocketAddr::V4(addr_v4) => Self::V4 {
+                destination: SockaddrIn::from(addr_v4).as_ref().clone(),
                 src_if_index: 0,
                 src_addr: libc::in_addr { s_addr: 0u32 },
             },
-            InetAddr::V6(destination) => Self::V6 {
-                destination,
+            SocketAddr::V6(addr_v6) => Self::V6 {
+                destination: SockaddrIn6::from(addr_v6).as_ref().clone(),
                 src_if_index: 0,
             },
         }
@@ -401,7 +410,7 @@ impl Endpoint for MacosEndpoint {
     }
 
     fn into_address(&self) -> SocketAddr {
-        self.destination().to_std()
+        self.destination()
     }
 }
 

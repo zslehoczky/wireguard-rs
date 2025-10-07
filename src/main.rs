@@ -2,11 +2,6 @@
 
 extern crate alloc;
 
-#[cfg(target_os = "macos")]
-extern crate ioctl_sys;
-#[cfg(target_os = "macos")]
-extern crate page_size;
-
 #[cfg(feature = "profiler")]
 extern crate cpuprofiler;
 
