@@ -23,7 +23,7 @@ impl Fd {
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
         let bytes_read = unsafe { libc::write(self.fd.as_raw_fd(), buf.as_ptr() as _, buf.len()) };
         if bytes_read < 0 {
-            return Err(io::Error::from_raw_os_error(-bytes_read as i32));
+            return Err(io::Error::last_os_error());
         }
         Ok(bytes_read as usize)
     }
