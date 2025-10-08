@@ -2,11 +2,7 @@ use crate::{platform::plt::fd::Fd, platform::tun::*};
 
 use libc::{IFNAMSIZ, socklen_t};
 use nix::ioctl_readwrite;
-use std::{
-    fmt,
-    io,
-    mem,
-};
+use std::{fmt, io, mem};
 
 // CTLIOCGINFO ioctl: get id from a control name
 // From sys/kern_control.h: _IOWR('N', 3, struct ctl_info)

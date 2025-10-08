@@ -1,5 +1,5 @@
-use super::super::udp::*;
 use super::super::Endpoint;
+use super::super::udp::*;
 
 use std::fmt;
 use std::io::{IoSlice, IoSliceMut};
@@ -8,10 +8,9 @@ use std::os::fd::{IntoRawFd, RawFd};
 
 use nix::cmsg_space;
 use nix::sys::socket::{
-    self, bind, getsockname, recvmsg, sendmsg, setsockopt, socket,
+    self, AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockProtocol,
+    SockType, SockaddrIn, SockaddrIn6, bind, getsockname, recvmsg, sendmsg, setsockopt, socket,
     sockopt::{Ipv4RecvDstAddr, Ipv4RecvIf, Ipv6RecvPacketInfo, ReuseAddr, ReusePort},
-    AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockProtocol,
-    SockType, SockaddrIn, SockaddrIn6,
 };
 use std::sync::Arc;
 
@@ -156,7 +155,10 @@ impl UdpSocket {
     fn validate_sockaddr(addr: socket::SockaddrStorage) -> Result<SocketAddr> {
         addr.as_sockaddr_in()
             .map(|sin| SocketAddr::V4((*sin).into()))
-            .or_else(|| addr.as_sockaddr_in6().map(|sin6| SocketAddr::V6((*sin6).into())))
+            .or_else(|| {
+                addr.as_sockaddr_in6()
+                    .map(|sin6| SocketAddr::V6((*sin6).into()))
+            })
             .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", addr)))
     }
 
@@ -190,7 +192,8 @@ impl UdpSocket {
             let mut destination_addr = None;
             let mut if_index = None;
 
-            let src_addr_info = msg.address
+            let src_addr_info = msg
+                .address
                 .and_then(|addr| addr.as_sockaddr_in().copied())
                 .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", msg.address)))?;
 
@@ -220,7 +223,8 @@ impl UdpSocket {
                 }
             }
         } else {
-            let src_addr_info = msg.address
+            let src_addr_info = msg
+                .address
                 .and_then(|addr| addr.as_sockaddr_in6().copied())
                 .ok_or_else(|| UdpError::InvalidAddress(format!("{:?}", msg.address)))?;
 
@@ -400,10 +404,7 @@ impl Endpoint for MacosEndpoint {
                 *src_if_index = 0;
                 *src_addr = libc::in_addr { s_addr: 0u32 };
             }
-            Self::V6 {
-                src_if_index,
-                ..
-            } => {
+            Self::V6 { src_if_index, .. } => {
                 *src_if_index = 0;
             }
         }
