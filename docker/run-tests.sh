@@ -65,8 +65,7 @@ EOF
 # cleanup any existing wireguard-rs
 echo "[+] Cleaning up any existing wireguard-rs instances"
 sudo pkill -9 wireguard-rs 2>/dev/null || true
-sudo rm -f /var/run/wireguard/*.sock 2>/dev/null || true
-sudo mkdir -p /var/run/wireguard
+sudo rm -rf /var/run/wireguard 2>/dev/null || true
 sleep 1
 
 echo "[+] Starting Dockerized WireGuard server"
