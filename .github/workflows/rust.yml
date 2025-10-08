@@ -10,8 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-  
+  ci:
+
     strategy:
       matrix:
         os:
@@ -28,9 +28,15 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          ~/.cargo/bin
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: RUST_BACKTRACE=1 cargo test --verbose
+    - name: Install cargo-hack
+      run: cargo install cargo-hack --locked
+    - name: Install just
+      uses: extractions/setup-just@v2
+    - name: Install WireGuard tools (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y wireguard-tools
+    - name: Run Continuous Integration Checks
+      run: just ci
