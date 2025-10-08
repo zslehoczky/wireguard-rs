@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-latest
+          - macos-13
           - ubuntu-latest
 
     runs-on: ${{ matrix.os }}
@@ -39,5 +39,11 @@ jobs:
     - name: Install WireGuard tools (Linux)
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y wireguard-tools
+    - name: Setup Docker (macOS)
+      if: runner.os == 'macOS'
+      uses: douglascamata/setup-docker-macos-action@v1-alpha
+    - name: Install WireGuard tools (macOS)
+      if: runner.os == 'macOS'
+      run: brew install wireguard-tools
     - name: Run Continuous Integration Checks
       run: just ci
