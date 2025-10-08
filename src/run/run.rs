@@ -50,7 +50,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     profiler_start(name.as_str());
 
     let wireguard_handle: WireGuardHandle<plt::Tun, plt::UDP> =
-        WireGuardHandle::new(tun_readers, tun_writer);
+        WireGuardHandle::spawn(tun_readers, tun_writer);
 
     let wireguard_config = WireGuardConfig::new(wireguard_handle.get_device().clone());
 
@@ -59,7 +59,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     spawn_uapi_server(wireguard_config, uapi_socket);
 
     // block until all tun readers closed
-    wireguard_handle.wait();
+    wireguard_handle.join();
 
     profiler_stop();
 

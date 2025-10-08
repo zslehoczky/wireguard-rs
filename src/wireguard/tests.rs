@@ -76,13 +76,13 @@ fn test_pure_wireguard() {
 
     let (fake1, tun_reader1, tun_writer1, _) = dummy::TunTest::create(true);
     let wg1_handle: WireGuardHandle<dummy::TunTest, dummy::PairBind> =
-        WireGuardHandle::new(vec![tun_reader1], tun_writer1);
+        WireGuardHandle::spawn(vec![tun_reader1], tun_writer1);
     let wg1 = wg1_handle.get_device();
     wg1.up(1500);
 
     let (fake2, tun_reader2, tun_writer2, _) = dummy::TunTest::create(true);
     let wg2_handle: WireGuardHandle<dummy::TunTest, dummy::PairBind> =
-        WireGuardHandle::new(vec![tun_reader2], tun_writer2);
+        WireGuardHandle::spawn(vec![tun_reader2], tun_writer2);
     let wg2 = wg2_handle.get_device();
     wg2.up(1500);
 

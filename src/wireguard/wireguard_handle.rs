@@ -11,9 +11,19 @@ pub struct WireGuardHandle<T: Tun, B: UDP> {
 }
 
 impl<T: Tun, B: UDP> WireGuardHandle<T, B> {
-    pub fn new(readers: Vec<T::Reader>, writer: T::Writer) -> WireGuardHandle<T, B> {
+    pub fn spawn(readers: Vec<T::Reader>, writer: T::Writer) -> WireGuardHandle<T, B> {
         let wireguard_device = WireGuard::new(writer);
-        let tun_readers = Self::start_tun_reader_jobs(&wireguard_device, readers);
+
+        let tun_readers = readers
+            .into_iter()
+            .map(|reader| {
+                let wireguard_device = wireguard_device.clone();
+
+                thread::spawn(move || {
+                    tun_worker(&wireguard_device, reader);
+                })
+            })
+            .collect();
 
         WireGuardHandle {
             wireguard_device,
@@ -25,26 +35,7 @@ impl<T: Tun, B: UDP> WireGuardHandle<T, B> {
         &self.wireguard_device
     }
 
-    fn start_tun_reader_jobs(
-        wireguard_device: &WireGuard<T, B>,
-        readers: Vec<T::Reader>,
-    ) -> Vec<JoinHandle<()>> {
-        let mut result = Vec::with_capacity(readers.len());
-
-        for reader in readers {
-            result.push({
-                let wireguard_device = wireguard_device.clone();
-
-                thread::spawn(move || {
-                    tun_worker(&wireguard_device, reader);
-                })
-            });
-        }
-
-        result
-    }
-
-    pub fn wait(self) {
+    pub fn join(self) {
         for tun_reader in self.tun_readers {
             let _ = tun_reader.join();
         }
