@@ -1,4 +1,4 @@
-use crate::{plt::fd::Fd, tun::*};
+use crate::{platform::plt::fd::Fd, platform::tun::*};
 
 use libc::{IFNAMSIZ, socklen_t};
 use nix::ioctl_readwrite;
