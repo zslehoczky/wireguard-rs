@@ -4,10 +4,8 @@ use libc::{IFNAMSIZ, socklen_t};
 use nix::ioctl_readwrite;
 use std::{
     fmt,
-    fs::File,
-    io::{self, Read},
+    io,
     mem,
-    os::unix::io::FromRawFd,
 };
 
 // CTLIOCGINFO ioctl: get id from a control name
@@ -114,7 +112,7 @@ pub struct MacosTun {}
 
 pub struct MacosTunStatus {
     interface_index: u32,
-    route_socket: File,
+    route_socket: Fd,
 }
 
 impl MacosTunStatus {
@@ -128,7 +126,7 @@ impl MacosTunStatus {
         if route_socket_fd < 0 {
             return Err(StatusError::last_os_error(StatusError::Open));
         }
-        let route_socket = unsafe { File::from_raw_fd(route_socket_fd) };
+        let route_socket = Fd::new(route_socket_fd);
 
         Ok(Self {
             interface_index,
@@ -143,7 +141,7 @@ impl Status for MacosTunStatus {
         let mut buffer = vec![0u8; 2048];
         loop {
             // read from route socket
-            let bytes_read = match self.route_socket.read(buffer.as_mut_slice()) {
+            let bytes_read = match self.route_socket.read(&mut buffer) {
                 Ok(bytes_read) => bytes_read,
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Err(err) => break Err(StatusError::Read(err)),

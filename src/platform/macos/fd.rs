@@ -29,11 +29,11 @@ impl Fd {
     }
 
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let bytes_written =
+        let bytes_read =
             unsafe { libc::read(self.fd.as_raw_fd(), buf.as_mut_ptr() as _, buf.len()) };
-        if bytes_written < 0 {
+        if bytes_read < 0 {
             return Err(io::Error::last_os_error());
         }
-        Ok(bytes_written as usize)
+        Ok(bytes_read as usize)
     }
 }
