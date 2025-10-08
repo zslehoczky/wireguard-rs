@@ -14,7 +14,7 @@ impl PlatformUAPI for UnixUAPI {
 
     fn bind(name: &str) -> Result<UnixListener, io::Error> {
         let socket_path = format!("{}{}.sock", SOCK_DIR, name);
-        let _ = fs::create_dir_all(SOCK_DIR);
+        fs::create_dir_all(SOCK_DIR)?;
         let _ = fs::remove_file(&socket_path);
         UnixListener::bind(socket_path)
     }
