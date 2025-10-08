@@ -147,7 +147,7 @@ if ! ping -c 10 -W 2 10.100.0.1; then
 fi
 
 echo "[+] Testing IPv6 ping to server (fd00::1)..."
-if ! ping -6 -c 10 -i 1 fd00::1%"$INTERFACE"; then
+if ! ping6 -c 10 -i 1 fd00::1; then
     echo "[-] IPv6 ping failed"
     exit -1
 fi
