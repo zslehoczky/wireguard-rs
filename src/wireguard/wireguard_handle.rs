@@ -1,9 +1,6 @@
-use crate::platform::tun::Tun;
-use crate::platform::udp::UDP;
+use crate::platform::{tun::Tun, udp::UDP};
 
-use super::wireguard::WireGuard;
-
-use super::workers::tun_worker;
+use super::{wireguard::WireGuard, workers::tun_worker};
 
 use std::thread::{self, JoinHandle};
 
