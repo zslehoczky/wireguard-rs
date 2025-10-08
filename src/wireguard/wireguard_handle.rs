@@ -1,0 +1,43 @@
+use crate::platform::{tun::Tun, udp::UDP};
+
+use super::{wireguard::WireGuard, workers::tun_worker};
+
+use std::thread::{self, JoinHandle};
+
+pub struct WireGuardHandle<T: Tun, B: UDP> {
+    wireguard_device: WireGuard<T, B>,
+
+    tun_readers: Vec<JoinHandle<()>>,
+}
+
+impl<T: Tun, B: UDP> WireGuardHandle<T, B> {
+    pub fn spawn(readers: Vec<T::Reader>, writer: T::Writer) -> WireGuardHandle<T, B> {
+        let wireguard_device = WireGuard::new(writer);
+
+        let tun_readers = readers
+            .into_iter()
+            .map(|reader| {
+                let wireguard_device = wireguard_device.clone();
+
+                thread::spawn(move || {
+                    tun_worker(&wireguard_device, reader);
+                })
+            })
+            .collect();
+
+        WireGuardHandle {
+            wireguard_device,
+            tun_readers,
+        }
+    }
+
+    pub fn get_device(&self) -> &WireGuard<T, B> {
+        &self.wireguard_device
+    }
+
+    pub fn join(self) {
+        for tun_reader in self.tun_readers {
+            let _ = tun_reader.join();
+        }
+    }
+}
