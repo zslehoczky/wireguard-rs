@@ -33,7 +33,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install cargo-hack
-      run: cargo install cargo-hack --locked
+      run: cargo install cargo-hack --locked || [ -f ~/.cargo/bin/cargo-hack ]
     - name: Install just
       uses: extractions/setup-just@v2
     - name: Install WireGuard tools (Linux)
