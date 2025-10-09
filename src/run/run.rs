@@ -89,12 +89,9 @@ fn run(config: Config) -> Result<(), ErrorReason> {
             }
         });
 
-        let _: Vec<_> = tun_reader_jobs
-            .into_iter()
-            .map(|handle| {
-                let _ = handle.join();
-            })
-            .collect();
+        for handle in tun_reader_jobs {
+            let _ = handle.join();
+        }
 
         tun_reader_jobs_running.store(false, Ordering::Release);
 
