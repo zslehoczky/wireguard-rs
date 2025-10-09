@@ -1,8 +1,8 @@
-use super::dummy;
-use super::wireguard_handle::WireGuardHandle;
+use super::{WireGuard, dummy, tun_worker};
 
 use std::convert::TryInto;
 use std::net::IpAddr;
+use std::thread::spawn;
 
 use hex;
 use rand_chacha::ChaCha8Rng;
@@ -75,15 +75,19 @@ fn test_pure_wireguard() {
     // create WG instances for dummy TUN devices
 
     let (fake1, tun_reader1, tun_writer1, _) = dummy::TunTest::create(true);
-    let wg1_handle: WireGuardHandle<dummy::TunTest, dummy::PairBind> =
-        WireGuardHandle::spawn(vec![tun_reader1], tun_writer1);
-    let wg1 = wg1_handle.get_device();
+    let wg1: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer1);
+    let wireguard_device = wg1.clone();
+    spawn(move || {
+        tun_worker(&wireguard_device, tun_reader1);
+    });
     wg1.up(1500);
 
     let (fake2, tun_reader2, tun_writer2, _) = dummy::TunTest::create(true);
-    let wg2_handle: WireGuardHandle<dummy::TunTest, dummy::PairBind> =
-        WireGuardHandle::spawn(vec![tun_reader2], tun_writer2);
-    let wg2 = wg2_handle.get_device();
+    let wg2: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer2);
+    let wireguard_device = wg2.clone();
+    spawn(move || {
+        tun_worker(&wireguard_device, tun_reader2);
+    });
     wg2.up(1500);
 
     // create pair bind to connect the interfaces "over the internet"

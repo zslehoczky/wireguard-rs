@@ -13,7 +13,6 @@ mod queue;
 mod router;
 mod timers;
 mod types;
-mod wireguard_handle;
 mod workers;
 
 #[cfg(test)]
@@ -24,7 +23,7 @@ mod wireguard;
 
 // represents a WireGuard interface
 pub use wireguard::WireGuard;
-pub use wireguard_handle::WireGuardHandle;
+pub use workers::tun_worker;
 
 #[cfg(test)]
 use super::platform::dummy;

@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-use std::thread::JoinHandle;
+use std::thread::{JoinHandle, ScopedJoinHandle, scope};
 use std::{env, process::exit, thread};
 
 use anyhow::anyhow;
@@ -12,7 +12,7 @@ use crate::platform::{
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
-use crate::wireguard::WireGuardHandle;
+use crate::wireguard::{WireGuard, tun_worker};
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -49,17 +49,25 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let wireguard_handle: WireGuardHandle<plt::Tun, plt::UDP> =
-        WireGuardHandle::spawn(tun_readers, tun_writer);
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer);
+    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
 
-    let wireguard_config = WireGuardConfig::new(wireguard_handle.get_device().clone());
+    scope(|s| {
+        let _tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
+            .into_iter()
+            .map(|reader| {
+                s.spawn(|| {
+                    tun_worker(&wireguard_device, reader);
+                })
+            })
+            .collect();
 
-    spawn_tun_event_loop(wireguard_config.clone(), tun_status);
+        spawn_tun_event_loop(wireguard_config.clone(), tun_status);
 
-    spawn_uapi_server(wireguard_config, uapi_socket);
+        spawn_uapi_server(wireguard_config, uapi_socket);
 
-    // block until all tun readers closed
-    wireguard_handle.join();
+        // block until all tun reader jobs join
+    });
 
     profiler_stop();
 
