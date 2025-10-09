@@ -1,117 +1,92 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-const PACKETS_PER_SECOND: u64 = 20;
-const PACKETS_BURSTABLE: u64 = 5;
-const PACKET_COST: u64 = 1_000_000_000 / PACKETS_PER_SECOND;
-const MAX_TOKENS: u64 = PACKET_COST * PACKETS_BURSTABLE;
+const N_PACKETS_BURSTABLE: usize = 5;
+const PACKETS_PER_SECOND: u32 = 20;
+const MIN_PACKET_DELAY_NS: u32 = 1_000_000_000 / PACKETS_PER_SECOND;
 
-const GC_INTERVAL: Duration = Duration::from_secs(1);
+struct RecordedTimes(VecDeque<Instant>);
 
-struct Entry {
-    pub last_time: Instant,
-    pub tokens: u64,
-}
-
-pub struct RateLimiter(Arc<RateLimiterInner>);
-
-struct RateLimiterInner {
-    gc_running: AtomicBool,
-    gc_dropped: (Mutex<bool>, Condvar),
-    table: spin::RwLock<HashMap<IpAddr, spin::Mutex<Entry>>>,
-}
-
-impl Drop for RateLimiter {
-    fn drop(&mut self) {
-        // wake up & terminate any lingering GC thread
-        let &(ref lock, ref cvar) = &self.0.gc_dropped;
-        let mut dropped = lock.lock().unwrap();
-        *dropped = true;
-        cvar.notify_all();
-    }
+pub struct RateLimiter {
+    table: spin::RwLock<HashMap<IpAddr, spin::Mutex<RecordedTimes>>>,
 }
 
 impl RateLimiter {
     pub fn new() -> Self {
-        #[allow(clippy::mutex_atomic)]
-        RateLimiter(Arc::new(RateLimiterInner {
-            gc_dropped: (Mutex::new(false), Condvar::new()),
-            gc_running: AtomicBool::from(false),
+        RateLimiter {
             table: spin::RwLock::new(HashMap::new()),
-        }))
+        }
     }
 
-    pub fn allow(&self, addr: &IpAddr) -> bool {
-        // check if allowed
-        let allowed = {
-            // check for existing entry (only requires read lock)
-            if let Some(entry) = self.0.table.read().get(addr) {
-                // update existing entry
-                let mut entry = entry.lock();
-
-                // add tokens earned since last time
-                entry.tokens = MAX_TOKENS
-                    .min(entry.tokens + u64::from(entry.last_time.elapsed().subsec_nanos()));
-                entry.last_time = Instant::now();
-
-                // subtract cost of packet
-                if entry.tokens > PACKET_COST {
-                    entry.tokens -= PACKET_COST;
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-
+    pub fn allow(&mut self, addr: &IpAddr) -> bool {
+        // check for existing entry (only requires read lock)
+        if !self.contains(addr) {
             // add new entry (write lock)
-            self.0.table.write().insert(
-                *addr,
-                spin::Mutex::new(Entry {
-                    last_time: Instant::now(),
-                    tokens: MAX_TOKENS - PACKET_COST,
-                }),
-            );
-            true
-        };
-
-        // check that GC thread is scheduled
-        if !self.0.gc_running.swap(true, Ordering::Relaxed) {
-            let limiter = self.0.clone();
-            thread::spawn(move || {
-                let &(ref lock, ref cvar) = &limiter.gc_dropped;
-                let mut dropped = lock.lock().unwrap();
-                while !*dropped {
-                    // garbage collect
-                    {
-                        let mut tw = limiter.table.write();
-                        tw.retain(|_, ref mut entry| {
-                            entry.lock().last_time.elapsed() <= GC_INTERVAL
-                        });
-                        if tw.len() == 0 {
-                            limiter.gc_running.store(false, Ordering::Relaxed);
-                            return;
-                        }
-                    }
-
-                    // wait until stopped or new GC (~1 every sec)
-                    let res = cvar.wait_timeout(dropped, GC_INTERVAL).unwrap();
-                    dropped = res.0;
-                }
-            });
+            self.insert(addr);
         }
 
-        allowed
+        let table = self.table.read();
+
+        let mut recorded_times = table
+            .get(addr)
+            .expect("Table should contain address")
+            .lock();
+
+        recorded_times.is_allowed()
+    }
+
+    fn contains(&self, addr: &IpAddr) -> bool {
+        self.table.read().contains_key(addr)
+    }
+
+    fn insert(&mut self, addr: &IpAddr) {
+        self.table
+            .write()
+            .insert(*addr, spin::Mutex::new(RecordedTimes::new()));
+    }
+}
+
+impl RecordedTimes {
+    fn new() -> Self {
+        Self(VecDeque::new())
+    }
+
+    pub fn is_allowed(&mut self) -> bool {
+        let mut result = false;
+
+        let now = Instant::now();
+
+        let queue = &mut self.0;
+
+        for i in 0..N_PACKETS_BURSTABLE {
+            let allowed_for_i = queue.get(i).map_or(true, |then| {
+                now.duration_since(*then).as_nanos()
+                    >= MIN_PACKET_DELAY_NS as u128 * (i + 1) as u128
+            });
+
+            if allowed_for_i {
+                result = true;
+
+                break;
+            }
+        }
+
+        // shrink size to 4 by removing from the back
+        while queue.len() > 4 {
+            queue.pop_back();
+        }
+
+        queue.push_front(now);
+
+        return result;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std;
+    use std::{thread::sleep, time::Duration};
 
     struct Result {
         allowed: bool,
@@ -121,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_ratelimiter() {
-        let ratelimiter = RateLimiter::new();
+        let mut ratelimiter = RateLimiter::new();
         let mut expected = vec![];
         let ips = vec![
             "127.0.0.1".parse().unwrap(),
@@ -140,7 +115,7 @@ mod tests {
             "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
         ];
 
-        for _ in 0..PACKETS_BURSTABLE {
+        for _ in 0..N_PACKETS_BURSTABLE {
             expected.push(Result {
                 allowed: true,
                 wait: Duration::new(0, 0),
@@ -156,7 +131,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, PACKET_COST as u32),
+            wait: Duration::new(0, MIN_PACKET_DELAY_NS),
             text: "filling tokens for single packet",
         });
 
@@ -168,7 +143,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, 2 * PACKET_COST as u32),
+            wait: Duration::new(0, 2 * MIN_PACKET_DELAY_NS),
             text: "filling tokens for 2 * packet burst",
         });
 
@@ -185,14 +160,17 @@ mod tests {
         });
 
         for item in expected {
-            std::thread::sleep(item.wait);
+            sleep(item.wait);
             for ip in ips.iter() {
-                if ratelimiter.allow(&ip) != item.allowed {
-                    panic!(
-                        "test failed for {} on {}. expected: {}, got: {}",
-                        ip, item.text, item.allowed, !item.allowed
-                    )
-                }
+                assert_eq!(
+                    ratelimiter.allow(&ip),
+                    item.allowed,
+                    "test failed for {} on {}. expected: {}, got: {}",
+                    ip,
+                    item.text,
+                    item.allowed,
+                    !item.allowed
+                )
             }
         }
     }
