@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map;
 use std::net::SocketAddr;
-use std::sync::Mutex;
 
 use byteorder::{ByteOrder, LittleEndian};
 use dashmap::DashMap;
@@ -39,7 +38,7 @@ pub struct Device<O> {
     keyst: Option<KeyState>,
     id_map: DashMap<u32, [u8; 32]>, // concurrent map
     pk_map: HashMap<[u8; 32], Peer<O>>,
-    limiter: Mutex<RateLimiter>,
+    limiter: RateLimiter,
 }
 
 pub struct Iter<'a, O> {
@@ -99,7 +98,7 @@ impl<O> Device<O> {
             keyst: None,
             id_map: DashMap::new(),
             pk_map: HashMap::new(),
-            limiter: Mutex::new(RateLimiter::new()),
+            limiter: RateLimiter::new(),
         }
     }
 
@@ -350,7 +349,7 @@ impl<O> Device<O> {
                     }
 
                     // check ratelimiter
-                    if !self.limiter.lock().unwrap().check(&src.ip()) {
+                    if !self.limiter.check(&src.ip()) {
                         return Err(HandshakeError::RateLimited);
                     }
                 }
@@ -405,7 +404,7 @@ impl<O> Device<O> {
                     }
 
                     // check ratelimiter
-                    if !self.limiter.lock().unwrap().check(&src.ip()) {
+                    if !self.limiter.check(&src.ip()) {
                         return Err(HandshakeError::RateLimited);
                     }
                 }
