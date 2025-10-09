@@ -1,9 +1,12 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::env;
+use std::process::exit;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
 use std::thread::{self, ScopedJoinHandle};
-use std::{env, process::exit};
 
 use anyhow::anyhow;
 
