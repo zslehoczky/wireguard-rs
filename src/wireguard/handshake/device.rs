@@ -354,7 +354,7 @@ impl<O> Device<O> {
                         .limiter
                         .lock()
                         .unwrap()
-                        .is_new_packet_allowed(&src.ip())
+                        .try_register_new_packet(&src.ip())
                     {
                         return Err(HandshakeError::RateLimited);
                     }
@@ -414,7 +414,7 @@ impl<O> Device<O> {
                         .limiter
                         .lock()
                         .unwrap()
-                        .is_new_packet_allowed(&src.ip())
+                        .try_register_new_packet(&src.ip())
                     {
                         return Err(HandshakeError::RateLimited);
                     }
