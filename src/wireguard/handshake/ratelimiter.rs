@@ -1,117 +1,91 @@
-use std::collections::HashMap;
+use std::cmp;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
+
 const PACKETS_PER_SECOND: u64 = 20;
-const PACKETS_BURSTABLE: u64 = 5;
-const PACKET_COST: u64 = 1_000_000_000 / PACKETS_PER_SECOND;
-const MAX_TOKENS: u64 = PACKET_COST * PACKETS_BURSTABLE;
+const N_PACKETS_BURSTABLE: u64 = 5;
+const MIN_PACKET_DELAY: Duration = Duration::from_millis(1000 / PACKETS_PER_SECOND);
 
-const GC_INTERVAL: Duration = Duration::from_secs(1);
-
-struct Entry {
-    pub last_time: Instant,
-    pub tokens: u64,
-}
-
-pub struct RateLimiter(Arc<RateLimiterInner>);
-
-struct RateLimiterInner {
-    gc_running: AtomicBool,
-    gc_dropped: (Mutex<bool>, Condvar),
-    table: spin::RwLock<HashMap<IpAddr, spin::Mutex<Entry>>>,
-}
-
-impl Drop for RateLimiter {
-    fn drop(&mut self) {
-        // wake up & terminate any lingering GC thread
-        let &(ref lock, ref cvar) = &self.0.gc_dropped;
-        let mut dropped = lock.lock().unwrap();
-        *dropped = true;
-        cvar.notify_all();
-    }
+pub struct RateLimiter {
+    table: DashMap<IpAddr, Bucket>,
 }
 
 impl RateLimiter {
+    /// Create an empty RateLimiter object.
     pub fn new() -> Self {
-        #[allow(clippy::mutex_atomic)]
-        RateLimiter(Arc::new(RateLimiterInner {
-            gc_dropped: (Mutex::new(false), Condvar::new()),
-            gc_running: AtomicBool::from(false),
-            table: spin::RwLock::new(HashMap::new()),
-        }))
+        RateLimiter {
+            table: DashMap::default(),
+        }
     }
 
-    pub fn allow(&self, addr: &IpAddr) -> bool {
-        // check if allowed
-        let allowed = {
-            // check for existing entry (only requires read lock)
-            if let Some(entry) = self.0.table.read().get(addr) {
-                // update existing entry
-                let mut entry = entry.lock();
+    /// Check if a packet from the given IP address
+    /// is allowed through the rate limiter at the given time.
+    pub fn check(&self, addr: &IpAddr) -> bool {
+        self.check_at(addr, Instant::now())
+    }
 
-                // add tokens earned since last time
-                entry.tokens = MAX_TOKENS
-                    .min(entry.tokens + u64::from(entry.last_time.elapsed().subsec_nanos()));
-                entry.last_time = Instant::now();
-
-                // subtract cost of packet
-                if entry.tokens > PACKET_COST {
-                    entry.tokens -= PACKET_COST;
-                    return true;
-                } else {
-                    return false;
-                }
+    fn check_at(&self, addr: &IpAddr, time: Instant) -> bool {
+        match self.table.entry(*addr) {
+            Entry::Occupied(mut entry) => entry.get_mut().check(time),
+            Entry::Vacant(entry) => {
+                entry.insert(Bucket::new(time));
+                true
             }
+        }
+    }
+}
 
-            // add new entry (write lock)
-            self.0.table.write().insert(
-                *addr,
-                spin::Mutex::new(Entry {
-                    last_time: Instant::now(),
-                    tokens: MAX_TOKENS - PACKET_COST,
-                }),
-            );
-            true
-        };
+struct Bucket {
+    last_refill: Instant,
+    tokens: u64,
+}
 
-        // check that GC thread is scheduled
-        if !self.0.gc_running.swap(true, Ordering::Relaxed) {
-            let limiter = self.0.clone();
-            thread::spawn(move || {
-                let &(ref lock, ref cvar) = &limiter.gc_dropped;
-                let mut dropped = lock.lock().unwrap();
-                while !*dropped {
-                    // garbage collect
-                    {
-                        let mut tw = limiter.table.write();
-                        tw.retain(|_, ref mut entry| {
-                            entry.lock().last_time.elapsed() <= GC_INTERVAL
-                        });
-                        if tw.len() == 0 {
-                            limiter.gc_running.store(false, Ordering::Relaxed);
-                            return;
-                        }
-                    }
+impl Bucket {
+    fn new(time: Instant) -> Self {
+        Bucket {
+            last_refill: time,
+            tokens: N_PACKETS_BURSTABLE - 1,
+        }
+    }
 
-                    // wait until stopped or new GC (~1 every sec)
-                    let res = cvar.wait_timeout(dropped, GC_INTERVAL).unwrap();
-                    dropped = res.0;
-                }
-            });
+    fn check(&mut self, time: Instant) -> bool {
+        // Try to take a token:
+        // this has the effect of only refilling the
+        // bucket for every N_PACKETS_BURSTABLE packets
+        match self.tokens.checked_sub(1) {
+            Some(token) => {
+                self.tokens = token;
+                return true;
+            }
+            None => (),
         }
 
-        allowed
+        // LLVM should optimize this away
+        assert_eq!(self.tokens, 0);
+
+        // Try to refill the bucket:
+        let delta = time.duration_since(self.last_refill);
+        let delta = delta.as_millis() as u64;
+        let tokens = delta / (MIN_PACKET_DELAY.as_millis() as u64);
+
+        // Check if there are tokens available after refilling
+        if tokens > 0 {
+            self.tokens = cmp::min(tokens, N_PACKETS_BURSTABLE) - 1;
+            self.last_refill = time;
+            true
+        } else {
+            false
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std;
+    use std::time::Duration;
 
     struct Result {
         allowed: bool,
@@ -122,7 +96,6 @@ mod tests {
     #[test]
     fn test_ratelimiter() {
         let ratelimiter = RateLimiter::new();
-        let mut expected = vec![];
         let ips = vec![
             "127.0.0.1".parse().unwrap(),
             "192.168.1.1".parse().unwrap(),
@@ -140,7 +113,9 @@ mod tests {
             "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
         ];
 
-        for _ in 0..PACKETS_BURSTABLE {
+        let mut expected = vec![];
+
+        for _ in 0..N_PACKETS_BURSTABLE {
             expected.push(Result {
                 allowed: true,
                 wait: Duration::new(0, 0),
@@ -156,7 +131,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, PACKET_COST as u32),
+            wait: MIN_PACKET_DELAY,
             text: "filling tokens for single packet",
         });
 
@@ -168,7 +143,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, 2 * PACKET_COST as u32),
+            wait: 2 * MIN_PACKET_DELAY,
             text: "filling tokens for 2 * packet burst",
         });
 
@@ -184,15 +159,21 @@ mod tests {
             text: "packet following 2 packet burst",
         });
 
+        let mut time = Instant::now();
+
         for item in expected {
-            std::thread::sleep(item.wait);
+            time += item.wait;
+
             for ip in ips.iter() {
-                if ratelimiter.allow(&ip) != item.allowed {
-                    panic!(
-                        "test failed for {} on {}. expected: {}, got: {}",
-                        ip, item.text, item.allowed, !item.allowed
-                    )
-                }
+                assert_eq!(
+                    ratelimiter.check_at(&ip, time),
+                    item.allowed,
+                    "test failed for {} on {}. expected: {}, got: {}",
+                    ip,
+                    item.text,
+                    item.allowed,
+                    !item.allowed
+                )
             }
         }
     }
