@@ -350,7 +350,12 @@ impl<O> Device<O> {
                     }
 
                     // check ratelimiter
-                    if !self.limiter.lock().unwrap().allow(&src.ip()) {
+                    if !self
+                        .limiter
+                        .lock()
+                        .unwrap()
+                        .is_new_packet_allowed(&src.ip())
+                    {
                         return Err(HandshakeError::RateLimited);
                     }
                 }
@@ -405,7 +410,12 @@ impl<O> Device<O> {
                     }
 
                     // check ratelimiter
-                    if !self.limiter.lock().unwrap().allow(&src.ip()) {
+                    if !self
+                        .limiter
+                        .lock()
+                        .unwrap()
+                        .is_new_packet_allowed(&src.ip())
+                    {
                         return Err(HandshakeError::RateLimited);
                     }
                 }

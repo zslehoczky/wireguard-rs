@@ -6,8 +6,6 @@ const N_PACKETS_BURSTABLE: usize = 5;
 const PACKETS_PER_SECOND: u32 = 20;
 const MIN_PACKET_DELAY_NS: u32 = 1_000_000_000 / PACKETS_PER_SECOND;
 
-struct RecordedTimes(VecDeque<Instant>);
-
 pub struct RateLimiter {
     table: spin::RwLock<HashMap<IpAddr, spin::Mutex<RecordedTimes>>>,
 }
@@ -19,40 +17,45 @@ impl RateLimiter {
         }
     }
 
-    pub fn allow(&mut self, addr: &IpAddr) -> bool {
+    /// Check if a packet is allowed. If 'ip_address' is not already registered, register it.
+    pub fn is_new_packet_allowed(&mut self, ip_address: &IpAddr) -> bool {
         // check for existing entry (only requires read lock)
-        if !self.contains(addr) {
+        if !self.is_registered(ip_address) {
             // add new entry (write lock)
-            self.insert(addr);
+            self.register(ip_address);
         }
 
         let table = self.table.read();
 
         let mut recorded_times = table
-            .get(addr)
+            .get(ip_address)
             .expect("Table should contain address")
             .lock();
 
         recorded_times.is_allowed()
     }
 
-    fn contains(&self, addr: &IpAddr) -> bool {
-        self.table.read().contains_key(addr)
+    /// Checks if 'ip_address' is already registered into the RateLimiter.
+    pub fn is_registered(&self, ip_address: &IpAddr) -> bool {
+        self.table.read().contains_key(ip_address)
     }
 
-    fn insert(&mut self, addr: &IpAddr) {
+    /// Register 'ip_address' into the RateLimiter.
+    pub fn register(&mut self, ip_address: &IpAddr) {
         self.table
             .write()
-            .insert(*addr, spin::Mutex::new(RecordedTimes::new()));
+            .insert(*ip_address, spin::Mutex::new(RecordedTimes::new()));
     }
 }
+
+struct RecordedTimes(VecDeque<Instant>);
 
 impl RecordedTimes {
     fn new() -> Self {
         Self(VecDeque::new())
     }
 
-    pub fn is_allowed(&mut self) -> bool {
+    fn is_allowed(&mut self) -> bool {
         let mut result = false;
 
         let now = Instant::now();
@@ -115,6 +118,10 @@ mod tests {
             "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
         ];
 
+        ips.iter().for_each(|addr| {
+            ratelimiter.register(addr);
+        });
+
         for _ in 0..N_PACKETS_BURSTABLE {
             expected.push(Result {
                 allowed: true,
@@ -163,7 +170,7 @@ mod tests {
             sleep(item.wait);
             for ip in ips.iter() {
                 assert_eq!(
-                    ratelimiter.allow(&ip),
+                    ratelimiter.is_new_packet_allowed(&ip),
                     item.allowed,
                     "test failed for {} on {}. expected: {}, got: {}",
                     ip,
