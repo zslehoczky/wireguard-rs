@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::thread::{self, ScopedJoinHandle};
 use std::{env, process::exit};
 
@@ -66,17 +67,27 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
         spawn_tun_event_loop(
             &thread_scope,
+            &tun_reader_jobs_running,
             &wireguard_config,
             &mut tun_status,
-            &tun_reader_jobs_running,
         );
+
+        let (uapi_stream_sender, uapi_stream_receiver) = mpsc::channel();
 
         spawn_uapi_server(
             &thread_scope,
-            &wireguard_config,
-            &uapi_socket,
             &tun_reader_jobs_running,
+            &uapi_socket,
+            uapi_stream_sender,
         );
+
+        thread_scope.spawn(|| {
+            let uapi_stream_receiver = uapi_stream_receiver;
+
+            while let Ok(mut stream) = uapi_stream_receiver.recv() {
+                uapi::handle(&mut stream, &wireguard_config);
+            }
+        });
 
         let _: Vec<_> = tun_reader_jobs
             .into_iter()
@@ -103,9 +114,9 @@ fn initialize_logger() {
 
 fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
+    tun_reader_jobs_running: &'env AtomicBool,
     wireguard_config: &'env WireGuardConfig<T, B>,
     tun_status: &'env mut S,
-    tun_reader_jobs_running: &'env AtomicBool,
 ) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
         while tun_reader_jobs_running.load(Ordering::Acquire) {
@@ -128,25 +139,26 @@ fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
     })
 }
 
-fn spawn_uapi_server<'scope, 'env, T: Tun, B: PlatformUDP, U: BindUAPI + Send + Sync>(
+fn spawn_uapi_server<'scope, 'env, U: BindUAPI + Send + Sync>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_config: &'env WireGuardConfig<T, B>,
-    uapi: &'env U,
     tun_reader_jobs_running: &'env AtomicBool,
+    uapi: &'env U,
+    uapi_stream_sender: mpsc::Sender<<U as BindUAPI>::Stream>,
 ) -> ScopedJoinHandle<'scope, ()>
 where
     <U as BindUAPI>::Stream: Send,
-    <U as BindUAPI>::Stream: 'env,
+    <U as BindUAPI>::Stream: 'static,
 {
     thread_scope.spawn(|| {
+        let uapi_stream_sender = uapi_stream_sender;
+
         while tun_reader_jobs_running.load(Ordering::Acquire) {
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(stream) => {
-                    thread_scope.spawn(|| {
-                        let mut stream = stream;
-                        uapi::handle(&mut stream, wireguard_config);
-                    });
+                    uapi_stream_sender
+                        .send(stream)
+                        .expect("channel should be open while this loop is running");
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
