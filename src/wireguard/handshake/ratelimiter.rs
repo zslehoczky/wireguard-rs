@@ -100,19 +100,19 @@ mod tests {
         let mut expected = vec![];
         let ips = vec![
             "127.0.0.1".parse().unwrap(),
-            // "192.168.1.1".parse().unwrap(),
-            // "172.167.2.3".parse().unwrap(),
-            // "97.231.252.215".parse().unwrap(),
-            // "248.97.91.167".parse().unwrap(),
-            // "188.208.233.47".parse().unwrap(),
-            // "104.2.183.179".parse().unwrap(),
-            // "72.129.46.120".parse().unwrap(),
-            // "2001:0db8:0a0b:12f0:0000:0000:0000:0001".parse().unwrap(),
-            // "f5c2:818f:c052:655a:9860:b136:6894:25f0".parse().unwrap(),
-            // "b2d7:15ab:48a7:b07c:a541:f144:a9fe:54fc".parse().unwrap(),
-            // "a47b:786e:1671:a22b:d6f9:4ab0:abc7:c918".parse().unwrap(),
-            // "ea1e:d155:7f7a:98fb:2bf5:9483:80f6:5445".parse().unwrap(),
-            // "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
+            "192.168.1.1".parse().unwrap(),
+            "172.167.2.3".parse().unwrap(),
+            "97.231.252.215".parse().unwrap(),
+            "248.97.91.167".parse().unwrap(),
+            "188.208.233.47".parse().unwrap(),
+            "104.2.183.179".parse().unwrap(),
+            "72.129.46.120".parse().unwrap(),
+            "2001:0db8:0a0b:12f0:0000:0000:0000:0001".parse().unwrap(),
+            "f5c2:818f:c052:655a:9860:b136:6894:25f0".parse().unwrap(),
+            "b2d7:15ab:48a7:b07c:a541:f144:a9fe:54fc".parse().unwrap(),
+            "a47b:786e:1671:a22b:d6f9:4ab0:abc7:c918".parse().unwrap(),
+            "ea1e:d155:7f7a:98fb:2bf5:9483:80f6:5445".parse().unwrap(),
+            "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
         ];
 
         for _ in 0..N_PACKETS_BURSTABLE {
@@ -159,16 +159,9 @@ mod tests {
             text: "packet following 2 packet burst",
         });
 
-        let begin = Instant::now();
-
         for item in expected {
             sleep(item.wait);
             for ip in ips.iter() {
-                println!(
-                    "ip: {}, {} ms",
-                    ip,
-                    Instant::now().duration_since(begin).as_millis()
-                );
                 assert_eq!(
                     ratelimiter.allow(&ip),
                     item.allowed,
