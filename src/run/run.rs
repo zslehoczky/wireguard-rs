@@ -1,7 +1,8 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
-use std::thread::JoinHandle;
-use std::{env, process::exit, thread};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::{self, ScopedJoinHandle};
+use std::{env, process::exit};
 
 use anyhow::anyhow;
 
@@ -12,7 +13,7 @@ use crate::platform::{
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
-use crate::wireguard::WireGuardHandle;
+use crate::wireguard::{WireGuard, tun_worker};
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -32,7 +33,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     let uapi_socket = plt::UAPI::bind(name.as_str())
         .map_err(|e| ErrorReason::UAPIListenerCreationFailed(anyhow!(e)))?;
 
-    let (tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
+    let (tun_readers, tun_writer, mut tun_status) = plt::Tun::create(name.as_str())
         .map_err(|e| ErrorReason::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     if config.drop_privileges {
@@ -49,17 +50,45 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let wireguard_handle: WireGuardHandle<plt::Tun, plt::UDP> =
-        WireGuardHandle::spawn(tun_readers, tun_writer);
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer);
+    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+    let tun_reader_jobs_running = AtomicBool::new(true);
 
-    let wireguard_config = WireGuardConfig::new(wireguard_handle.get_device().clone());
+    thread::scope(|thread_scope| {
+        let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
+            .into_iter()
+            .map(|reader| {
+                thread_scope.spawn(|| {
+                    tun_worker(&wireguard_device, reader);
+                })
+            })
+            .collect();
 
-    spawn_tun_event_loop(wireguard_config.clone(), tun_status);
+        spawn_tun_event_loop(
+            &thread_scope,
+            &wireguard_config,
+            &mut tun_status,
+            &tun_reader_jobs_running,
+        );
 
-    spawn_uapi_server(wireguard_config, uapi_socket);
+        spawn_uapi_server(
+            &thread_scope,
+            &wireguard_config,
+            &uapi_socket,
+            &tun_reader_jobs_running,
+        );
 
-    // block until all tun readers closed
-    wireguard_handle.join();
+        let _: Vec<_> = tun_reader_jobs
+            .into_iter()
+            .map(|handle| {
+                let _ = handle.join();
+            })
+            .collect();
+
+        tun_reader_jobs_running.store(false, Ordering::Release);
+
+        // tun_event_loop and uapi_server joined here
+    });
 
     profiler_stop();
 
@@ -72,12 +101,14 @@ fn initialize_logger() {
         .expect("Failed to initialize event logger");
 }
 
-fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
-    wireguard_config: WireGuardConfig<T, B>,
-    mut tun_status: S,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        loop {
+fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    wireguard_config: &'env WireGuardConfig<T, B>,
+    tun_status: &'env mut S,
+    tun_reader_jobs_running: &'env AtomicBool,
+) -> ScopedJoinHandle<'scope, ()> {
+    thread_scope.spawn(|| {
+        while tun_reader_jobs_running.load(Ordering::Acquire) {
             match tun_status.event() {
                 Err(e) => {
                     log::error!("Tun device error {}", e);
@@ -97,22 +128,24 @@ fn spawn_tun_event_loop<T: Tun, B: PlatformUDP, S: Status>(
     })
 }
 
-fn spawn_uapi_server<T: Tun, B: PlatformUDP, U: BindUAPI + Send + 'static>(
-    wireguard_config: WireGuardConfig<T, B>,
-    uapi: U,
-) -> JoinHandle<()>
+fn spawn_uapi_server<'scope, 'env, T: Tun, B: PlatformUDP, U: BindUAPI + Send + Sync>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    wireguard_config: &'env WireGuardConfig<T, B>,
+    uapi: &'env U,
+    tun_reader_jobs_running: &'env AtomicBool,
+) -> ScopedJoinHandle<'scope, ()>
 where
     <U as BindUAPI>::Stream: Send,
-    <U as BindUAPI>::Stream: 'static,
+    <U as BindUAPI>::Stream: 'env,
 {
-    thread::spawn(move || {
-        loop {
+    thread_scope.spawn(|| {
+        while tun_reader_jobs_running.load(Ordering::Acquire) {
             // accept and handle UAPI config connections
             match uapi.connect() {
-                Ok(mut stream) => {
-                    let wireguard_config = wireguard_config.clone();
-                    thread::spawn(move || {
-                        uapi::handle(&mut stream, &wireguard_config);
+                Ok(stream) => {
+                    thread_scope.spawn(|| {
+                        let mut stream = stream;
+                        uapi::handle(&mut stream, wireguard_config);
                     });
                 }
                 Err(err) => {
