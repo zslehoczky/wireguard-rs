@@ -1,103 +1,84 @@
-use std::collections::{HashMap, VecDeque};
+use std::cmp;
 use std::net::IpAddr;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-const N_PACKETS_BURSTABLE: usize = 5;
-const PACKETS_PER_SECOND: u32 = 20;
-const MIN_PACKET_DELAY_NS: u32 = 1_000_000_000 / PACKETS_PER_SECOND;
+use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
+
+const PACKETS_PER_SECOND: u64 = 20;
+const N_PACKETS_BURSTABLE: u64 = 5;
+const MIN_PACKET_DELAY: Duration = Duration::from_millis(1000 / PACKETS_PER_SECOND);
 
 pub struct RateLimiter {
-    table: spin::RwLock<HashMap<IpAddr, spin::Mutex<RecordedTimes>>>,
+    table: DashMap<IpAddr, Bucket>,
 }
 
 impl RateLimiter {
     /// Create an empty RateLimiter object.
     pub fn new() -> Self {
         RateLimiter {
-            table: spin::RwLock::new(HashMap::new()),
+            table: DashMap::default(),
         }
     }
 
-    /// Check if a packet is allowed at this moment.
-    ///
-    /// If 'ip_address' is not already registered, register it.
-    pub fn try_register_new_packet(&mut self, ip_address: &IpAddr) -> bool {
-        self.try_register_new_packet_at(ip_address, Instant::now())
+    /// Check if a packet from the given IP address
+    /// is allowed through the rate limiter at the given time.
+    pub fn check(&self, addr: &IpAddr) -> bool {
+        self.check_at(addr, Instant::now())
     }
 
-    /// Check if 'ip_address' is already registered into the RateLimiter.
-    pub fn is_registered(&self, ip_address: &IpAddr) -> bool {
-        self.table.read().contains_key(ip_address)
-    }
-
-    /// Register 'ip_address' into the RateLimiter.
-    pub fn register(&mut self, ip_address: &IpAddr) {
-        self.table
-            .write()
-            .insert(*ip_address, spin::Mutex::new(RecordedTimes::new()));
-    }
-
-    fn try_register_new_packet_at(&mut self, ip_address: &IpAddr, time: Instant) -> bool {
-        // check for existing entry (only requires read lock)
-        if !self.is_registered(ip_address) {
-            // add new entry (write lock)
-            self.register(ip_address);
+    fn check_at(&self, addr: &IpAddr, time: Instant) -> bool {
+        match self.table.entry(*addr) {
+            Entry::Occupied(mut entry) => entry.get_mut().check(time),
+            Entry::Vacant(entry) => {
+                entry.insert(Bucket::new(time));
+                true
+            }
         }
-
-        let table = self.table.read();
-
-        let mut recorded_times = table
-            .get(ip_address)
-            .expect("Table should contain address")
-            .lock();
-
-        recorded_times.record(time).is_ok()
     }
 }
 
-struct RecordedTimes(VecDeque<Instant>);
+struct Bucket {
+    last_refill: Instant,
+    tokens: u64,
+}
 
-impl RecordedTimes {
-    fn new() -> Self {
-        Self(VecDeque::new())
+impl Bucket {
+    fn new(time: Instant) -> Self {
+        Bucket {
+            last_refill: time,
+            tokens: N_PACKETS_BURSTABLE - 1,
+        }
     }
 
-    fn is_allowed(&self, time: Instant) -> bool {
-        let mut result = false;
-
-        let queue = &self.0;
-
-        for i in 0..N_PACKETS_BURSTABLE {
-            let allowed_for_i = queue.get(i).map_or(true, |then| {
-                time.duration_since(*then).as_nanos()
-                    >= MIN_PACKET_DELAY_NS as u128 * (i + 1) as u128
-            });
-
-            if allowed_for_i {
-                result = true;
-
-                break;
+    fn check(&mut self, time: Instant) -> bool {
+        // Try to take a token:
+        // this has the effect of only refilling the
+        // bucket for every N_PACKETS_BURSTABLE packets
+        match self.tokens.checked_sub(1) {
+            Some(token) => {
+                self.tokens = token;
+                return true;
             }
+            None => (),
         }
 
-        result
-    }
+        // LLVM should optimize this away
+        assert_eq!(self.tokens, 0);
 
-    fn record(&mut self, time: Instant) -> Result<(), &'static str> {
-        if !self.is_allowed(time) {
-            return Err("not allowed");
+        // Try to refill the bucket:
+        let delta = time.duration_since(self.last_refill);
+        let delta = delta.as_millis() as u64;
+        let tokens = delta / (MIN_PACKET_DELAY.as_millis() as u64);
+
+        // Check if there are tokens available after refilling
+        if tokens > 0 {
+            self.tokens = cmp::min(tokens, N_PACKETS_BURSTABLE) - 1;
+            self.last_refill = time;
+            true
+        } else {
+            false
         }
-
-        let queue = &mut self.0;
-
-        // shrink size to 4 by removing from the back
-        while queue.len() > 4 {
-            queue.pop_back();
-        }
-
-        queue.push_front(time);
-
-        return Ok(());
     }
 }
 
@@ -114,8 +95,7 @@ mod tests {
 
     #[test]
     fn test_ratelimiter() {
-        let mut ratelimiter = RateLimiter::new();
-        let mut expected = vec![];
+        let ratelimiter = RateLimiter::new();
         let ips = vec![
             "127.0.0.1".parse().unwrap(),
             "192.168.1.1".parse().unwrap(),
@@ -133,9 +113,7 @@ mod tests {
             "3f0e:54a2:f5b4:cd19:a21d:58e1:3746:84c4".parse().unwrap(),
         ];
 
-        ips.iter().for_each(|addr| {
-            ratelimiter.register(addr);
-        });
+        let mut expected = vec![];
 
         for _ in 0..N_PACKETS_BURSTABLE {
             expected.push(Result {
@@ -153,7 +131,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, MIN_PACKET_DELAY_NS),
+            wait: MIN_PACKET_DELAY,
             text: "filling tokens for single packet",
         });
 
@@ -165,7 +143,7 @@ mod tests {
 
         expected.push(Result {
             allowed: true,
-            wait: Duration::new(0, 2 * MIN_PACKET_DELAY_NS),
+            wait: 2 * MIN_PACKET_DELAY,
             text: "filling tokens for 2 * packet burst",
         });
 
@@ -188,7 +166,7 @@ mod tests {
 
             for ip in ips.iter() {
                 assert_eq!(
-                    ratelimiter.try_register_new_packet_at(&ip, time),
+                    ratelimiter.check_at(&ip, time),
                     item.allowed,
                     "test failed for {} on {}. expected: {}, got: {}",
                     ip,
