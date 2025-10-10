@@ -31,6 +31,12 @@ pub fn create_config_and_run() -> Result<(), ErrorReason> {
     run(config)
 }
 
+enum ConfigMessage {
+    UapiStream(<<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream),
+    TunUp(usize),
+    TunDown,
+}
+
 fn run(config: Config) -> Result<(), ErrorReason> {
     let name = &config.name;
 
@@ -68,29 +74,23 @@ fn run(config: Config) -> Result<(), ErrorReason> {
             })
             .collect();
 
+        let (config_sender, config_receiver) = mpsc::channel();
+
         spawn_tun_event_loop(
             &thread_scope,
             &tun_reader_jobs_running,
-            &wireguard_config,
             &mut tun_status,
+            config_sender.clone(),
         );
-
-        let (uapi_stream_sender, uapi_stream_receiver) = mpsc::channel();
 
         spawn_uapi_server(
             &thread_scope,
             &tun_reader_jobs_running,
             &uapi_socket,
-            uapi_stream_sender,
+            config_sender,
         );
 
-        thread_scope.spawn(|| {
-            let uapi_stream_receiver = uapi_stream_receiver;
-
-            while let Ok(mut stream) = uapi_stream_receiver.recv() {
-                uapi::handle(&mut stream, &wireguard_config);
-            }
-        });
+        spawn_config_worker(&thread_scope, &wireguard_config, config_receiver);
 
         for handle in tun_reader_jobs {
             let _ = handle.join();
@@ -112,13 +112,15 @@ fn initialize_logger() {
         .expect("Failed to initialize event logger");
 }
 
-fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
+fn spawn_tun_event_loop<'scope, 'env, S: Status>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
     tun_reader_jobs_running: &'env AtomicBool,
-    wireguard_config: &'env WireGuardConfig<T, B>,
     tun_status: &'env mut S,
+    config_sender: mpsc::Sender<ConfigMessage>,
 ) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
+        let config_sender = config_sender;
+
         while tun_reader_jobs_running.load(Ordering::Acquire) {
             match tun_status.event() {
                 Err(e) => {
@@ -127,43 +129,67 @@ fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
                     exit(ExitCode::TUNDeviceError as i32);
                 }
                 Ok(TunEvent::Up(mtu)) => {
-                    log::info!("Tun up (mtu = {})", mtu);
-                    let _ = wireguard_config.up(mtu); // TODO: handle
+                    config_sender
+                        .send(ConfigMessage::TunUp(mtu))
+                        .expect("channel is open while this loop is running");
                 }
                 Ok(TunEvent::Down) => {
-                    log::info!("Tun down");
-                    wireguard_config.down();
+                    config_sender
+                        .send(ConfigMessage::TunDown)
+                        .expect("channel is open while this loop is running");
                 }
             }
         }
     })
 }
 
-fn spawn_uapi_server<'scope, 'env, U: BindUAPI + Send + Sync>(
+fn spawn_uapi_server<'scope, 'env>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
     tun_reader_jobs_running: &'env AtomicBool,
-    uapi: &'env U,
-    uapi_stream_sender: mpsc::Sender<<U as BindUAPI>::Stream>,
-) -> ScopedJoinHandle<'scope, ()>
-where
-    <U as BindUAPI>::Stream: Send,
-    <U as BindUAPI>::Stream: 'static,
-{
+    uapi: &'env <plt::UAPI as PlatformUAPI>::Bind,
+    config_sender: mpsc::Sender<ConfigMessage>,
+) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
-        let uapi_stream_sender = uapi_stream_sender;
+        let uapi_stream_sender = config_sender;
 
         while tun_reader_jobs_running.load(Ordering::Acquire) {
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(stream) => {
                     uapi_stream_sender
-                        .send(stream)
-                        .expect("channel should be open while this loop is running");
+                        .send(ConfigMessage::UapiStream(stream))
+                        .expect("channel is open while this loop is running");
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
                     profiler_stop();
                     exit(ExitCode::UAPIConnectionError as i32);
+                }
+            }
+        }
+    })
+}
+
+fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    wireguard_config: &'env WireGuardConfig<T, B>,
+    config_receiver: mpsc::Receiver<ConfigMessage>,
+) -> ScopedJoinHandle<'scope, ()> {
+    thread_scope.spawn(|| {
+        let config_receiver = config_receiver;
+
+        while let Ok(message) = config_receiver.recv() {
+            match message {
+                ConfigMessage::UapiStream(mut stream) => {
+                    uapi::handle(&mut stream, wireguard_config);
+                }
+                ConfigMessage::TunUp(mtu) => {
+                    log::info!("Tun up (mtu = {})", mtu);
+                    let _ = wireguard_config.up(mtu); // TODO: handle
+                }
+                ConfigMessage::TunDown => {
+                    log::info!("Tun down");
+                    wireguard_config.down();
                 }
             }
         }
