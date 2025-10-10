@@ -61,7 +61,6 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     profiler_start(name.as_str());
 
     let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer);
-    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
     let tun_reader_jobs_running = AtomicBool::new(true);
 
     thread::scope(|thread_scope| {
@@ -90,7 +89,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
             config_sender,
         );
 
-        spawn_config_worker(&thread_scope, &wireguard_config, config_receiver);
+        spawn_config_worker(&thread_scope, &wireguard_device, config_receiver);
 
         for handle in tun_reader_jobs {
             let _ = handle.join();
@@ -172,16 +171,17 @@ fn spawn_uapi_server<'scope, 'env>(
 
 fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_config: &'env WireGuardConfig<T, B>,
+    wireguard_device: &'env WireGuard<T, B>,
     config_receiver: mpsc::Receiver<ConfigMessage>,
 ) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
+        let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
         let config_receiver = config_receiver;
 
         while let Ok(message) = config_receiver.recv() {
             match message {
                 ConfigMessage::UapiStream(mut stream) => {
-                    uapi::handle(&mut stream, wireguard_config);
+                    uapi::handle(&mut stream, &wireguard_config);
                 }
                 ConfigMessage::TunUp(mtu) => {
                     log::info!("Tun up (mtu = {})", mtu);
