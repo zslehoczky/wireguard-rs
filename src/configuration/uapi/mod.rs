@@ -10,10 +10,10 @@ use set::LineParser;
 
 const MAX_LINE_LENGTH: usize = 256;
 
-pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &C) {
+pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C) {
     fn operation<S: Read + Write, C: Configuration>(
         stream: &mut S,
-        config: &C,
+        config: &mut C,
     ) -> Result<(), ConfigError> {
         // read string up to maximum length (why is this not in std?)
         fn readline<R: Read>(reader: &mut R) -> Result<String, ConfigError> {

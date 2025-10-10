@@ -175,13 +175,13 @@ fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
     config_receiver: mpsc::Receiver<ConfigMessage>,
 ) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
-        let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+        let mut wireguard_config = WireGuardConfig::new(wireguard_device.clone());
         let config_receiver = config_receiver;
 
         while let Ok(message) = config_receiver.recv() {
             match message {
                 ConfigMessage::UapiStream(mut stream) => {
-                    uapi::handle(&mut stream, &wireguard_config);
+                    uapi::handle(&mut stream, &mut wireguard_config);
                 }
                 ConfigMessage::TunUp(mtu) => {
                     log::info!("Tun up (mtu = {})", mtu);

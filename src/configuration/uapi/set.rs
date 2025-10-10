@@ -23,12 +23,12 @@ struct ParsedPeer {
 }
 
 pub struct LineParser<'a, C: Configuration> {
-    config: &'a C,
+    config: &'a mut C,
     state: ParserState,
 }
 
 impl<'a, C: Configuration> LineParser<'a, C> {
-    pub fn new(config: &'a C) -> LineParser<'a, C> {
+    pub fn new(config: &'a mut C) -> LineParser<'a, C> {
         LineParser {
             config,
             state: ParserState::Interface,
