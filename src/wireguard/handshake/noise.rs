@@ -7,9 +7,10 @@ use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 use blake2::Blake2s;
 use hmac::Hmac;
 
-// AEAD
-use aead::{Aead, NewAead, Payload};
-use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::{
+    ChaCha20Poly1305,
+    aead::{Aead, KeyInit, Payload},
+};
 
 use rand_core::{CryptoRng, RngCore};
 

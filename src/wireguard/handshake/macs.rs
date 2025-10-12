@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 use x25519_dalek::PublicKey;
 
-// AEAD
-
-use aead::{Aead, NewAead, Payload};
-use chacha20poly1305::XChaCha20Poly1305;
+use chacha20poly1305::{
+    XChaCha20Poly1305,
+    aead::{Aead, KeyInit, Payload},
+};
 
 // MAC
 use blake2::Blake2s;
