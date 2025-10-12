@@ -7,10 +7,12 @@ use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
 use super::super::{Endpoint, tun, udp};
 
+use chacha20poly1305::aead::{AeadMutInPlace, Payload};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce, aead::KeyInit};
+
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use spin::Mutex;
 use zerocopy::{AsBytes, LayoutVerified};
 
@@ -87,17 +89,19 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
 
             // create a nonce object
             let mut nonce = [0u8; 12];
-            debug_assert_eq!(nonce.len(), CHACHA20_POLY1305.nonce_len());
             nonce[4..].copy_from_slice(header.f_counter.as_bytes());
-            let nonce = Nonce::assume_unique_for_key(nonce);
+            let nonce = Nonce::clone_from_slice(&nonce);
+            let mut key = ChaCha20Poly1305::new_from_slice(&job.keypair.send.key[..])
+                .expect("key should be valid");
+
+            let empty_packet: &[u8] = &[];
+            let empty_payload = Payload::from(empty_packet);
+            let aad = empty_payload.aad;
 
             // encrypt contents of transport message in-place
             let tag_offset = packet.len() - SIZE_TAG;
-            let key = LessSafeKey::new(
-                UnboundKey::new(&CHACHA20_POLY1305, &job.keypair.send.key[..]).unwrap(),
-            );
             let tag = key
-                .seal_in_place_separate_tag(nonce, Aad::empty(), &mut packet[..tag_offset])
+                .encrypt_in_place_detached(&nonce, aad, &mut packet[..tag_offset])
                 .unwrap();
 
             // append tag

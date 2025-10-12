@@ -7,9 +7,13 @@ use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
 use super::super::{Endpoint, tun, udp};
 
+use chacha20poly1305::{
+    ChaCha20Poly1305, Nonce,
+    aead::{Aead, KeyInit},
+};
+
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use spin::Mutex;
 use zerocopy::{AsBytes, LayoutVerified};
 
@@ -87,18 +91,17 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
                         None => return false,
                     };
 
+                let packet: &[u8] = packet;
+
                 // create nonce object
                 let mut nonce = [0u8; 12];
-                debug_assert_eq!(nonce.len(), CHACHA20_POLY1305.nonce_len());
                 nonce[4..].copy_from_slice(header.f_counter.as_bytes());
-                let nonce = Nonce::assume_unique_for_key(nonce);
-                // do the weird ring AEAD dance
-                let key = LessSafeKey::new(
-                    UnboundKey::new(&CHACHA20_POLY1305, &job.state.keypair.recv.key[..]).unwrap(),
-                );
+                let nonce = Nonce::clone_from_slice(&nonce);
+                let key = ChaCha20Poly1305::new_from_slice(&job.state.keypair.recv.key[..])
+                    .expect("key should be valid");
 
                 // attempt to open (and authenticate) the body
-                match key.open_in_place(nonce, Aad::empty(), packet) {
+                match key.decrypt(&nonce, packet) {
                     Ok(_) => (),
                     Err(_) => return false,
                 }
