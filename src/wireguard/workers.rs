@@ -130,7 +130,9 @@ pub fn udp_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: B::Reader) {
             TYPE_COOKIE_REPLY | TYPE_INITIATION | TYPE_RESPONSE => {
                 debug!("{} : reader, received handshake message", wg);
                 wg.pending.fetch_add(1, Ordering::SeqCst);
-                wg.queue.send(HandshakeJob::Message(msg, src));
+                wg.queue
+                    .send(HandshakeJob::Message(msg, src))
+                    .expect("channel is always open at this point");
             }
             TYPE_TRANSPORT => {
                 debug!("{} : reader, received transport message", wg);

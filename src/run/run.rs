@@ -5,6 +5,7 @@ use std::thread::{self, ScopedJoinHandle};
 use std::{env, process::exit};
 
 use anyhow::anyhow;
+use crossbeam_channel::bounded;
 
 use crate::configuration::{Configuration, WireGuardConfig, uapi};
 use crate::platform::{
@@ -13,7 +14,7 @@ use crate::platform::{
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
-use crate::wireguard::{WireGuard, tun_worker};
+use crate::wireguard::{WireGuard, handshake_worker, tun_worker};
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -50,11 +51,19 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer);
+    let (sender, receiver) = bounded(0);
+
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, sender);
     let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+
     let tun_reader_jobs_running = AtomicBool::new(true);
 
     thread::scope(|thread_scope| {
+        // start handshake workers
+        for _ in 0..num_cpus::get() {
+            thread_scope.spawn(|| handshake_worker(&wireguard_device, receiver.clone()));
+        }
+
         let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
             .into_iter()
             .map(|reader| {

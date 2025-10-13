@@ -4,13 +4,12 @@ use super::peer::PeerInner;
 use super::router;
 use super::timers::Timers;
 
-use super::queue::ParallelQueue;
 use super::workers::HandshakeJob;
 
 use super::tun::Tun;
 use super::udp::UDP;
 
-use super::workers::{handshake_worker, udp_worker};
+use super::workers::udp_worker;
 
 use std::fmt;
 use std::thread;
@@ -20,6 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
+use crossbeam_channel::Sender;
 use rand::Rng;
 use rand::rngs::OsRng;
 
@@ -52,7 +52,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     // handshake related state
     pub last_under_load: Mutex<Instant>,
     pub pending: AtomicUsize, // number of pending handshake packets in queue
-    pub queue: ParallelQueue<HandshakeJob<B::Endpoint>>,
+    pub queue: Sender<HandshakeJob<B::Endpoint>>,
 }
 
 pub struct WireGuard<T: Tun, B: UDP> {
@@ -214,13 +214,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.set_outbound_writer(writer);
     }
 
-    pub fn new(writer: T::Writer) -> WireGuard<T, B> {
-        // workers equal to number of physical cores
-        let cpus = num_cpus::get();
-
-        // create handshake queue
-        let (tx, mut rxs) = ParallelQueue::new(cpus, 128);
-
+    pub fn new(writer: T::Writer, sender: Sender<HandshakeJob<B::Endpoint>>) -> WireGuard<T, B> {
         // create router
         let router: router::Device<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
             router::Device::new(num_cpus::get(), writer);
@@ -236,15 +230,9 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
                 pending: AtomicUsize::new(0),
                 peers: RwLock::new(handshake::Device::new()),
                 runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
-                queue: tx,
+                queue: sender,
             }),
         };
-
-        // start handshake workers
-        while let Some(rx) = rxs.pop() {
-            let wg = wg.clone();
-            thread::spawn(move || handshake_worker(&wg, rx));
-        }
 
         wg
     }

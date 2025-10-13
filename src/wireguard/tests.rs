@@ -1,9 +1,10 @@
-use super::{WireGuard, dummy, tun_worker};
+use crate::wireguard::{WireGuard, dummy, handshake_worker, tun_worker};
 
 use std::convert::TryInto;
 use std::net::IpAddr;
 use std::thread;
 
+use crossbeam_channel::bounded;
 use hex;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -73,18 +74,31 @@ fn test_pure_wireguard() {
     init();
 
     // create WG instances for dummy TUN devices
+    let (sender1, receiver1) = bounded(0);
 
     let (fake1, tun_reader1, tun_writer1, _) = dummy::TunTest::create(true);
-    let wg1: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer1);
+    let wg1: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer1, sender1);
     let wireguard_device = wg1.clone();
+    for _ in 0..num_cpus::get() {
+        let wireguard_device = wireguard_device.clone();
+        let receiver = receiver1.clone();
+        thread::spawn(move || handshake_worker(&wireguard_device, receiver));
+    }
     thread::spawn(move || {
         tun_worker(&wireguard_device, tun_reader1);
     });
     wg1.up(1500);
 
+    let (sender2, receiver2) = bounded(0);
+
     let (fake2, tun_reader2, tun_writer2, _) = dummy::TunTest::create(true);
-    let wg2: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer2);
+    let wg2: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer2, sender2);
     let wireguard_device = wg2.clone();
+    for _ in 0..num_cpus::get() {
+        let wireguard_device = wireguard_device.clone();
+        let receiver = receiver2.clone();
+        thread::spawn(move || handshake_worker(&wireguard_device, receiver));
+    }
     thread::spawn(move || {
         tun_worker(&wireguard_device, tun_reader2);
     });
