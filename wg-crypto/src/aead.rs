@@ -55,6 +55,14 @@ pub struct XNonce(pub [u8; 24]);
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Nonce([u8; 12]);
 
+impl From<u64> for Nonce {
+    fn from(value: u64) -> Self {
+        let mut nonce = [0u8; 12];
+        nonce[4..].copy_from_slice(&value.to_be_bytes());
+        Nonce(nonce)
+    }
+}
+
 impl SymKey {
     pub fn seal<P: AsRef<[u8]>, A: AsRef<[u8]>, C: AsMut<[u8]>>(
         &self,

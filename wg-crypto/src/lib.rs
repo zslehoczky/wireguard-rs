@@ -23,7 +23,7 @@ mod tests;
 
 use std::usize;
 
-pub use aead::SymKey;
+pub use aead::{Nonce, SymKey, Tag};
 pub use device::Device;
 pub use keypair::{Key, KeyPair};
 pub use types::{Message, PSK};

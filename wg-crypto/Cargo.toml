@@ -27,3 +27,11 @@ zeroize.workspace = true
 hex.workspace = true
 proptest.workspace = true
 rand_chacha.workspace = true
+bencher.workspace = true
+ring.workspace = true
+chacha20.workspace = true
+poly1305.workspace = true
+
+[[bench]]
+name = "chacha20poly1305"
+harness = false
