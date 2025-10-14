@@ -1,0 +1,29 @@
+[package]
+name = "wg-crypto"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aead.workspace = true
+blake2.workspace = true
+byteorder.workspace = true
+chacha20poly1305.workspace = true
+dashmap.workspace = true
+digest.workspace = true
+generic-array.workspace = true
+hmac.workspace = true
+log.workspace = true
+rand.workspace = true
+rand_core.workspace = true
+spin.workspace = true
+subtle.workspace = true
+x25519-dalek.workspace = true
+zerocopy.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+proptest.workspace = true
+rand_chacha.workspace = true
