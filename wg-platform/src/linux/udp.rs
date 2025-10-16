@@ -760,7 +760,7 @@ impl Owner for LinuxOwner {
 impl PlatformUDP for LinuxUDP {
     type Owner = LinuxOwner;
 
-    fn bind(port: u16) -> Result<(Vec<Self::Reader>, Self::Writer, Self::Owner)> {
+    fn bind(port: u16) -> Result<(Vec<Self::Reader>, Self::Writer, Self::Owner), Self::Error> {
         LinuxUDP::bind(port)
     }
 }
