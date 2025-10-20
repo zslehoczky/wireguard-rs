@@ -52,55 +52,62 @@ impl<'a, C: Configuration> LineParser<'a, C> {
         }
     }
 
+    // flush peer updates to configuration
+    fn flush_peer(config: &C, peer: &ParsedPeer) -> Option<ConfigError> {
+        if peer.remove {
+            log::trace!("flush peer, remove peer");
+            config.remove_peer(&peer.public_key);
+            return None;
+        }
+
+        if !peer.update_only {
+            log::trace!("flush peer, add peer");
+            config.add_peer(&peer.public_key);
+        }
+
+        for (ip, cidr) in &peer.allowed_ips {
+            log::trace!("flush peer, add allowed_ips : {}/{}", ip.to_string(), cidr);
+            config.add_allowed_ip(&peer.public_key, *ip, *cidr);
+        }
+
+        if let Some(psk) = peer.preshared_key {
+            log::trace!("flush peer, set preshared_key {}", hex::encode(psk));
+            config.set_preshared_key(&peer.public_key, psk);
+        }
+
+        if let Some(secs) = peer.persistent_keepalive_interval {
+            log::trace!("flush peer, set persistent_keepalive_interval {}", secs);
+            config.set_persistent_keepalive_interval(&peer.public_key, secs);
+        }
+
+        if let Some(version) = peer.protocol_version {
+            log::trace!("flush peer, set protocol_version {}", version);
+            if version == 0 || version > config.get_protocol_version() {
+                return Some(ConfigError::UnsupportedProtocolVersion);
+            }
+        }
+
+        if let Some(endpoint) = peer.endpoint {
+            log::trace!("flush peer, set endpoint {}", endpoint.to_string());
+            config.set_endpoint(&peer.public_key, endpoint);
+        };
+
+        None
+    }
+
+    pub fn finalize(&mut self) {
+        if let ParserState::Peer(ref mut peer) = self.state {
+            log::trace!("UAPI, Set, processes end of transaction");
+            Self::flush_peer(self.config, &peer);
+        }
+    }
+
     pub fn parse_line(&mut self, key: &str, value: &str) -> Result<(), ConfigError> {
         #[cfg(debug_assertions)]
         {
             if key.len() > 0 {
                 log::debug!("UAPI: {}={}", key, value);
             }
-        }
-
-        // flush peer updates to configuration
-        fn flush_peer<C: Configuration>(config: &C, peer: &ParsedPeer) -> Option<ConfigError> {
-            if peer.remove {
-                log::trace!("flush peer, remove peer");
-                config.remove_peer(&peer.public_key);
-                return None;
-            }
-
-            if !peer.update_only {
-                log::trace!("flush peer, add peer");
-                config.add_peer(&peer.public_key);
-            }
-
-            for (ip, cidr) in &peer.allowed_ips {
-                log::trace!("flush peer, add allowed_ips : {}/{}", ip.to_string(), cidr);
-                config.add_allowed_ip(&peer.public_key, *ip, *cidr);
-            }
-
-            if let Some(psk) = peer.preshared_key {
-                log::trace!("flush peer, set preshared_key {}", hex::encode(psk));
-                config.set_preshared_key(&peer.public_key, psk);
-            }
-
-            if let Some(secs) = peer.persistent_keepalive_interval {
-                log::trace!("flush peer, set persistent_keepalive_interval {}", secs);
-                config.set_persistent_keepalive_interval(&peer.public_key, secs);
-            }
-
-            if let Some(version) = peer.protocol_version {
-                log::trace!("flush peer, set protocol_version {}", version);
-                if version == 0 || version > config.get_protocol_version() {
-                    return Some(ConfigError::UnsupportedProtocolVersion);
-                }
-            }
-
-            if let Some(endpoint) = peer.endpoint {
-                log::trace!("flush peer, set endpoint {}", endpoint.to_string());
-                config.set_endpoint(&peer.public_key, endpoint);
-            };
-
-            None
         }
 
         // parse line and update parser state
@@ -156,9 +163,6 @@ impl<'a, C: Configuration> LineParser<'a, C> {
                     Ok(())
                 }
 
-                // ignore (end of transcript)
-                "" => Ok(()),
-
                 // unknown key
                 _ => Err(ConfigError::InvalidKey),
             },
@@ -167,7 +171,7 @@ impl<'a, C: Configuration> LineParser<'a, C> {
             ParserState::Peer(ref mut peer) => match key {
                 // opt: new peer
                 "public_key" => {
-                    flush_peer(self.config, &peer);
+                    Self::flush_peer(self.config, &peer);
                     self.state = Self::new_peer(value)?;
                     Ok(())
                 }
@@ -242,13 +246,6 @@ impl<'a, C: Configuration> LineParser<'a, C> {
                         }
                         Err(_) => Err(ConfigError::UnsupportedProtocolVersion),
                     }
-                }
-
-                // flush (used at end of transcipt)
-                "" => {
-                    log::trace!("UAPI, Set, processes end of transaction");
-                    flush_peer(self.config, &peer);
-                    Ok(())
                 }
 
                 // unknown key

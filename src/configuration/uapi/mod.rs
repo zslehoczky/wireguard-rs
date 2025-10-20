@@ -12,18 +12,18 @@ const MAX_LINE_LENGTH: usize = 256;
 
 pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C) {
     // process operation
-    let res = get_operation(stream).and_then(|operation| match operation {
-        Operation::Get => {
+    let res = parse_config_operation(stream).and_then(|operation| match operation {
+        ConfigOperation::Get => {
             log::debug!("UAPI, Get operation");
             serialize(stream, config).map_err(|_| ConfigError::IOError)
         }
-        Operation::Set(key_value_pairs) => {
+        ConfigOperation::Set(key_value_pairs) => {
             log::debug!("UAPI, Set operation");
             let mut parser = LineParser::new(config);
             for (k, v) in key_value_pairs {
                 parser.parse_line(&k, &v)?;
             }
-            parser.parse_line("", "")
+            Ok(parser.finalize())
         }
     });
 
@@ -44,15 +44,17 @@ pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C)
     let _ = stream.write("\n\n".as_ref());
 }
 
-enum Operation {
+pub enum ConfigOperation {
     Get,
     Set(Vec<(String, String)>),
 }
 
 // read operation line
-fn get_operation<S: Read + Write>(stream: &mut S) -> Result<Operation, ConfigError> {
+pub fn parse_config_operation<S: Read + Write>(
+    stream: &mut S,
+) -> Result<ConfigOperation, ConfigError> {
     match readline(stream)?.as_str() {
-        "get=1" => Ok(Operation::Get),
+        "get=1" => Ok(ConfigOperation::Get),
         "set=1" => {
             let mut key_value_pairs = Vec::new();
             while let ln = readline(stream)?
@@ -60,7 +62,7 @@ fn get_operation<S: Read + Write>(stream: &mut S) -> Result<Operation, ConfigErr
             {
                 key_value_pairs.push(read_key_value_pair(ln.as_str())?);
             }
-            Ok(Operation::Set { 0: key_value_pairs })
+            Ok(ConfigOperation::Set { 0: key_value_pairs })
         }
         _ => Err(ConfigError::InvalidOperation),
     }
