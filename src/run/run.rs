@@ -158,6 +158,9 @@ fn spawn_uapi_server<'scope, 'env>(
                     let uapi_stream_sender = uapi_stream_sender.clone();
 
                     thread_scope.spawn(move || {
+                        // TODO: parse config operation here from stream, then send only parsed operation, not stream
+                        // TODO: create channel to receive operation result, then write back to stream
+                        // TODO: loop over parsing operation from stream
                         uapi_stream_sender
                             .send(ConfigMessage::UapiStream(stream))
                             .expect("channel is open while this loop is running");
