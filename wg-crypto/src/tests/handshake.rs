@@ -2,9 +2,9 @@
 
 use super::common::*;
 use crate::{
+    Device,
     timestamp::StdTimestamp,
     types::{Message, Output},
-    Device,
 };
 
 use core::net::SocketAddr;
