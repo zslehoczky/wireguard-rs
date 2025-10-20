@@ -155,9 +155,13 @@ fn spawn_uapi_server<'scope, 'env>(
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(stream) => {
-                    uapi_stream_sender
-                        .send(ConfigMessage::UapiStream(stream))
-                        .expect("channel is open while this loop is running");
+                    let uapi_stream_sender = uapi_stream_sender.clone();
+
+                    thread_scope.spawn(move || {
+                        uapi_stream_sender
+                            .send(ConfigMessage::UapiStream(stream))
+                            .expect("channel is open while this loop is running");
+                    });
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
