@@ -106,13 +106,13 @@ impl Callbacks for TestCallbacks {
         t: &Self::Opaque,
         size: usize,
         sent: bool,
-        _keypair: &Arc<crypto::KeyPair>,
+        _keypair: &Arc<crypto::KeyPair<Instant>>,
         _counter: u64,
     ) {
         t.send.log((size, sent))
     }
 
-    fn recv(t: &Self::Opaque, size: usize, sent: bool, _keypair: &Arc<crypto::KeyPair>) {
+    fn recv(t: &Self::Opaque, size: usize, sent: bool, _keypair: &Arc<KeyPair>) {
         t.recv.log((size, sent))
     }
 

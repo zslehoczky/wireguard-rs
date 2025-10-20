@@ -1,3 +1,4 @@
+use crate::timestamp::StdTimestamp;
 use crate::types::{Message, Output};
 
 use super::*;
@@ -18,7 +19,12 @@ fn setup_devices<R: RngCore + CryptoRng, O: Default>(
     rng1: &mut R,
     rng2: &mut R,
     rng3: &mut R,
-) -> (PublicKey, Device<O>, PublicKey, Device<O>) {
+) -> (
+    PublicKey,
+    Device<O, std::time::Instant, StdTimestamp>,
+    PublicKey,
+    Device<O, std::time::Instant, StdTimestamp>,
+) {
     // generate new key pairs
 
     let sk1 = StaticSecret::random_from_rng(rng1);
@@ -65,7 +71,7 @@ fn wait() {
  */
 #[test]
 fn handshake_under_load() {
-    let (_pk1, dev1, pk2, dev2): (_, Device<usize>, _, _) =
+    let (_pk1, dev1, pk2, dev2): (_, Device<usize, std::time::Instant, StdTimestamp>, _, _) =
         setup_devices(&mut OsRng, &mut OsRng, &mut OsRng);
 
     let time = Instant::now();
@@ -188,7 +194,7 @@ fn handshake_under_load() {
 
 #[test]
 fn handshake_no_load() {
-    let (pk1, mut dev1, pk2, mut dev2): (_, Device<usize>, _, _) =
+    let (pk1, mut dev1, pk2, mut dev2): (_, Device<usize, std::time::Instant, StdTimestamp>, _, _) =
         setup_devices(&mut OsRng, &mut OsRng, &mut OsRng);
 
     // do a few handshakes (every handshake should succeed)

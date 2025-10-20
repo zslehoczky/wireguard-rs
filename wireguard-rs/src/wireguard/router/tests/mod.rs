@@ -4,6 +4,8 @@ mod tests;
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
 
+use crate::wireguard::peer::KeyPair;
+
 use super::SIZE_MESSAGE_PREFIX;
 use super::message_data_len;
 use super::{Callbacks, Device};
@@ -23,7 +25,7 @@ fn pad(msg: &[u8]) -> Vec<u8> {
     o
 }
 
-pub fn dummy_keypair(initiator: bool) -> crypto::KeyPair {
+pub fn dummy_keypair(initiator: bool) -> KeyPair {
     let k1 = crypto::Key {
         key: SymKey::from([0x53u8; 32]),
         id: 0x646e6573,
@@ -33,14 +35,14 @@ pub fn dummy_keypair(initiator: bool) -> crypto::KeyPair {
         id: 0x76636572,
     };
     if initiator {
-        crypto::KeyPair {
+        KeyPair {
             birth: Instant::now(),
             initiator: true,
             send: k1,
             recv: k2,
         }
     } else {
-        crypto::KeyPair {
+        KeyPair {
             birth: Instant::now(),
             initiator: false,
             send: k2,

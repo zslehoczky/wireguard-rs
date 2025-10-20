@@ -1,8 +1,6 @@
 #[cfg(feature = "unstable")]
 extern crate test;
 
-use wg_crypto as crypto;
-
 use super::*;
 
 use std::sync::Arc;
@@ -56,16 +54,10 @@ struct _BencherCallbacks {}
 
 impl Callbacks for _BencherCallbacks {
     type Opaque = Arc<TransmissionCounter>;
-    fn send(
-        t: &Self::Opaque,
-        size: usize,
-        _sent: bool,
-        _keypair: &Arc<crypto::KeyPair>,
-        _counter: u64,
-    ) {
+    fn send(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         t.sent.fetch_add(size, Ordering::SeqCst);
     }
-    fn recv(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<crypto::KeyPair>) {
+    fn recv(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<KeyPair>) {
         t.recv.fetch_add(size, Ordering::SeqCst);
     }
     fn need_key(_t: &Self::Opaque) {}

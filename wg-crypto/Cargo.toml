@@ -35,3 +35,7 @@ poly1305.workspace = true
 [[bench]]
 name = "chacha20poly1305"
 harness = false
+
+[features]
+std = [] # turns std features on
+default = ["std"]

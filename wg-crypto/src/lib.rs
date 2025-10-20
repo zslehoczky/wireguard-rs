@@ -1,12 +1,11 @@
-// #![no_std]
+//! Implementation of the
+//! Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s
+//! Protocol pattern
+//!
+//! See: http://www.noiseprotocol.org/noise.html.
+//! For documentation.
+#![cfg_attr(not(test), no_std)]
 
-/* Implementation of the:
- *
- * Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s
- *
- * Protocol pattern, see: http://www.noiseprotocol.org/noise.html.
- * For documentation.
- */
 mod aead;
 mod device;
 mod keypair;
@@ -15,13 +14,21 @@ mod messages;
 mod noise;
 mod peer;
 mod ratelimiter;
+mod time;
 mod timestamp;
+
+// Abstraction on Instant
+// This exists to support no-std en
 mod types;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "std")]
+pub use timestamp::StdTimestamp;
 
 #[cfg(test)]
 mod tests;
-
-use std::usize;
 
 pub use aead::{Nonce, SymKey, Tag};
 pub use device::Device;

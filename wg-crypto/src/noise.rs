@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use chacha20poly1305::KeyInit;
 
 // HASH & MAC
@@ -17,6 +15,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use subtle::ConstantTimeEq;
 
 use crate::aead::SymKey;
+use crate::peer::StInit;
+use crate::time::Instant;
+use crate::timestamp::Timestamp;
 
 use super::device::{Device, KeyState};
 use super::messages::{NoiseInitiation, NoiseResponse};
@@ -252,10 +253,10 @@ fn shared_secret(sk: &StaticSecret, pk: &PublicKey) -> Result<SharedSecret, Hand
     }
 }
 
-pub(super) fn create_initiation<R: RngCore + CryptoRng, O>(
+pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng, O>(
     rng: &mut R,
-    keyst: &KeyState,
-    peer: &Peer<O>,
+    keyst: &KeyState<I>,
+    peer: &Peer<O, I, T>,
     pk: &PublicKey,
     local: u32,
 ) -> Result<NoiseInitiation, HandshakeError> {
@@ -334,7 +335,7 @@ pub(super) fn create_initiation<R: RngCore + CryptoRng, O>(
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
     key.seal(
-        timestamp::now(),         // pt
+        T::generate(),            // pt (timestamp)
         hs,                       // ad
         &Default::default(),      // nonce
         &mut msg.f_timestamp,     // ct
@@ -350,21 +351,22 @@ pub(super) fn create_initiation<R: RngCore + CryptoRng, O>(
 
     // update state of peer
 
-    *peer.state.lock() = State::InitiationSent {
+    *peer.state.lock() = State::InitiationSent(StInit {
         hs,
         ck,
         eph_sk,
         local,
-    };
+    });
 
     Ok(msg)
 }
 
-pub(super) fn consume_initiation<'a, O>(
-    device: &'a Device<O>,
-    keyst: &KeyState,
+pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
+    now: I,
+    device: &'a Device<O, I, T>,
+    keyst: &KeyState<I>,
     msg: &NoiseInitiation,
-) -> Result<(&'a Peer<O>, PublicKey, TemporaryState), HandshakeError> {
+) -> Result<(&'a Peer<O, I, T>, PublicKey, TemporaryState), HandshakeError> {
     log::debug!("consume initiation");
 
     // initialize new state
@@ -430,7 +432,7 @@ pub(super) fn consume_initiation<'a, O>(
 
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
-    let mut ts = timestamp::ZERO;
+    let mut ts: timestamp::TAI64N = Default::default();
 
     key.open(
         &mut ts,              // pt
@@ -442,7 +444,7 @@ pub(super) fn consume_initiation<'a, O>(
 
     // check and update timestamp
 
-    peer.check_replay_flood(device, &ts)?;
+    peer.check_replay_flood(now, device, ts)?;
 
     // H := Hash(H || msg.timestamp)
 
@@ -460,14 +462,14 @@ pub(super) fn consume_initiation<'a, O>(
     ))
 }
 
-pub(super) fn create_response<R: RngCore + CryptoRng, O>(
+pub(super) fn create_response<R: RngCore + CryptoRng, O, I: Instant, T: Timestamp>(
     rng: &mut R,
-    time: Instant,
-    peer: &Peer<O>,
+    now: I,
+    peer: &Peer<O, I, T>,
     pk: &PublicKey,
     local: u32,            // sending identifier
     state: TemporaryState, // state from "consume_initiation"
-) -> Result<(NoiseResponse, KeyPair), HandshakeError> {
+) -> Result<(NoiseResponse, KeyPair<I>), HandshakeError> {
     log::debug!("create response");
 
     // unpack state
@@ -555,7 +557,7 @@ pub(super) fn create_response<R: RngCore + CryptoRng, O>(
     Ok((
         msg,
         KeyPair {
-            birth: time,
+            birth: now,
             initiator: false,
             send: Key {
                 id: receiver,
@@ -573,39 +575,29 @@ pub(super) fn create_response<R: RngCore + CryptoRng, O>(
  * allow concurrent processing of potential responses to the initiation,
  * in order to better mitigate DoS from malformed response messages.
  */
-pub(super) fn consume_response<'a, O>(
-    device: &'a Device<O>,
-    keyst: &KeyState,
+pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
+    now: I,
+    device: &'a Device<O, I, T>,
+    keyst: &KeyState<I>,
     msg: &NoiseResponse,
-) -> Result<Output<'a, O>, HandshakeError> {
+) -> Result<Output<'a, O, I>, HandshakeError> {
     log::debug!("consume response");
 
     // retrieve peer and copy initiation state
     let (peer, _) = device.lookup_id(msg.f_receiver.get())?;
-
-    let (hs, ck, local, eph_sk) = match &*peer.state.lock() {
-        State::InitiationSent {
-            hs,
-            ck,
-            local,
-            eph_sk,
-        } => Ok((
-            *hs,
-            ck.clone(),
-            *local,
-            StaticSecret::from(eph_sk.to_bytes()),
-        )),
+    let st: StInit = match &*peer.state.lock() {
+        State::InitiationSent(st) => Ok(st.clone()),
         _ => Err(HandshakeError::InvalidState),
     }?;
 
     // C := Kdf1(C, E_pub)
 
-    let ck: ChainKey = kdf1(&ck, msg.f_ephemeral);
+    let ck: ChainKey = kdf1(&st.ck, msg.f_ephemeral);
 
     // H := Hash(H || msg.ephemeral)
 
     let hs = Hash::new([
-        hs.as_ref(), //
+        st.hs.as_ref(), //
         &msg.f_ephemeral,
     ]);
 
@@ -614,7 +606,7 @@ pub(super) fn consume_response<'a, O>(
     let eph_r_pk = PublicKey::from(msg.f_ephemeral);
     let ck: ChainKey = kdf1(
         &ck, //
-        shared_secret(&eph_sk, &eph_r_pk)?.as_bytes(),
+        shared_secret(&st.eph_sk, &eph_r_pk)?.as_bytes(),
     );
 
     // C := Kdf1(C, DH(E_priv, S_pub))
@@ -650,23 +642,17 @@ pub(super) fn consume_response<'a, O>(
 
     // derive key-pair
 
-    let birth = Instant::now();
     let (key_send, key_recv): (SymKey, SymKey) = kdf2(&ck, []);
 
     // check for new initiation sent while lock released
 
-    let mut state = peer.state.lock();
-    let update = match *state {
-        State::InitiationSent {
-            eph_sk: ref old, ..
-        } => old.to_bytes().ct_eq(&eph_sk.to_bytes()).into(),
-        _ => false,
-    };
-
-    if update {
+    let mut st_new = peer.state.lock();
+    if let State::InitiationSent(st_init) = &*st_new
+        && st_init == &st
+    {
         // null the initiation state
         // (to avoid replay of this response message)
-        *state = State::Reset;
+        *st_new = State::Reset;
         let remote = msg.f_sender.get();
 
         // return confirmed key-pair
@@ -674,14 +660,14 @@ pub(super) fn consume_response<'a, O>(
             id: Some(&peer.opaque),
             msg: None,
             key_pair: Some(KeyPair {
-                birth,
+                birth: now,
                 initiator: true,
                 send: Key {
                     id: remote,
                     key: key_send,
                 },
                 recv: Key {
-                    id: local,
+                    id: st.local,
                     key: key_recv,
                 },
             }),

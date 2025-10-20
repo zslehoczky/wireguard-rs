@@ -17,6 +17,8 @@ use super::timers::Timers;
 use super::wireguard::WireGuard;
 use super::workers::HandshakeJob;
 
+pub type KeyPair = crypto::KeyPair<Instant>;
+
 pub struct PeerInner<T: Tun, B: UDP> {
     // internal id (for logging)
     pub id: u64,
@@ -194,13 +196,7 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
      * This method is called, even if the encrypted payload is empty (keepalive)
      */
     #[inline(always)]
-    fn send(
-        peer: &Self::Opaque,
-        size: usize,
-        sent: bool,
-        keypair: &Arc<crypto::KeyPair>,
-        counter: u64,
-    ) {
+    fn send(peer: &Self::Opaque, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
         log::trace!("{} : EVENT(send)", peer);
 
         // update timers and stats
@@ -214,7 +210,7 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
 
         // keep_key_fresh
 
-        fn keep_key_fresh(keypair: &Arc<crypto::KeyPair>, counter: u64) -> bool {
+        fn keep_key_fresh(keypair: &Arc<KeyPair>, counter: u64) -> bool {
             counter > REKEY_AFTER_MESSAGES
                 || (keypair.initiator && Instant::now() - keypair.birth > REKEY_AFTER_TIME)
         }
@@ -232,7 +228,7 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
      * - Fails to cryptkey route
      */
     #[inline(always)]
-    fn recv(peer: &Self::Opaque, size: usize, sent: bool, keypair: &Arc<crypto::KeyPair>) {
+    fn recv(peer: &Self::Opaque, size: usize, sent: bool, keypair: &Arc<KeyPair>) {
         log::trace!("{} : EVENT(recv)", peer);
 
         // update timers and stats
@@ -247,7 +243,7 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
         // keep_key_fresh
 
         #[inline(always)]
-        fn keep_key_fresh(keypair: &Arc<crypto::KeyPair>) -> bool {
+        fn keep_key_fresh(keypair: &Arc<KeyPair>) -> bool {
             Instant::now() - keypair.birth > REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
         }
 

@@ -1,7 +1,7 @@
-use wg_crypto as crypto;
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
+use crate::wireguard::peer::KeyPair;
 
 use super::SIZE_MESSAGE_PREFIX;
 use super::anti_replay::AntiReplay;
@@ -27,10 +27,10 @@ use arraydeque::{ArrayDeque, Wrapping};
 use spin::Mutex;
 
 pub struct KeyWheel {
-    next: Option<Arc<crypto::KeyPair>>, // next key state (unconfirmed)
-    current: Option<Arc<crypto::KeyPair>>, // current key state (used for encryption)
-    previous: Option<Arc<crypto::KeyPair>>, // old key state (used for decryption)
-    retired: Vec<u32>,                  // retired ids
+    next: Option<Arc<KeyPair>>,     // next key state (unconfirmed)
+    current: Option<Arc<KeyPair>>,  // current key state (used for encryption)
+    previous: Option<Arc<KeyPair>>, // old key state (used for decryption)
+    retired: Vec<u32>,              // retired ids
 }
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
@@ -120,7 +120,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> fmt::Display
 }
 
 impl EncryptionState {
-    fn new(keypair: &Arc<crypto::KeyPair>) -> EncryptionState {
+    fn new(keypair: &Arc<KeyPair>) -> EncryptionState {
         EncryptionState {
             nonce: 0,
             keypair: keypair.clone(),
@@ -129,7 +129,7 @@ impl EncryptionState {
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DecryptionState<E, C, T, B> {
-    fn new(peer: Peer<E, C, T, B>, keypair: &Arc<crypto::KeyPair>) -> DecryptionState<E, C, T, B> {
+    fn new(peer: Peer<E, C, T, B>, keypair: &Arc<KeyPair>) -> DecryptionState<E, C, T, B> {
         DecryptionState {
             confirmed: AtomicBool::new(keypair.initiator),
             keypair: keypair.clone(),
@@ -311,7 +311,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
         }
     }
 
-    pub(super) fn confirm_key(&self, keypair: &Arc<crypto::KeyPair>) {
+    pub(super) fn confirm_key(&self, keypair: &Arc<KeyPair>) {
         log::trace!("peer.confirm_key");
         {
             // take lock and check keypair = keys.next
@@ -431,7 +431,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     /// The number of ids to be released can be at most 3,
     /// since the only way to add additional keys to the peer is by using this method
     /// and a peer can have at most 3 keys allocated in the router at any time.
-    pub fn add_keypair(&self, new: crypto::KeyPair) -> Vec<u32> {
+    pub fn add_keypair(&self, new: KeyPair) -> Vec<u32> {
         log::trace!("Router, add_keypair: {:?}", new);
 
         let initiator = new.initiator;

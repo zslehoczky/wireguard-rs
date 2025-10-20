@@ -7,16 +7,15 @@ use zerocopy::{AsBytes, FromBytes, U32};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // types to coalesce into bytes
-use core::net::SocketAddr;
+use core::{marker::PhantomData, net::SocketAddr, time::Duration};
 use subtle::ConstantTimeEq;
 use x25519_dalek::PublicKey;
-
-use std::time::{Duration, Instant};
 
 use crate::{
     aead::{SymKey, XNonce},
     messages::{CookieReply, MACFooter, SIZE_COOKIE, TYPE_COOKIE_REPLY},
     noise::Hash,
+    time::Instant,
     types::HandshakeError,
 };
 
@@ -24,19 +23,19 @@ const LABEL_MAC1: &[u8] = b"mac1----";
 const LABEL_COOKIE: &[u8] = b"cookie--";
 const COOKIE_UPDATE_INTERVAL: Duration = Duration::from_secs(120);
 
-struct CookieState {
+struct CookieState<I: Instant> {
     key: MacKey<SIZE_COOKIE>,
-    time: Instant,
+    time: I,
 }
 
-pub struct Generator {
-    cookie: Option<CookieState>,
+pub struct Generator<I: Instant> {
+    cookie: Option<CookieState<I>>,
     mac1_key: MacKey<32>,
     last_mac1: Option<MAC>,
     cookie_key: SymKey, // xchacha20poly key for opening cookie response
 }
 
-impl Generator {
+impl<I: Instant> Generator<I> {
     /// Initalize a new mac field generator
     ///
     /// # Arguments
@@ -46,7 +45,7 @@ impl Generator {
     /// # Returns
     ///
     /// A freshly initated generator
-    pub fn new(pk: PublicKey) -> Generator {
+    pub fn new(pk: PublicKey) -> Self {
         Generator {
             mac1_key: Hash::new([LABEL_MAC1, pk.as_bytes()]).into(),
             cookie_key: Hash::new([LABEL_COOKIE, pk.as_bytes()]).into(),
@@ -65,8 +64,8 @@ impl Generator {
     ///
     /// Can fail if the cookie reply fails to validate
     /// (either indicating that it is outdated or malformed)
-    pub fn process(&mut self, time: Instant, reply: &CookieReply) -> Result<(), HandshakeError> {
-        let mut cookie = MacKey([0u8; _]);
+    pub fn process(&mut self, now: I, reply: &CookieReply) -> Result<(), HandshakeError> {
+        let mut cookie = MacKey([0u8; SIZE_COOKIE]);
         self.cookie_key.xopen(
             &mut cookie,
             self.last_mac1.ok_or(HandshakeError::InvalidState)?,
@@ -74,7 +73,10 @@ impl Generator {
             &reply.f_cookie,
             &reply.f_cookie_tag,
         )?;
-        self.cookie = Some(CookieState { time, key: cookie });
+        self.cookie = Some(CookieState {
+            time: now,
+            key: cookie,
+        });
         Ok(())
     }
 
@@ -84,10 +86,10 @@ impl Generator {
     ///
     /// - inner: A byteslice representing the inner message to be covered
     /// - macs: The destination mac footer for the resulting macs
-    pub fn generate(&mut self, time: Instant, inner: &[u8]) -> MACFooter {
+    pub fn generate(&mut self, now: I, inner: &[u8]) -> MACFooter {
         let f_mac1 = self.mac1_key.mac(|m| m.append(inner));
         let f_mac2 = match &self.cookie {
-            Some(cookie) if time.duration_since(cookie.time) < COOKIE_UPDATE_INTERVAL => {
+            Some(cookie) if now.since(&cookie.time) < COOKIE_UPDATE_INTERVAL => {
                 cookie.key.mac(|m| {
                     m.append(inner);
                     m.append(f_mac1);
@@ -189,17 +191,15 @@ impl<const N: usize> MacKey<N> {
     }
 }
 
-enum Secret {
-    Set { value: MacKey<32>, birth: Instant },
+enum Secret<I: Instant> {
+    Set { value: MacKey<32>, birth: I },
     Unset,
 }
 
-impl Secret {
-    fn tau(&self, time: Instant, src: &SocketAddr) -> Option<MacKey<16>> {
+impl<I: Instant> Secret<I> {
+    fn tau(&self, now: I, src: &SocketAddr) -> Option<MacKey<16>> {
         match self {
-            Secret::Set { value, birth }
-                if time.duration_since(*birth) < COOKIE_UPDATE_INTERVAL =>
-            {
+            Secret::Set { value, birth } if now.since(birth) < COOKIE_UPDATE_INTERVAL => {
                 Some(value.cookie_from_src(src))
             }
             _ => None,
@@ -207,43 +207,45 @@ impl Secret {
     }
 }
 
-pub struct Validator {
+pub struct Validator<I: Instant> {
     mac1_key: MacKey<32>, // mac1 key, derived from device public key
     cookie_key: SymKey,   // xchacha20poly key for sealing cookie response
-    secret: RwLock<Secret>,
+    secret: RwLock<Secret<I>>,
+    _ph: PhantomData<I>,
 }
 
-impl Validator {
-    pub fn new(pk: PublicKey) -> Validator {
+impl<I: Instant> Validator<I> {
+    pub fn new(pk: PublicKey) -> Validator<I> {
         Validator {
             mac1_key: Hash::new([LABEL_MAC1, pk.as_bytes()]).into(),
             cookie_key: Hash::new([LABEL_COOKIE, pk.as_bytes()]).into(),
             secret: RwLock::new(Secret::Unset),
+            _ph: PhantomData,
         }
     }
 
-    fn get_tau(&self, time: Instant, src: &SocketAddr) -> Option<MacKey<16>> {
-        self.secret.read().tau(time, src)
+    fn get_tau(&self, now: I, src: &SocketAddr) -> Option<MacKey<16>> {
+        self.secret.read().tau(now, src)
     }
 
     fn get_set_tau<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         src: &SocketAddr,
-        time: Instant,
+        now: I,
     ) -> MacKey<16> {
         // check if current value is still valid
         // (using a read lock)
         {
             let secret = self.secret.read();
-            if let Some(secret) = secret.tau(time, src) {
+            if let Some(secret) = secret.tau(now, src) {
                 return secret;
             }
         }
 
         // take write lock, check again
         let mut secret = self.secret.write();
-        if let Some(secret) = secret.tau(time, src) {
+        if let Some(secret) = secret.tau(now, src) {
             return secret;
         }
 
@@ -252,7 +254,7 @@ impl Validator {
         let tau = key.cookie_from_src(src);
         *secret = Secret::Set {
             value: key,
-            birth: time,
+            birth: now,
         };
         tau
     }
@@ -260,7 +262,7 @@ impl Validator {
     pub fn create_cookie_reply<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
-        time: Instant,
+        now: I,
         receiver: u32,    // receiver id of incoming message
         src: &SocketAddr, // source address of incoming message
         macs: &MACFooter, // footer of incoming message
@@ -277,11 +279,11 @@ impl Validator {
         // the Blake2s key for generating mac2,
         // using the cookie key derived from our public key
         self.cookie_key.xseal(
-            self.get_set_tau(rng, src, time), // pt
-            macs.f_mac1,                      // ad
-            &msg.f_nonce,                     // nonce
-            &mut msg.f_cookie,                // ct
-            &mut msg.f_cookie_tag,            // tag
+            self.get_set_tau(rng, src, now), // pt
+            macs.f_mac1,                     // ad
+            &msg.f_nonce,                    // nonce
+            &mut msg.f_cookie,               // ct
+            &mut msg.f_cookie_tag,           // tag
         );
         msg
     }
@@ -300,14 +302,8 @@ impl Validator {
         }
     }
 
-    pub fn check_mac2(
-        &self,
-        time: Instant,
-        inner: &[u8],
-        src: &SocketAddr,
-        macs: &MACFooter,
-    ) -> bool {
-        if let Some(tau) = self.get_tau(time, src) {
+    pub fn check_mac2(&self, now: I, inner: &[u8], src: &SocketAddr, macs: &MACFooter) -> bool {
+        if let Some(tau) = self.get_tau(now, src) {
             tau.mac(|m| {
                 m.append(inner);
                 m.append(macs.f_mac1);
@@ -325,7 +321,7 @@ mod tests {
     use rand::rngs::OsRng;
     use x25519_dalek::StaticSecret;
 
-    fn new_validator_generator() -> (Validator, Generator) {
+    fn new_validator_generator() -> (Validator<std::time::Instant>, Generator<std::time::Instant>) {
         let sk = StaticSecret::random_from_rng(&mut OsRng);
         let pk = PublicKey::from(&sk);
         (Validator::new(pk), Generator::new(pk))
@@ -335,7 +331,7 @@ mod tests {
         #[test]
         fn test_cookie_reply(inner1 : Vec<u8>, inner2 : Vec<u8>, receiver : u32) {
             let src: SocketAddr = "192.0.2.16:8080".parse().unwrap();
-            let time = Instant::now();
+            let time = std::time::Instant::now();
             let (validator, mut generator) = new_validator_generator();
 
             // generate mac1 for first message

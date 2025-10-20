@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
+use std::time::Instant;
 
 use spin::{Mutex, RwLock};
 use wg_crypto as crypto;
@@ -40,12 +41,12 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
 }
 
 pub struct EncryptionState {
-    pub(super) keypair: Arc<crypto::KeyPair>, // keypair
-    pub(super) nonce: u64,                    // next available nonce
+    pub(super) keypair: Arc<crypto::KeyPair<Instant>>, // keypair
+    pub(super) nonce: u64,                             // next available nonce
 }
 
 pub struct DecryptionState<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    pub(super) keypair: Arc<crypto::KeyPair>,
+    pub(super) keypair: Arc<crypto::KeyPair<Instant>>,
     pub(super) confirmed: AtomicBool,
     pub(super) protector: Mutex<AntiReplay>,
     pub(super) peer: Peer<E, C, T, B>,

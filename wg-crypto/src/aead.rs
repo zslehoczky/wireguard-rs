@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, XChaCha20Poly1305};
 use digest::KeyInit;
 use generic_array::GenericArray;
@@ -14,8 +16,16 @@ use crate::{
 #[derive(Debug, Clone, Copy, AsBytes, FromBytes, Default, PartialEq, Eq)]
 pub struct Tag(pub [u8; 16]);
 
-#[derive(Debug, Clone, ZeroizeOnDrop, Zeroize, Eq)]
+#[derive(Clone, ZeroizeOnDrop, Zeroize, Eq)]
 pub struct SymKey([u8; 32]);
+
+impl Debug for SymKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SymKey")
+            .field("hash(key)", &Hash::new([self.0.as_ref()]))
+            .finish()
+    }
+}
 
 impl From<[u8; 32]> for SymKey {
     fn from(key: [u8; 32]) -> Self {
