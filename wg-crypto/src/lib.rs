@@ -30,7 +30,7 @@ pub use keypair::{Key, KeyPair};
 pub use messages::{Initiation, Response};
 pub use noise::SecretBytes;
 pub use time::Instant;
-pub use timestamp::{Timestamp, TAI64N};
+pub use timestamp::{TAI64N, Timestamp};
 pub use types::{Message, Output, PSK};
 
 #[cfg(feature = "std")]

@@ -16,6 +16,12 @@ use crate::{
 #[derive(Debug, Clone, Copy, AsBytes, FromBytes, Default, PartialEq, Eq)]
 pub struct Tag(pub [u8; 16]);
 
+impl AsRef<[u8]> for Tag {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 #[derive(Clone, ZeroizeOnDrop, Zeroize, Eq)]
 pub struct SymKey([u8; 32]);
 

@@ -324,8 +324,9 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
     // H := Hash(H || msg.static)
 
     let hs = Hash::new([
-        hs.as_ref(), //
+        hs.as_ref(),
         msg.f_static.as_ref(),
+        msg.f_static_tag.as_ref(),
     ]);
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
@@ -345,8 +346,9 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
     // H := Hash(H || msg.timestamp)
 
     let hs = Hash::new([
-        hs.as_ref(), //
+        hs.as_ref(),
         msg.f_timestamp.as_ref(),
+        msg.f_timestamp_tag.as_ref(),
     ]);
 
     // update state of peer
@@ -422,8 +424,9 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
     // H := Hash(H || msg.static)
 
     let hs = Hash::new([
-        hs.as_ref(), //
-        &msg.f_static,
+        hs.as_ref(),
+        msg.f_static.as_ref(),
+        msg.f_static_tag.as_ref(),
     ]);
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
@@ -449,8 +452,9 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
     // H := Hash(H || msg.timestamp)
 
     let hs = Hash::new([
-        hs.as_ref(), //
-        &msg.f_timestamp,
+        hs.as_ref(),
+        msg.f_timestamp.as_ref(),
+        msg.f_timestamp_tag.as_ref(),
     ]);
 
     // return state (to create response)
