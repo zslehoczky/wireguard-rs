@@ -17,16 +17,11 @@ pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C)
             log::debug!("UAPI, Get operation");
             serialize(stream, config).map_err(|_| ConfigError::IOError)
         }
-        Operation::Set => {
+        Operation::Set(key_value_pairs) => {
             log::debug!("UAPI, Set operation");
             let mut parser = LineParser::new(config);
-            loop {
-                let ln = readline(stream)?;
-                if ln == "" {
-                    break;
-                }
-                let (k, v) = keypair(ln.as_str())?;
-                parser.parse_line(k, v)?;
+            for (k, v) in key_value_pairs {
+                parser.parse_line(&k, &v)?;
             }
             parser.parse_line("", "")
         }
@@ -51,14 +46,22 @@ pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C)
 
 enum Operation {
     Get,
-    Set,
+    Set(Vec<(String, String)>),
 }
 
 // read operation line
 fn get_operation<S: Read + Write>(stream: &mut S) -> Result<Operation, ConfigError> {
     match readline(stream)?.as_str() {
         "get=1" => Ok(Operation::Get),
-        "set=1" => Ok(Operation::Set),
+        "set=1" => {
+            let mut key_value_pairs = Vec::new();
+            while let ln = readline(stream)?
+                && ln != ""
+            {
+                key_value_pairs.push(read_key_value_pair(ln.as_str())?);
+            }
+            Ok(Operation::Set { 0: key_value_pairs })
+        }
         _ => Err(ConfigError::InvalidOperation),
     }
 }
@@ -81,11 +84,10 @@ fn readline<R: Read>(reader: &mut R) -> Result<String, ConfigError> {
     Err(ConfigError::IOError)
 }
 
-// split into (key, value) pair
-fn keypair(ln: &str) -> Result<(&str, &str), ConfigError> {
+fn read_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
     let mut split = ln.splitn(2, '=');
     match (split.next(), split.next()) {
-        (Some(key), Some(value)) => Ok((key, value)),
+        (Some(key), Some(value)) => Ok((key.to_string(), value.to_string())),
         _ => Err(ConfigError::LineTooLong),
     }
 }
