@@ -1,7 +1,7 @@
 mod get;
 mod set;
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 
 use super::{ConfigError, Configuration};
 
@@ -52,11 +52,13 @@ pub enum ConfigOperation {
 pub fn parse_config_operation<S: Read + Write>(
     stream: &mut S,
 ) -> Result<ConfigOperation, ConfigError> {
-    match read_line(stream)?.as_str() {
+    let mut buf_reader = BufReader::new(stream);
+
+    match read_line(&mut buf_reader)?.as_str() {
         "get=1" => Ok(ConfigOperation::Get),
         "set=1" => {
             let mut key_value_pairs = Vec::new();
-            while let ln = read_line(stream)?
+            while let ln = read_line(&mut buf_reader)?
                 && ln != ""
             {
                 key_value_pairs.push(parse_key_value_pair(ln.as_str())?);
@@ -67,22 +69,18 @@ pub fn parse_config_operation<S: Read + Write>(
     }
 }
 
-// read string up to maximum length (why is this not in std?)
-fn read_line<R: Read>(reader: &mut R) -> Result<String, ConfigError> {
-    let mut m: [u8; 1] = [0u8];
-    let mut l: String = String::with_capacity(MAX_LINE_LENGTH);
-    while reader.read_exact(&mut m).is_ok() {
-        let c = m[0] as char;
-        if c == '\n' {
-            log::trace!("UAPI, line: {}", l);
-            return Ok(l);
-        };
-        l.push(c);
-        if l.len() > MAX_LINE_LENGTH {
-            return Err(ConfigError::LineTooLong);
-        }
+fn read_line<R: Read>(buf_reader: &mut BufReader<R>) -> Result<String, ConfigError> {
+    let mut line = String::new();
+
+    let n_chars = buf_reader
+        .read_line(&mut line)
+        .map_err(|_| ConfigError::IOError)?;
+
+    if n_chars > MAX_LINE_LENGTH {
+        return Err(ConfigError::LineTooLong);
     }
-    Err(ConfigError::IOError)
+
+    Ok(line)
 }
 
 fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
