@@ -16,16 +16,10 @@ mod peer;
 mod ratelimiter;
 mod time;
 mod timestamp;
-
-// Abstraction on Instant
-// This exists to support no-std en
 mod types;
 
 #[cfg(feature = "std")]
 extern crate std;
-
-#[cfg(feature = "std")]
-pub use timestamp::StdTimestamp;
 
 #[cfg(test)]
 mod tests;
@@ -33,7 +27,14 @@ mod tests;
 pub use aead::{Nonce, SymKey, Tag};
 pub use device::Device;
 pub use keypair::{Key, KeyPair};
-pub use types::{Message, PSK};
+pub use messages::{Initiation, Response};
+pub use noise::SecretBytes;
+pub use time::Instant;
+pub use timestamp::{Timestamp, TAI64N};
+pub use types::{Message, Output, PSK};
+
+#[cfg(feature = "std")]
+pub use timestamp::StdTimestamp;
 
 const fn max3(a: usize, b: usize, c: usize) -> usize {
     const fn max(a: usize, b: usize) -> usize {
