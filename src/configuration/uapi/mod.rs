@@ -49,18 +49,17 @@ pub enum ConfigOperation {
     Set(Vec<(String, String)>),
 }
 
-// read operation line
 pub fn parse_config_operation<S: Read + Write>(
     stream: &mut S,
 ) -> Result<ConfigOperation, ConfigError> {
-    match readline(stream)?.as_str() {
+    match read_line(stream)?.as_str() {
         "get=1" => Ok(ConfigOperation::Get),
         "set=1" => {
             let mut key_value_pairs = Vec::new();
-            while let ln = readline(stream)?
+            while let ln = read_line(stream)?
                 && ln != ""
             {
-                key_value_pairs.push(read_key_value_pair(ln.as_str())?);
+                key_value_pairs.push(parse_key_value_pair(ln.as_str())?);
             }
             Ok(ConfigOperation::Set { 0: key_value_pairs })
         }
@@ -69,7 +68,7 @@ pub fn parse_config_operation<S: Read + Write>(
 }
 
 // read string up to maximum length (why is this not in std?)
-fn readline<R: Read>(reader: &mut R) -> Result<String, ConfigError> {
+fn read_line<R: Read>(reader: &mut R) -> Result<String, ConfigError> {
     let mut m: [u8; 1] = [0u8];
     let mut l: String = String::with_capacity(MAX_LINE_LENGTH);
     while reader.read_exact(&mut m).is_ok() {
@@ -86,7 +85,7 @@ fn readline<R: Read>(reader: &mut R) -> Result<String, ConfigError> {
     Err(ConfigError::IOError)
 }
 
-fn read_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
+fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
     let mut split = ln.splitn(2, '=');
     match (split.next(), split.next()) {
         (Some(key), Some(value)) => Ok((key.to_string(), value.to_string())),
