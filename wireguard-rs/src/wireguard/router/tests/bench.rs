@@ -13,7 +13,7 @@ use std::net::IpAddr;
 
 // only used in benchmark
 #[cfg(feature = "unstable")]
-use num_cpus;
+use num_cpus::{self};
 
 #[cfg(feature = "unstable")]
 use test::Bencher;

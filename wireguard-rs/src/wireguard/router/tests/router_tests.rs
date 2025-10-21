@@ -170,11 +170,11 @@ fn test_outbound() {
             len
         );
 
-        for set_key in vec![true, false] {
-            for confirm_with_staged_packet in vec![true, false] {
+        for set_key in [true, false] {
+            for confirm_with_staged_packet in [true, false] {
                 let send_keepalive = (!confirm_with_staged_packet || !okay) && set_key;
                 let send_payload = okay && set_key;
-                let need_key = ((confirm_with_staged_packet && set_key) || !set_key) && okay;
+                let need_key = (!set_key || confirm_with_staged_packet) && okay;
 
                 println!(
                     "  confirm_with_staged_packet = {}, send_keepalive = {}, set_key = {}",
@@ -297,7 +297,7 @@ fn test_bidirectional() {
     let mut rng = rand::thread_rng();
 
     for (p1, p2) in tests.iter() {
-        for confirm_with_staged_packet in vec![true, false] {
+        for confirm_with_staged_packet in [true, false] {
             println!(
                 "peer1 = {:?}, peer2 = {:?}, confirm_with_staged_packet = {}",
                 p1, p2, confirm_with_staged_packet

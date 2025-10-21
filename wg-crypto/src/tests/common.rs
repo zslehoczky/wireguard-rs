@@ -10,6 +10,13 @@ use core::{ops::Add, time::Duration};
 use rand_core::{CryptoRng, Error as RngError, RngCore};
 use x25519_dalek::{PublicKey, StaticSecret};
 
+type DeviceSetup<O, I> = (
+    PublicKey,
+    Device<O, I, StdTimestamp>,
+    PublicKey,
+    Device<O, I, StdTimestamp>,
+);
+
 /// MockRng that outputs a predetermined sequence of bytes
 pub struct MockRng {
     counter: u8,
@@ -149,12 +156,7 @@ pub fn setup_devices<R: RngCore + CryptoRng, O: Default, I: Instant>(
     rng1: &mut R,
     rng2: &mut R,
     rng3: &mut R,
-) -> (
-    PublicKey,
-    Device<O, I, StdTimestamp>,
-    PublicKey,
-    Device<O, I, StdTimestamp>,
-) {
+) -> DeviceSetup<O, I> {
     let sk1 = StaticSecret::random_from_rng(rng1);
     let pk1 = PublicKey::from(&sk1);
 

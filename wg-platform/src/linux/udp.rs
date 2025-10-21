@@ -161,7 +161,7 @@ impl LinuxEndpoint {
         }
     }
 
-    pub fn into_address(&self) -> SocketAddr {
+    pub fn to_address(&self) -> SocketAddr {
         match self {
             LinuxEndpoint::V4(EndpointV4 { dst, .. }) => {
                 SocketAddr::V4(SocketAddrV4::new(
@@ -713,8 +713,8 @@ impl Endpoint for LinuxEndpoint {
         LinuxEndpoint::from_address(addr)
     }
 
-    fn into_address(&self) -> SocketAddr {
-        self.into_address()
+    fn to_address(&self) -> SocketAddr {
+        self.to_address()
     }
 
     fn clear_src(&mut self) {

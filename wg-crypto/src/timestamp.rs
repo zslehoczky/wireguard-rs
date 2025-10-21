@@ -3,7 +3,7 @@ use subtle::ConstantTimeEq;
 use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, packed)]
-#[derive(AsBytes, FromBytes, Default, Ord, Eq, Clone, Copy)]
+#[derive(AsBytes, FromBytes, Default, Eq, Clone, Copy)]
 pub struct TAI64N(pub [u8; 12]);
 
 impl AsRef<[u8]> for TAI64N {
@@ -24,8 +24,8 @@ impl PartialEq for TAI64N {
     }
 }
 
-impl PartialOrd for TAI64N {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+impl Ord for TAI64N {
+    fn cmp(&self, other: &Self) -> Ordering {
         let mut gt = 0u8;
         let mut lt = 0u8;
         for (a, b) in self.0.iter().zip(other.0.iter()) {
@@ -33,12 +33,18 @@ impl PartialOrd for TAI64N {
             lt |= ((a < b) as u8) & !gt;
         }
         if gt != 0 {
-            Some(Ordering::Greater)
+            Ordering::Greater
         } else if lt != 0 {
-            Some(Ordering::Less)
+            Ordering::Less
         } else {
-            Some(Ordering::Equal)
+            Ordering::Equal
         }
+    }
+}
+
+impl PartialOrd for TAI64N {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

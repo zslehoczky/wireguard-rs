@@ -16,7 +16,7 @@ use super::*;
 ///
 /// Furthermore it forms the simpler interface for embedding WireGuard in other applications,
 /// and hides the complex types of the implementation from the host application.
-
+///
 /// Describes a snapshot of the state of a peer
 pub struct PeerState {
     pub rx_bytes: u64,

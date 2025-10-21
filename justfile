@@ -11,7 +11,7 @@ check-fmt:
     cargo fmt --check
 
 check-clippy:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
 check-build:
     cargo hack check --feature-powerset
@@ -27,4 +27,4 @@ integration: build
         exit 1
     fi
 
-ci: build check-fmt test integration
+ci: build check-fmt check-clippy test integration

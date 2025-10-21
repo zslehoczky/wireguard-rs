@@ -1,5 +1,7 @@
+#[cfg(feature = "unstable")]
 mod bench;
-mod tests;
+#[cfg(test)]
+mod router_tests;
 
 use wg_crypto as crypto;
 use wg_crypto::SymKey;

@@ -4,7 +4,7 @@ use zerocopy::{AsBytes, FromBytes};
 
 pub const TYPE_TRANSPORT: u32 = 4;
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone, FromBytes, AsBytes)]
 pub struct TransportHeader {
     pub f_type: U32<LittleEndian>,

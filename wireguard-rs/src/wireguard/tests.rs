@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::net::IpAddr;
 use std::thread;
 
-use hex;
+use hex::{self};
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -14,7 +14,7 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 
 pub fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     // expand pseudo random payload
-    let mut rng: _ = ChaCha8Rng::seed_from_u64(id);
+    let mut rng = ChaCha8Rng::seed_from_u64(id);
     let mut p: Vec<u8> = vec![0; size];
     rng.fill_bytes(&mut p);
 
@@ -151,7 +151,7 @@ fn test_pure_wireguard() {
 
         for id in 0..num_packets {
             packets.push(make_packet(
-                50 * id as usize,                // size
+                50 * id,                         // size
                 "192.168.1.20".parse().unwrap(), // src
                 "192.168.2.10".parse().unwrap(), // dst
                 id as u64,                       // prng seed
@@ -182,7 +182,7 @@ fn test_pure_wireguard() {
 
         for id in 0..num_packets {
             packets.push(make_packet(
-                50 + 50 * id as usize,           // size
+                50 + 50 * id,                    // size
                 "192.168.2.10".parse().unwrap(), // src
                 "192.168.1.20".parse().unwrap(), // dst
                 (id + 100) as u64,               // prng seed

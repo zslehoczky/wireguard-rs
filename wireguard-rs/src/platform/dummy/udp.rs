@@ -17,6 +17,11 @@ use wg_traits::udp::Writer;
 
 use super::UnitEndpoint;
 
+type PairResult<E> = (
+    (PairReader<E>, PairWriter<E>),
+    (PairReader<E>, PairWriter<E>),
+);
+
 pub struct VoidOwner {}
 
 #[derive(Debug)]
@@ -133,10 +138,7 @@ pub struct PairWriter<E> {
 pub struct PairBind {}
 
 impl PairBind {
-    pub fn pair<E>() -> (
-        (PairReader<E>, PairWriter<E>),
-        (PairReader<E>, PairWriter<E>),
-    ) {
+    pub fn pair<E>() -> PairResult<E> {
         let id1: u32 = OsRng.r#gen();
         let id2: u32 = OsRng.r#gen();
 
