@@ -179,7 +179,7 @@ fn spawn_uapi_server<'scope, 'env>(
 
                                     receiver
                                         .recv()
-                                        .expect("channel is open while this loop is running")
+                                        .expect("channel is open until result is received")
                                 },
                             );
 
@@ -188,7 +188,7 @@ fn spawn_uapi_server<'scope, 'env>(
                             let mut response = match result {
                                 Ok(response) => response,
                                 Err(err) => {
-                                    log::error!("Error while parsing config operation: {err}");
+                                    log::error!("Error during config operation: {err}");
 
                                     errno = err.errno();
 
