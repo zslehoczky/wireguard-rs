@@ -47,8 +47,9 @@ jobs:
       if: runner.os == 'macOS'
       run: just build check-fmt test
     - name: Save CI log (Linux)
-      if: runner.os == 'Linux'
+      if: always() && runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
         name: wg_client.log
         path: /tmp/wg_client.log
+        retention-days: 7
