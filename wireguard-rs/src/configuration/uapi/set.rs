@@ -66,7 +66,7 @@ impl<'a, C: Configuration> LineParser<'a, C> {
         }
 
         for (ip, cidr) in &peer.allowed_ips {
-            log::trace!("flush peer, add allowed_ips : {}/{}", ip.to_string(), cidr);
+            log::trace!("flush peer, add allowed_ips : {}/{}", ip, cidr);
             config.add_allowed_ip(&peer.public_key, *ip, *cidr);
         }
 
@@ -88,7 +88,7 @@ impl<'a, C: Configuration> LineParser<'a, C> {
         }
 
         if let Some(endpoint) = peer.endpoint {
-            log::trace!("flush peer, set endpoint {}", endpoint.to_string());
+            log::trace!("flush peer, set endpoint {}", endpoint);
             config.set_endpoint(&peer.public_key, endpoint);
         };
 
