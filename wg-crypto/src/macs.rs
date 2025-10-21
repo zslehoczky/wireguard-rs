@@ -127,12 +127,10 @@ impl<const N: usize> MacKey<N> {
     fn cookie_from_src(&self, src: &SocketAddr) -> MacKey<SIZE_COOKIE> {
         let mac = self.mac(|m| match src {
             SocketAddr::V4(addr) => {
-                m.append([4u8]);
                 m.append(addr.ip().octets());
                 m.append(addr.port().to_le_bytes());
             }
             SocketAddr::V6(addr) => {
-                m.append([6u8]);
                 m.append(addr.ip().octets());
                 m.append(addr.port().to_le_bytes());
             }
