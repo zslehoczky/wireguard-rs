@@ -235,7 +235,9 @@ fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
                 }
                 ConfigMessage::TunUp(mtu) => {
                     log::info!("Tun up (mtu = {})", mtu);
-                    let _ = wireguard_config.up(mtu); // TODO: handle
+                    if let Err(err) = wireguard_config.up(mtu) {
+                        log::error!("Error during TUN setup: {err}");
+                    }
                 }
                 ConfigMessage::TunDown => {
                     log::info!("Tun down");
