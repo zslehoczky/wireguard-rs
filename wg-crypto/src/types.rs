@@ -2,6 +2,7 @@ use zerocopy::AsBytes;
 
 use crate::messages::{self};
 use crate::noise::SecretBytes;
+use crate::time::Instant;
 
 use super::keypair::KeyPair;
 
@@ -121,10 +122,10 @@ impl Error for HandshakeError {
     }
 }
 
-pub struct Output<'a, O> {
+pub struct Output<'a, O, I: Instant> {
     pub id: Option<&'a O>,
     pub msg: Option<Message>,
-    pub key_pair: Option<KeyPair>,
+    pub key_pair: Option<KeyPair<I>>,
 }
 
 #[allow(clippy::upper_case_acronyms)]

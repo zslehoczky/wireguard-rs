@@ -540,7 +540,9 @@ impl Owner for MacosOwner {
 impl PlatformUDP for MacosUDP {
     type Owner = MacosOwner;
 
-    fn bind(port: u16) -> std::result::Result<(Vec<Self::Reader>, Self::Writer, Self::Owner), Self::Error> {
+    fn bind(
+        port: u16,
+    ) -> std::result::Result<(Vec<Self::Reader>, Self::Writer, Self::Owner), Self::Error> {
         MacosUDP::bind(port)
     }
 }

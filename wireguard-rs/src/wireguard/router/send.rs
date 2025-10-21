@@ -1,5 +1,6 @@
-use wg_crypto as crypto;
 use wg_traits::{Endpoint, tun, udp};
+
+use crate::wireguard::peer::KeyPair;
 
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
 use super::peer::Peer;
@@ -18,7 +19,7 @@ struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     ready: AtomicBool,
     buffer: Mutex<Vec<u8>>,
     counter: u64,
-    keypair: Arc<crypto::KeyPair>,
+    keypair: Arc<KeyPair>,
     peer: Peer<E, C, T, B>,
 }
 
@@ -36,7 +37,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SendJob<E, C,
     pub fn new(
         buffer: Vec<u8>,
         counter: u64,
-        keypair: Arc<crypto::KeyPair>,
+        keypair: Arc<KeyPair>,
         peer: Peer<E, C, T, B>,
     ) -> SendJob<E, C, T, B> {
         SendJob(Arc::new(Inner {
