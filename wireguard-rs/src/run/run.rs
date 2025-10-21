@@ -1,7 +1,7 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
 use std::env;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::process::exit;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -185,19 +185,21 @@ fn spawn_uapi_config_message_handler<'scope, 'env>(
     thread_scope.spawn(|| {
         let uapi_stream_sender = config_sender;
         let mut stream = stream;
+        let mut buf_reader = BufReader::new(&mut stream);
 
         while tun_reader_jobs_running.load(Ordering::Acquire) {
-            let result = uapi::parse_config_operation(&mut stream).and_then(|config_operation| {
-                let (sender, receiver) = mpsc::channel();
+            let result =
+                uapi::parse_config_operation(&mut buf_reader).and_then(|config_operation| {
+                    let (sender, receiver) = mpsc::channel();
 
-                uapi_stream_sender
-                    .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
-                    .expect("channel is open while this loop is running");
+                    uapi_stream_sender
+                        .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
+                        .expect("channel is open while this loop is running");
 
-                receiver
-                    .recv()
-                    .expect("channel is open until result is received")
-            });
+                    receiver
+                        .recv()
+                        .expect("channel is open until result is received")
+                });
 
             let mut errno = 0;
 
@@ -214,7 +216,7 @@ fn spawn_uapi_config_message_handler<'scope, 'env>(
 
             response.push_str(&format!("errno={errno}\n\n"));
 
-            if let Err(err) = stream.write(response.as_bytes()) {
+            if let Err(err) = buf_reader.get_mut().write(response.as_bytes()) {
                 log::error!("Error while writing to Unix socket: {err}");
             }
         }

@@ -40,15 +40,13 @@ pub enum ConfigOperation {
 }
 
 pub fn parse_config_operation<S: Read + Write>(
-    stream: &mut S,
+    buf_reader: &mut BufReader<&mut S>,
 ) -> Result<ConfigOperation, ConfigError> {
-    let mut buf_reader = BufReader::new(stream);
-
-    match read_line(&mut buf_reader)?.as_str() {
+    match read_line(buf_reader)?.as_str() {
         "get=1" => Ok(ConfigOperation::Get),
         "set=1" => {
             let mut key_value_pairs = Vec::new();
-            while let ln = read_line(&mut buf_reader)?
+            while let ln = read_line(buf_reader)?
                 && ln != ""
             {
                 key_value_pairs.push(parse_key_value_pair(ln.as_str())?);
