@@ -10,38 +10,28 @@ use set::LineParser;
 
 const MAX_LINE_LENGTH: usize = 256;
 
-pub fn handle<S: Read + Write, C: Configuration>(stream: &mut S, config: &mut C) {
-    // process operation
-    let res = parse_config_operation(stream).and_then(|operation| match operation {
+pub fn handle_config_operation<C: Configuration>(
+    config_operation: ConfigOperation,
+    config: &mut C,
+) -> Result<String, ConfigError> {
+    match config_operation {
         ConfigOperation::Get => {
             log::debug!("UAPI, Get operation");
-            serialize(stream, config).map_err(|_| ConfigError::IOError)
+
+            Ok(serialize(config))
         }
         ConfigOperation::Set(key_value_pairs) => {
             log::debug!("UAPI, Set operation");
+
             let mut parser = LineParser::new(config);
             for (k, v) in key_value_pairs {
                 parser.parse_line(&k, &v)?;
             }
-            Ok(parser.finalize())
-        }
-    });
+            parser.finalize();
 
-    match res {
-        Ok(_) => log::debug!("UAPI, Result of operation: OK"),
-        Err(ref e) => log::error!("UAPI, Result of operation: {}", e),
+            Ok(String::new())
+        }
     }
-
-    // return errno
-    let _ = stream.write("errno=".as_ref());
-    let _ = stream.write(
-        match res {
-            Err(e) => e.errno().to_string(),
-            Ok(()) => "0".to_owned(),
-        }
-        .as_ref(),
-    );
-    let _ = stream.write("\n\n".as_ref());
 }
 
 pub enum ConfigOperation {

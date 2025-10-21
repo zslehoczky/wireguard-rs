@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "unstable", feature(test))]
 
 use std::env;
+use std::io::Write;
 use std::process::exit;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -10,7 +11,7 @@ use std::thread::{self, ScopedJoinHandle};
 
 use anyhow::anyhow;
 
-use crate::configuration::{Configuration, WireGuardConfig, uapi};
+use crate::configuration::{ConfigError, Configuration, WireGuardConfig, uapi};
 use crate::platform::{
     plt,
     tun::{PlatformTun, Status, Tun, TunEvent},
@@ -32,7 +33,10 @@ pub fn create_config_and_run() -> Result<(), ErrorReason> {
 }
 
 enum ConfigMessage {
-    UapiStream(<<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream),
+    UapiConfigOperation(
+        uapi::ConfigOperation,
+        mpsc::Sender<Result<String, ConfigError>>,
+    ),
     TunUp(usize),
     TunDown,
 }
@@ -157,13 +161,47 @@ fn spawn_uapi_server<'scope, 'env>(
                 Ok(stream) => {
                     let uapi_stream_sender = uapi_stream_sender.clone();
 
-                    thread_scope.spawn(move || {
-                        // TODO: parse config operation here from stream, then send only parsed operation, not stream
-                        // TODO: create channel to receive operation result, then write back to stream
-                        // TODO: loop over parsing operation from stream
-                        uapi_stream_sender
-                            .send(ConfigMessage::UapiStream(stream))
-                            .expect("channel is open while this loop is running");
+                    thread_scope.spawn(|| {
+                        let mut stream = stream;
+                        let uapi_stream_sender = uapi_stream_sender;
+
+                        while tun_reader_jobs_running.load(Ordering::Acquire) {
+                            let result = uapi::parse_config_operation(&mut stream).and_then(
+                                |config_operation| {
+                                    let (sender, receiver) = mpsc::channel();
+
+                                    uapi_stream_sender
+                                        .send(ConfigMessage::UapiConfigOperation(
+                                            config_operation,
+                                            sender,
+                                        ))
+                                        .expect("channel is open while this loop is running");
+
+                                    receiver
+                                        .recv()
+                                        .expect("channel is open while this loop is running")
+                                },
+                            );
+
+                            let mut errno = 0;
+
+                            let mut response = match result {
+                                Ok(response) => response,
+                                Err(err) => {
+                                    log::error!("Error while parsing config operation: {err}");
+
+                                    errno = err.errno();
+
+                                    String::new()
+                                }
+                            };
+
+                            response.push_str(&format!("errno={errno}\n\n"));
+
+                            if let Err(err) = stream.write(response.as_bytes()) {
+                                log::error!("Error while writing to Unix socket: {err}");
+                            }
+                        }
                     });
                 }
                 Err(err) => {
@@ -187,8 +225,13 @@ fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
 
         while let Ok(message) = config_receiver.recv() {
             match message {
-                ConfigMessage::UapiStream(mut stream) => {
-                    uapi::handle(&mut stream, &mut wireguard_config);
+                ConfigMessage::UapiConfigOperation(config_operation, sender) => {
+                    sender
+                        .send(uapi::handle_config_operation(
+                            config_operation,
+                            &mut wireguard_config,
+                        ))
+                        .expect("channel is open until result is received");
                 }
                 ConfigMessage::TunUp(mtu) => {
                     log::info!("Tun up (mtu = {})", mtu);
