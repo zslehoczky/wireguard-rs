@@ -182,7 +182,8 @@ impl<const N: usize> MacKey<N> {
         F: FnOnce(&mut MacStream),
     {
         assert!(N <= 32);
-        let mut mac = blake2::Blake2sMac::new_with_salt_and_personal(&self.0, &[], &[]).unwrap();
+        use blake2::digest::KeyInit;
+        let mut mac = blake2::Blake2sMac::new_from_slice(&self.0).unwrap();
         f(&mut MacStream(&mut mac));
         let mac = mac.finalize().into_bytes();
         MAC(mac.into())
