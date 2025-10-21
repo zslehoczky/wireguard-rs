@@ -33,6 +33,8 @@ jobs:
           ~/.cargo/bin
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
     - name: Install cargo-hack
       run: cargo install cargo-hack --locked || [ -f ~/.cargo/bin/cargo-hack ]
     - name: Install just
