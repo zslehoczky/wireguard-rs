@@ -153,62 +153,69 @@ fn spawn_uapi_server<'scope, 'env>(
     config_sender: mpsc::Sender<ConfigMessage>,
 ) -> ScopedJoinHandle<'scope, ()> {
     thread_scope.spawn(|| {
-        let uapi_stream_sender = config_sender;
+        let config_sender = config_sender;
 
         while tun_reader_jobs_running.load(Ordering::Acquire) {
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(stream) => {
-                    let uapi_stream_sender = uapi_stream_sender.clone();
-
-                    thread_scope.spawn(|| {
-                        let mut stream = stream;
-                        let uapi_stream_sender = uapi_stream_sender;
-
-                        while tun_reader_jobs_running.load(Ordering::Acquire) {
-                            let result = uapi::parse_config_operation(&mut stream).and_then(
-                                |config_operation| {
-                                    let (sender, receiver) = mpsc::channel();
-
-                                    uapi_stream_sender
-                                        .send(ConfigMessage::UapiConfigOperation(
-                                            config_operation,
-                                            sender,
-                                        ))
-                                        .expect("channel is open while this loop is running");
-
-                                    receiver
-                                        .recv()
-                                        .expect("channel is open until result is received")
-                                },
-                            );
-
-                            let mut errno = 0;
-
-                            let mut response = match result {
-                                Ok(response) => response,
-                                Err(err) => {
-                                    log::error!("Error during config operation: {err}");
-
-                                    errno = err.errno();
-
-                                    String::new()
-                                }
-                            };
-
-                            response.push_str(&format!("errno={errno}\n\n"));
-
-                            if let Err(err) = stream.write(response.as_bytes()) {
-                                log::error!("Error while writing to Unix socket: {err}");
-                            }
-                        }
-                    });
+                    spawn_uapi_config_message_handler(
+                        thread_scope,
+                        tun_reader_jobs_running,
+                        config_sender.clone(),
+                        stream,
+                    );
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
                     profiler_stop();
                     exit(ExitCode::UAPIConnectionError as i32);
                 }
+            }
+        }
+    })
+}
+
+fn spawn_uapi_config_message_handler<'scope, 'env>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    tun_reader_jobs_running: &'env AtomicBool,
+    config_sender: mpsc::Sender<ConfigMessage>,
+    stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
+) -> ScopedJoinHandle<'scope, ()> {
+    thread_scope.spawn(|| {
+        let uapi_stream_sender = config_sender;
+        let mut stream = stream;
+
+        while tun_reader_jobs_running.load(Ordering::Acquire) {
+            let result = uapi::parse_config_operation(&mut stream).and_then(|config_operation| {
+                let (sender, receiver) = mpsc::channel();
+
+                uapi_stream_sender
+                    .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
+                    .expect("channel is open while this loop is running");
+
+                receiver
+                    .recv()
+                    .expect("channel is open until result is received")
+            });
+
+            let mut errno = 0;
+
+            let mut response = match result {
+                Ok(response) => response,
+                Err(err) => {
+                    log::error!("Error during config operation: {err}");
+
+                    errno = err.errno();
+
+                    String::new()
+                }
+            };
+
+            response.push_str(&format!("errno={errno}\n\n"));
+
+            if let Err(err) = stream.write(response.as_bytes()) {
+                log::error!("Error while writing to Unix socket: {err}");
             }
         }
     })
