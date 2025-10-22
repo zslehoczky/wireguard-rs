@@ -43,13 +43,14 @@ jobs:
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y wireguard-tools
     - name: Run Continuous Integration Checks (Linux)
+      id: ci_linux
       if: runner.os == 'Linux'
       run: just ci
     - name: Run Continuous Integration Checks (macOS)
       if: runner.os == 'macOS'
       run: just build check-fmt test
     - name: Save CI log (Linux)
-      if: always() && runner.os == 'Linux'
+      if: failure() && steps.ci_linux.conclusion == 'failure' && runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
         name: wg_client.log
