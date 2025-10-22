@@ -186,24 +186,36 @@ fn spawn_uapi_config_message_handler<'scope, 'env>(
         let uapi_stream_sender = config_sender;
         let mut stream = stream;
         let mut reader = BufReader::new(&mut stream);
+        let mut string_buffer = String::new();
 
-        while tun_reader_jobs_running.load(Ordering::Acquire) {
-            let result = uapi::parse_config_operation(&mut reader).and_then(|config_operation| {
-                let (sender, receiver) = mpsc::channel();
+        'read_from_stream: while tun_reader_jobs_running.load(Ordering::Acquire) {
+            let result = uapi::parse_config_operation(&mut reader, &mut string_buffer).and_then(
+                |config_operation| match config_operation {
+                    Some(config_operation) => {
+                        let (sender, receiver) = mpsc::channel();
 
-                uapi_stream_sender
-                    .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
-                    .expect("channel is open while this loop is running");
+                        uapi_stream_sender
+                            .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
+                            .expect("channel is open while this loop is running");
 
-                receiver
-                    .recv()
-                    .expect("channel is open until result is received")
-            });
+                        receiver
+                            .recv()
+                            .expect("channel is open until result is received")
+                            .map(|string| Some(string))
+                    }
+                    None => Ok(None), // channel closed
+                },
+            );
+
+            if let Ok(None) = result {
+                // channel closed
+                break 'read_from_stream;
+            }
 
             let mut errno = 0;
 
             let response = match result {
-                Ok(response) => response,
+                Ok(response) => response.expect("None case was already handled"),
                 Err(err) => {
                     log::error!("Error during config operation: {err}");
 
