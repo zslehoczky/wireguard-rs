@@ -13,18 +13,14 @@ pub fn parse_config_operation<R: Read>(
 ) -> Result<Option<ConfigOperation>, ConfigError> {
     string_buffer.clear();
 
-    let read_lines_ok = 'read_lines: loop {
+    loop {
         if let Some(line) = read_line(reader, string_buffer)? {
             if line == "" {
-                break 'read_lines true;
+                break;
             }
         } else {
-            break 'read_lines false; // EOF reached
+            return Ok(None); // EOF reached
         }
-    };
-
-    if !read_lines_ok {
-        return Ok(None); // EOF reached
     }
 
     let lines: Vec<&str> = string_buffer.lines().filter(|&line| line != "").collect();
