@@ -66,9 +66,9 @@ pub fn parse_config_operation<S: Read + Write>(
                     'read_argument_lines: loop {
                         if let Some(line) = read_line(reader, string_buffer)? {
                             if line == "" {
-                                break 'read_argument_lines Ok(Some(ConfigOperation::Set {
-                                    0: key_value_pairs,
-                                }));
+                                break 'read_argument_lines Ok(Some(ConfigOperation::Set(
+                                    key_value_pairs,
+                                )));
                             }
 
                             key_value_pairs.push(parse_key_value_pair(line)?);
