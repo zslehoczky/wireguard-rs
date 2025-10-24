@@ -19,7 +19,7 @@ use rand::rngs::OsRng;
 
 use hjul::Runner;
 use spin::{Mutex, RwLock};
-use wg_crypto::{self as crypto, PSK};
+use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -39,7 +39,11 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     // peer map
     #[allow(clippy::type_complexity)]
     pub peers: RwLock<
-        crypto::Device<router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer>>,
+        crypto::Device<
+            router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer>,
+            std::time::Instant,
+            StdTimestamp,
+        >,
     >,
 
     // cryptokey router
@@ -102,7 +106,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.down();
 
         // set all peers down (stops timers)
-        for (_, peer) in self.peers.write().iter() {
+        for (_pk, peer) in self.peers.write().iter() {
             peer.stop_timers();
             peer.down();
         }
@@ -128,7 +132,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.up();
 
         // set all peers up (restarts timers)
-        for (_, peer) in self.peers.write().iter() {
+        for (_pk, peer) in self.peers.write().iter() {
             peer.up();
             peer.start_timers();
         }

@@ -1,12 +1,11 @@
-// #![no_std]
+//! Implementation of the
+//! Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s
+//! Protocol pattern
+//!
+//! See: http://www.noiseprotocol.org/noise.html.
+//! For documentation.
+#![cfg_attr(not(test), no_std)]
 
-/* Implementation of the:
- *
- * Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s
- *
- * Protocol pattern, see: http://www.noiseprotocol.org/noise.html.
- * For documentation.
- */
 mod aead;
 mod device;
 mod keypair;
@@ -15,18 +14,27 @@ mod messages;
 mod noise;
 mod peer;
 mod ratelimiter;
+mod time;
 mod timestamp;
 mod types;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(test)]
 mod tests;
 
-use std::usize;
-
 pub use aead::{Nonce, SymKey, Tag};
 pub use device::Device;
 pub use keypair::{Key, KeyPair};
-pub use types::{Message, PSK};
+pub use messages::{Initiation, Response};
+pub use noise::SecretBytes;
+pub use time::Instant;
+pub use timestamp::{TAI64N, Timestamp};
+pub use types::{Message, Output, PSK};
+
+#[cfg(feature = "std")]
+pub use timestamp::StdTimestamp;
 
 const fn max3(a: usize, b: usize, c: usize) -> usize {
     const fn max(a: usize, b: usize) -> usize {
