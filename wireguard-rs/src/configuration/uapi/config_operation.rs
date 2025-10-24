@@ -13,48 +13,56 @@ pub fn parse_config_operation<S: Read + Write>(
 ) -> Result<Option<ConfigOperation>, ConfigError> {
     string_buffer.clear();
 
-    match read_line(reader, string_buffer)? {
-        Some(line) => {
-            log::trace!("Config operation parsed: {line}");
-
-            match line {
-                "get=1" => {
-                    // parse trailing empty line
-                    match read_line(reader, string_buffer)? {
-                        Some("") => Ok(Some(ConfigOperation::Get)),
-                        None => Ok(None), // EOF reached
-                        _ => {
-                            log::error!("Missing empty line after operation");
-
-                            Err(ConfigError::NoTrailingEmptyLine)
-                        }
-                    }
-                }
-                "set=1" => {
-                    let mut key_value_pairs = Vec::new();
-
-                    'read_argument_lines: loop {
-                        if let Some(line) = read_line(reader, string_buffer)? {
-                            if line == "" {
-                                break 'read_argument_lines Ok(Some(ConfigOperation::Set(
-                                    key_value_pairs,
-                                )));
-                            }
-
-                            key_value_pairs.push(parse_key_value_pair(line)?);
-                        } else {
-                            break 'read_argument_lines Ok(None); // EOF reached
-                        }
-                    }
-                }
-                op => {
-                    log::error!("Unknown operation: {op}");
-
-                    Err(ConfigError::InvalidOperation)
-                }
+    let read_lines_ok = 'read_lines: loop {
+        if let Some(line) = read_line(reader, string_buffer)? {
+            if line == "" {
+                break 'read_lines true;
             }
+        } else {
+            break 'read_lines false; // EOF reached
         }
-        None => Ok(None), // EOF reached
+    };
+
+    if !read_lines_ok {
+        return Ok(None); // EOF reached
+    }
+
+    let lines: Vec<&str> = string_buffer.lines().filter(|line| *line != "").collect();
+
+    if lines.len() == 0 {
+        log::error!("Empty line instead of operation");
+
+        return Err(ConfigError::InvalidOperation);
+    }
+
+    let arguments_provided = lines.len() > 1;
+
+    match *lines.get(0).expect("empty vector already handled") {
+        "get=1" => {
+            if arguments_provided {
+                log::warn!("Get operation should be followed by an empty line");
+            }
+
+            Ok(Some(ConfigOperation::Get))
+        }
+        "set=1" => {
+            if !arguments_provided {
+                log::warn!("Set operation should be followed by arguments");
+            }
+
+            let mut key_value_pairs = Vec::new();
+
+            for line in &lines[1..] {
+                key_value_pairs.push(parse_key_value_pair(*line)?);
+            }
+
+            Ok(Some(ConfigOperation::Set(key_value_pairs)))
+        }
+        op => {
+            log::error!("Unknown operation: {op}");
+
+            Err(ConfigError::InvalidOperation)
+        }
     }
 }
 
