@@ -27,7 +27,7 @@ pub fn parse_config_operation<S: Read + Write>(
         return Ok(None); // EOF reached
     }
 
-    let lines: Vec<&str> = string_buffer.lines().filter(|line| *line != "").collect();
+    let lines: Vec<&str> = string_buffer.lines().filter(|&line| line != "").collect();
 
     if lines.len() == 0 {
         log::error!("Empty line instead of operation");
@@ -52,8 +52,8 @@ pub fn parse_config_operation<S: Read + Write>(
 
             let mut key_value_pairs = Vec::new();
 
-            for line in &lines[1..] {
-                key_value_pairs.push(parse_key_value_pair(*line)?);
+            for &line in &lines[1..] {
+                key_value_pairs.push(parse_key_value_pair(line)?);
             }
 
             Ok(Some(ConfigOperation::Set(key_value_pairs)))
