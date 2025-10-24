@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 
 use super::ConfigError;
 
@@ -7,7 +7,7 @@ pub enum ConfigOperation {
     Set(Vec<(String, String)>),
 }
 
-pub fn parse_config_operation<S: Read + Write>(
+pub fn parse_config_operation<S: Read>(
     reader: &mut BufReader<&mut S>,
     string_buffer: &mut String,
 ) -> Result<Option<ConfigOperation>, ConfigError> {
