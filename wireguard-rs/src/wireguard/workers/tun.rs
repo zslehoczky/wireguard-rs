@@ -13,7 +13,6 @@ use crate::wireguard::{
     router::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX},
 };
 
-///
 /// Returns the padded length of a message:
 ///
 /// ### Arguments
@@ -24,7 +23,6 @@ use crate::wireguard::{
 /// ### Returns
 ///
 /// The padded length (always less than or equal to the MTU)
-///
 #[inline(always)]
 const fn padding(size: usize, mtu: usize) -> usize {
     #[inline(always)]
