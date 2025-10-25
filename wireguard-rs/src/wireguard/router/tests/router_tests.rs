@@ -12,9 +12,6 @@ use rand::Rng;
 
 use super::*;
 
-#[cfg(feature = "unstable")]
-extern crate test;
-
 const SIZE_MSG: usize = 1024;
 const SIZE_KEEPALIVE: usize = message_data_len(0);
 const TIMEOUT: Duration = Duration::from_millis(1000);
@@ -132,7 +129,7 @@ fn test_outbound() {
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
     let router: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer);
-    router.set_outbound_writer(dummy::VoidBind::new());
+    router.set_outbound_writer(dummy::VoidBind);
 
     let tests = vec![
         ("192.168.1.0", 24, "192.168.1.20", true),
@@ -339,7 +336,7 @@ fn test_bidirectional() {
                 let (mask, len, _ip, _okay) = p2;
                 let mask: IpAddr = mask.parse().unwrap();
                 peer2.add_allowed_ip(mask, *len);
-                peer2.set_endpoint(dummy::UnitEndpoint::new());
+                peer2.set_endpoint(dummy::UnitEndpoint);
             }
 
             if confirm_with_staged_packet {

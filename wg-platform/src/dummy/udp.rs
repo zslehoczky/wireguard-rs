@@ -9,11 +9,7 @@ use std::sync::{
 use hex;
 use log::debug;
 use rand::{Rng, rngs::OsRng};
-use wg_traits::udp::Owner;
-use wg_traits::udp::PlatformUDP;
-use wg_traits::udp::Reader;
-use wg_traits::udp::UDP;
-use wg_traits::udp::Writer;
+use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
 
 use super::UnitEndpoint;
 
@@ -22,7 +18,7 @@ type PairResult<E> = (
     (PairReader<E>, PairWriter<E>),
 );
 
-pub struct VoidOwner {}
+pub struct VoidOwner;
 
 #[derive(Debug)]
 pub enum BindError {
@@ -47,14 +43,14 @@ impl fmt::Display for BindError {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct VoidBind {}
+#[derive(Clone, Copy, Default)]
+pub struct VoidBind;
 
 impl Reader<UnitEndpoint> for VoidBind {
     type Error = BindError;
 
     fn read(&self, _buf: &mut [u8]) -> Result<(usize, UnitEndpoint), Self::Error> {
-        Ok((0, UnitEndpoint {}))
+        Ok((0, UnitEndpoint))
     }
 }
 
@@ -72,12 +68,6 @@ impl UDP for VoidBind {
 
     type Reader = VoidBind;
     type Writer = VoidBind;
-}
-
-impl VoidBind {
-    pub fn new() -> VoidBind {
-        VoidBind {}
-    }
 }
 
 /* Pair Bind */

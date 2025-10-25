@@ -2,12 +2,12 @@ use std::net::SocketAddr;
 
 use wg_traits::Endpoint;
 
-#[derive(Clone, Copy)]
-pub struct UnitEndpoint {}
+#[derive(Clone, Copy, Default)]
+pub struct UnitEndpoint;
 
 impl Endpoint for UnitEndpoint {
     fn from_address(_: SocketAddr) -> UnitEndpoint {
-        UnitEndpoint {}
+        UnitEndpoint
     }
 
     fn to_address(&self) -> SocketAddr {
@@ -15,10 +15,4 @@ impl Endpoint for UnitEndpoint {
     }
 
     fn clear_src(&mut self) {}
-}
-
-impl UnitEndpoint {
-    pub fn new() -> UnitEndpoint {
-        UnitEndpoint {}
-    }
 }
