@@ -57,7 +57,8 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus);
 
-    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender);
+    let wireguard_device =
+        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus);
     let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
 
     let tun_reader_jobs_running = AtomicBool::new(true);

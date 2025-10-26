@@ -62,13 +62,15 @@ fn init() {
 }
 
 fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
-    let (sender, receiver) = bounded(0);
+    let n_cpus: usize = 1;
+
+    let (sender, receiver) = bounded(n_cpus);
 
     let (fake, tun_reader, tun_writer, _) = dummy::TunTest::create(true);
     let wireguard_device: WireGuard<dummy::TunTest, dummy::PairBind> =
-        WireGuard::new(tun_writer, sender);
+        WireGuard::new(tun_writer, sender, n_cpus);
 
-    for _ in 0..std::thread::available_parallelism().unwrap().into() {
+    for _ in 0..n_cpus {
         let wireguard_device = wireguard_device.clone();
         let receiver = receiver.clone();
 
