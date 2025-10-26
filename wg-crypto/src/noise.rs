@@ -1,4 +1,4 @@
-use chacha20poly1305::KeyInit;
+use aead::KeyInit;
 
 // HASH & MAC
 use blake2::{Blake2s256, Digest};
@@ -331,7 +331,7 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
 
-    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, &static_static);
+    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, static_static);
 
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
@@ -431,7 +431,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
 
-    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, &static_static);
+    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, static_static);
 
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 

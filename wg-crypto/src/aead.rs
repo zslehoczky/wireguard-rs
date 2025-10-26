@@ -1,8 +1,9 @@
 use core::fmt::Debug;
 
-use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, XChaCha20Poly1305};
-use digest::KeyInit;
-use generic_array::GenericArray;
+use aead::{AeadInOut, KeyInit};
+use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
+use hybrid_array::Array;
+use inout::InOutBuf;
 use subtle::ConstantTimeEq;
 use zerocopy::{AsBytes, FromBytes};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -88,11 +89,13 @@ impl SymKey {
         ct: &mut C,
         tag: &mut Tag,
     ) {
+        let pt = pt.as_ref();
         let ct = ct.as_mut();
-        ct.copy_from_slice(pt.as_ref());
-        let aead_tag = ChaCha20Poly1305::new_from_slice(&self.0)
-            .unwrap()
-            .encrypt_in_place_detached(GenericArray::from_slice(&nonce.0), ad.as_ref(), ct)
+        let nonce_array = Array::try_from(&nonce.0[..]).unwrap();
+        let cipher = ChaCha20Poly1305::new_from_slice(&self.0).unwrap();
+        let buf = InOutBuf::new(pt, ct).expect("buffer length mismatch");
+        let aead_tag = cipher
+            .encrypt_inout_detached(&nonce_array, ad.as_ref(), buf)
             .unwrap();
         tag.0.copy_from_slice(&aead_tag);
     }
@@ -107,15 +110,12 @@ impl SymKey {
     ) -> Result<(), HandshakeError> {
         let pt = pt.as_mut();
         let ct = ct.as_ref();
-        pt.copy_from_slice(ct);
-        ChaCha20Poly1305::new_from_slice(&self.0)
-            .unwrap()
-            .decrypt_in_place_detached(
-                GenericArray::from_slice(&nonce.0),
-                ad.as_ref(),
-                pt,
-                GenericArray::from_slice(&tag.0),
-            )
+        let nonce_array = Array::try_from(&nonce.0[..]).unwrap();
+        let tag_array = Array::try_from(&tag.0[..]).unwrap();
+        let cipher = ChaCha20Poly1305::new_from_slice(&self.0).unwrap();
+        let buf = InOutBuf::new(ct, pt).expect("buffer length mismatch");
+        cipher
+            .decrypt_inout_detached(&nonce_array, ad.as_ref(), buf, &tag_array)
             .map_err(|_err| HandshakeError::DecryptionFailure)
     }
 }
@@ -129,11 +129,13 @@ impl SymKey {
         ct: &mut C,
         tag: &mut Tag,
     ) {
+        let pt = pt.as_ref();
         let ct = ct.as_mut();
-        ct.copy_from_slice(pt.as_ref());
-        let aead_tag = XChaCha20Poly1305::new_from_slice(&self.0)
-            .unwrap()
-            .encrypt_in_place_detached(GenericArray::from_slice(&nonce.0), ad.as_ref(), ct)
+        let nonce_array = Array::try_from(&nonce.0[..]).unwrap();
+        let cipher = XChaCha20Poly1305::new_from_slice(&self.0).unwrap();
+        let buf = InOutBuf::new(pt, ct).expect("buffer length mismatch");
+        let aead_tag = cipher
+            .encrypt_inout_detached(&nonce_array, ad.as_ref(), buf)
             .unwrap();
         tag.0.copy_from_slice(&aead_tag);
     }
@@ -148,15 +150,12 @@ impl SymKey {
     ) -> Result<(), HandshakeError> {
         let pt = pt.as_mut();
         let ct = ct.as_ref();
-        pt.copy_from_slice(ct);
-        XChaCha20Poly1305::new_from_slice(&self.0)
-            .unwrap()
-            .decrypt_in_place_detached(
-                GenericArray::from_slice(&nonce.0),
-                ad.as_ref(),
-                pt,
-                GenericArray::from_slice(&tag.0),
-            )
+        let nonce_array = Array::try_from(&nonce.0[..]).unwrap();
+        let tag_array = Array::try_from(&tag.0[..]).unwrap();
+        let cipher = XChaCha20Poly1305::new_from_slice(&self.0).unwrap();
+        let buf = InOutBuf::new(ct, pt).expect("buffer length mismatch");
+        cipher
+            .decrypt_inout_detached(&nonce_array, ad.as_ref(), buf, &tag_array)
             .map_err(|_err| HandshakeError::DecryptionFailure)
     }
 }
