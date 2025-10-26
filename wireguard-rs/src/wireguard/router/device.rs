@@ -255,4 +255,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
     pub fn set_outbound_writer(&self, new: B) {
         self.state.outbound.write().1 = Some(new);
     }
+
+    /// Clear outbound writer
+    pub fn clear_outbound_writer(&self) {
+        self.state.outbound.write().1 = None;
+    }
 }

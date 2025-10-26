@@ -1,11 +1,10 @@
+use super::HandshakeJob;
 use super::constants::*;
 use super::peer::PeerInner;
 use super::router;
 use super::timers::Timers;
-use super::{HandshakeJob, udp_worker};
 
 use std::fmt;
-use std::thread;
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -52,6 +51,8 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     pub last_under_load: Mutex<Instant>,
     pub pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
+
+    udp_reader_sender: Mutex<Option<Sender<B::Reader>>>,
 }
 
 pub struct WireGuard<T: Tun, B: UDP> {
@@ -203,19 +204,27 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     /// Any previous reader thread is stopped by closing the previous reader,
     /// which unblocks the thread and causes an error on reader.read
     pub fn add_udp_reader(&self, reader: B::Reader) {
-        let wg = self.clone();
-        thread::spawn(move || {
-            udp_worker(&wg, reader);
-        });
+        if let Some(udp_reader_sender) = self.udp_reader_sender.lock().as_ref() {
+            udp_reader_sender
+                .send(reader)
+                .expect("channel is open until sender exists");
+        }
     }
 
     pub fn set_writer(&self, writer: B::Writer) {
         self.router.set_outbound_writer(writer);
     }
 
+    pub fn close_udp_channel(&self) {
+        *self.udp_reader_sender.lock() = None;
+
+        self.router.clear_outbound_writer();
+    }
+
     pub fn new(
         writer: T::Writer,
-        sender: Sender<HandshakeJob<B::Endpoint>>,
+        handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
+        udp_reader_sender: Sender<B::Reader>,
         n_cpus: usize,
     ) -> WireGuard<T, B> {
         // create router
@@ -234,7 +243,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
                 pending: AtomicUsize::new(0),
                 peers: RwLock::new(crypto::Device::new()),
                 runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
-                handshake_sender: Mutex::new(Some(sender)),
+                handshake_sender: Mutex::new(Some(handshake_sender)),
+                udp_reader_sender: Mutex::new(Some(udp_reader_sender)),
             }),
         }
     }

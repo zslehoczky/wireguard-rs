@@ -14,7 +14,7 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 
 #[cfg(test)]
-use super::{WireGuard, handshake_worker, tun_worker};
+use super::{WireGuard, handshake_worker, tun_worker, udp_worker};
 
 #[cfg(test)]
 use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
@@ -80,15 +80,30 @@ fn init() {
 fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
     let n_cpus: usize = 1;
 
-    let (sender, receiver) = bounded(n_cpus);
+    let (handshake_sender, handshake_receiver) = bounded(n_cpus);
+    let (udp_reader_sender, udp_reader_receiver) = bounded(0);
 
     let (fake, tun_reader, tun_writer, _) = dummy::TunTest::create(true);
     let wireguard_device: WireGuard<dummy::TunTest, dummy::PairBind> =
-        WireGuard::new(tun_writer, sender, n_cpus);
+        WireGuard::new(tun_writer, handshake_sender, udp_reader_sender, n_cpus);
+
+    {
+        let wireguard_device = wireguard_device.clone();
+
+        thread::spawn(move || {
+            for udp_reader in udp_reader_receiver {
+                let wireguard_device = wireguard_device.clone();
+
+                thread::spawn(move || {
+                    udp_worker(&wireguard_device, udp_reader);
+                });
+            }
+        });
+    }
 
     for _ in 0..n_cpus {
         let wireguard_device = wireguard_device.clone();
-        let receiver = receiver.clone();
+        let receiver = handshake_receiver.clone();
 
         thread::spawn(move || handshake_worker(&wireguard_device, receiver));
     }

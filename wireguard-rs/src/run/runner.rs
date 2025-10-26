@@ -13,7 +13,7 @@ use wg_traits::{
 };
 
 use crate::configuration::{Configuration, WireGuardConfig, uapi};
-use crate::wireguard::{HandshakeJob, WireGuard, handshake_worker, tun_worker};
+use crate::wireguard::{HandshakeJob, WireGuard, handshake_worker, tun_worker, udp_worker};
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -55,14 +55,27 @@ fn run(config: Config) -> Result<(), ErrorReason> {
         .into();
 
     let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus);
+    let (udp_reader_sender, udp_reader_receiver) = crossbeam_channel::bounded(0);
 
-    let wireguard_device =
-        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus);
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(
+        tun_writer,
+        handshake_sender,
+        udp_reader_sender,
+        n_cpus,
+    );
     let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
 
     let tun_reader_jobs_running = AtomicBool::new(true);
 
     thread::scope(|thread_scope| {
+        thread_scope.spawn(|| {
+            for udp_reader in udp_reader_receiver {
+                thread_scope.spawn(|| {
+                    udp_worker(&wireguard_device, udp_reader);
+                });
+            }
+        });
+
         spawn_handshake_workers(thread_scope, &wireguard_device, handshake_receiver, n_cpus);
 
         let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
@@ -98,6 +111,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
         tun_reader_jobs_running.store(false, Ordering::Release);
 
         wireguard_device.close_handshake_queue();
+        wireguard_device.close_udp_channel();
 
         // scoped threads joined here
     });
