@@ -5,7 +5,6 @@ use std::thread::{self, ScopedJoinHandle};
 use std::{env, process::exit};
 
 use anyhow::anyhow;
-use crossbeam_channel::bounded;
 
 use wg_platform as plt;
 use wg_traits::{
@@ -52,7 +51,11 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let (handshake_sender, handshake_receiver) = bounded(0);
+    let n_cpus: usize = std::thread::available_parallelism()
+        .expect("parallelism info should be available")
+        .into();
+
+    let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus);
 
     let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender);
     let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
@@ -61,10 +64,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     thread::scope(|thread_scope| {
         // start handshake workers
-        for _ in 0..std::thread::available_parallelism()
-            .expect("parallelism info should be available")
-            .into()
-        {
+        for _ in 0..n_cpus {
             thread_scope.spawn(|| handshake_worker(&wireguard_device, handshake_receiver.clone()));
         }
 
