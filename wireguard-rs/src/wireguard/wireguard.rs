@@ -217,8 +217,6 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn close_udp_channel(&self) {
         *self.udp_reader_sender.lock() = None;
-
-        self.router.clear_outbound_writer();
     }
 
     pub fn new(
