@@ -26,7 +26,6 @@ hex.workspace = true
 hjul.workspace = true
 hmac.workspace = true
 log.workspace = true
-num_cpus.workspace = true
 rand.workspace = true
 rand_core.workspace = true
 ring.workspace = true
@@ -48,6 +47,7 @@ unstable = []
 default = []
 
 [dev-dependencies]
+num_cpus.workspace = true
 pnet.workspace = true
 proptest.workspace = true
 rand_chacha.workspace = true

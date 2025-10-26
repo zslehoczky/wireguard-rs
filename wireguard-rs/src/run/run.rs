@@ -61,7 +61,10 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     thread::scope(|thread_scope| {
         // start handshake workers
-        for _ in 0..num_cpus::get() {
+        for _ in 0..std::thread::available_parallelism()
+            .expect("parallelism info should be available")
+            .into()
+        {
             thread_scope.spawn(|| handshake_worker(&wireguard_device, receiver.clone()));
         }
 

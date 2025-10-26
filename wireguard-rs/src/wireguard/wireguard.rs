@@ -216,7 +216,12 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     pub fn new(writer: T::Writer, sender: Sender<HandshakeJob<B::Endpoint>>) -> WireGuard<T, B> {
         // create router
         let router: router::Device<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
-            router::Device::new(num_cpus::get(), writer);
+            router::Device::new(
+                std::thread::available_parallelism()
+                    .expect("parallelism info should be available")
+                    .into(),
+                writer,
+            );
 
         // create arc to state
         let wg = WireGuard {
