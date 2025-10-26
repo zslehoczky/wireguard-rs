@@ -15,7 +15,7 @@ use super::worker::JobUnion;
 
 use core::mem;
 use core::ops::Deref;
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic;
 
 use alloc::sync::Arc;
 
@@ -131,7 +131,7 @@ impl EncryptionState {
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DecryptionState<E, C, T, B> {
     fn new(peer: Peer<E, C, T, B>, keypair: &Arc<KeyPair>) -> DecryptionState<E, C, T, B> {
         DecryptionState {
-            confirmed: AtomicBool::new(keypair.initiator),
+            confirmed: atomic::AtomicBool::new(keypair.initiator),
             keypair: keypair.clone(),
             protector: spin::Mutex::new(AntiReplay::new()),
             peer,
@@ -273,6 +273,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
                         let job =
                             SendJob::new(msg, state.nonce, state.keypair.clone(), self.clone());
                         if self.outbound.push(job.clone()) {
+                            // Ensure the queue push is visible to all threads before
+                            // sending the job to workers. This prevents a race where
+                            // a worker processes the job before it's in the per-peer queue.
+                            atomic::fence(atomic::Ordering::SeqCst);
                             state.nonce += 1;
                             (Some(job), false)
                         } else {

@@ -12,6 +12,15 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 
+// MTU (Maximum Transmission Unit) for test interfaces
+const TEST_MTU: usize = 1500;
+
+// Maximum packet size for testing, accounting for MTU (1500) minus IP header (~20 bytes)
+const MAX_TEST_PACKET_SIZE: u32 = 1400;
+
+// Number of packets to send in each direction for the pure WireGuard test.
+const NUM_TEST_PACKETS: usize = 1000;
+
 pub fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     // expand pseudo random payload
     let mut rng: _ = ChaCha8Rng::seed_from_u64(id);
@@ -59,15 +68,12 @@ fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
 }
 
-/* Create and configure
- * two matching pure (no side-effects) instances of WireGuard.
- *
- * Test:
- *
- * - Handshaking completes successfully
- * - All packets up to MTU are delivered
- * - All packets are delivered in-order
- */
+// Create and configure two matching pure (no side-effects) instances of WireGuard.
+//
+// Test:
+// - Handshaking completes successfully
+// - All packets up to MTU are delivered
+// - All packets are delivered in-order
 #[test]
 fn test_pure_wireguard() {
     init();
@@ -80,7 +86,7 @@ fn test_pure_wireguard() {
     thread::spawn(move || {
         tun_worker(&wireguard_device, tun_reader1);
     });
-    wg1.up(1500);
+    wg1.up(TEST_MTU);
 
     let (fake2, tun_reader2, tun_writer2, _) = dummy::TunTest::create(true);
     let wg2: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer2);
@@ -88,7 +94,7 @@ fn test_pure_wireguard() {
     thread::spawn(move || {
         tun_worker(&wireguard_device, tun_reader2);
     });
-    wg2.up(1500);
+    wg2.up(TEST_MTU);
 
     // create pair bind to connect the interfaces "over the internet"
 
@@ -142,31 +148,30 @@ fn test_pure_wireguard() {
         peer2.set_endpoint(dummy::UnitEndpoint::new());
     }
 
-    let num_packets = 20;
-
     // send IP packets (causing a new handshake)
 
     {
-        let mut packets: Vec<Vec<u8>> = Vec::with_capacity(num_packets);
+        let mut packets: Vec<Vec<u8>> = Vec::with_capacity(NUM_TEST_PACKETS);
+        let mut rng = ChaCha8Rng::seed_from_u64(12345); // Fixed seed for reproducibility
 
-        for id in 0..num_packets {
+        for id in 0..NUM_TEST_PACKETS {
+            // Random size between 0 and MAX_TEST_PACKET_SIZE to stay well under MTU
+            let size = (rng.next_u32() % MAX_TEST_PACKET_SIZE) as usize;
             packets.push(make_packet(
-                50 * id as usize,                // size
+                size,
                 "192.168.1.20".parse().unwrap(), // src
                 "192.168.2.10".parse().unwrap(), // dst
-                id as u64,                       // prng seed
+                id as u64,                       // prng seed for payload
             ));
         }
 
         let mut backup = packets.clone();
 
         while let Some(p) = packets.pop() {
-            println!("send");
             fake1.write(p);
         }
 
         while let Some(p) = backup.pop() {
-            println!("read");
             assert_eq!(
                 hex::encode(fake2.read()),
                 hex::encode(p),
@@ -178,14 +183,17 @@ fn test_pure_wireguard() {
     // send IP packets (other direction)
 
     {
-        let mut packets: Vec<Vec<u8>> = Vec::with_capacity(num_packets);
+        let mut packets: Vec<Vec<u8>> = Vec::with_capacity(NUM_TEST_PACKETS);
+        let mut rng = ChaCha8Rng::seed_from_u64(54321); // Different seed from first direction
 
-        for id in 0..num_packets {
+        for id in 0..NUM_TEST_PACKETS {
+            // Random size between 0 and MAX_TEST_PACKET_SIZE to stay well under MTU
+            let size = (rng.next_u32() % MAX_TEST_PACKET_SIZE) as usize;
             packets.push(make_packet(
-                50 + 50 * id as usize,           // size
+                size,
                 "192.168.2.10".parse().unwrap(), // src
                 "192.168.1.20".parse().unwrap(), // dst
-                (id + 100) as u64,               // prng seed
+                (id + 100) as u64, // prng seed for payload (offset to differ from first direction)
             ));
         }
 
