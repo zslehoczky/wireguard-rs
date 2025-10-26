@@ -64,10 +64,7 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
         // create a new handshake job for the peer
         if !self.handshake_queued.swap(true, Ordering::SeqCst) {
             self.wg.pending.fetch_add(1, Ordering::SeqCst);
-            self.wg
-                .queue
-                .send(HandshakeJob::New(self.pk))
-                .expect("channel is always open at this point");
+            self.wg.send_to_handshake_queue(HandshakeJob::New(self.pk));
             log::trace!(
                 "{} : packet_send_handshake_initiation, handshake queued",
                 self

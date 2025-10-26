@@ -101,7 +101,9 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
         tun_reader_jobs_running.store(false, Ordering::Release);
 
-        // tun_event_loop and uapi_server joined here
+        wireguard_device.close_handshake_queue();
+
+        // scoped threads joined here
     });
 
     profiler_stop();

@@ -51,7 +51,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     // handshake related state
     pub last_under_load: Mutex<Instant>,
     pub pending: AtomicUsize, // number of pending handshake packets in queue
-    pub queue: Sender<HandshakeJob<B::Endpoint>>,
+    handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
 }
 
 pub struct WireGuard<T: Tun, B: UDP> {
@@ -233,10 +233,26 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
                 pending: AtomicUsize::new(0),
                 peers: RwLock::new(crypto::Device::new()),
                 runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
-                queue: sender,
+                handshake_sender: Mutex::new(Some(sender)),
             }),
         };
 
         wg
+    }
+
+    pub fn close_handshake_queue(&self) {
+        *self.handshake_sender.lock() = None;
+    }
+
+    pub fn send_to_handshake_queue(&self, handshake_job: HandshakeJob<B::Endpoint>) -> bool {
+        if let Some(handshake_sender) = self.handshake_sender.lock().as_ref() {
+            handshake_sender
+                .send(handshake_job)
+                .expect("channel is kept open until sender exists");
+
+            return true;
+        }
+
+        false
     }
 }

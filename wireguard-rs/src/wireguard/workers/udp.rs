@@ -51,9 +51,7 @@ pub fn udp_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: B::Reader) {
             _ => {
                 debug!("{} : reader, received (possible) handshake message", wg);
                 wg.pending.fetch_add(1, Ordering::SeqCst);
-                wg.queue
-                    .send(HandshakeJob::Message(msg, src))
-                    .expect("channel is always open at this point");
+                wg.send_to_handshake_queue(HandshakeJob::Message(msg, src));
             }
         }
     }
