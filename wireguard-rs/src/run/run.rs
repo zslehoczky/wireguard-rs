@@ -52,9 +52,9 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let (sender, receiver) = bounded(0);
+    let (handshake_sender, handshake_receiver) = bounded(0);
 
-    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, sender);
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender);
     let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
 
     let tun_reader_jobs_running = AtomicBool::new(true);
@@ -65,7 +65,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
             .expect("parallelism info should be available")
             .into()
         {
-            thread_scope.spawn(|| handshake_worker(&wireguard_device, receiver.clone()));
+            thread_scope.spawn(|| handshake_worker(&wireguard_device, handshake_receiver.clone()));
         }
 
         let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
