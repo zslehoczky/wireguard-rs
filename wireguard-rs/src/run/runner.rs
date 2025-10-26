@@ -111,7 +111,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
         tun_reader_jobs_running.store(false, Ordering::Release);
 
         wireguard_device.close_handshake_queue();
-        wireguard_device.close_udp_channel();
+        wireguard_device.close_udp_reader_queue();
 
         // scoped threads joined here
     });

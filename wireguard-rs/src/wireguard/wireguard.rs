@@ -215,10 +215,6 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.set_outbound_writer(writer);
     }
 
-    pub fn close_udp_channel(&self) {
-        *self.udp_reader_sender.lock() = None;
-    }
-
     pub fn new(
         writer: T::Writer,
         handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
@@ -249,6 +245,10 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn close_handshake_queue(&self) {
         *self.handshake_sender.lock() = None;
+    }
+
+    pub fn close_udp_reader_queue(&self) {
+        *self.udp_reader_sender.lock() = None;
     }
 
     pub fn send_to_handshake_queue(&self, handshake_job: HandshakeJob<B::Endpoint>) -> bool {
