@@ -2,7 +2,7 @@ use super::constants::*;
 use super::peer::PeerInner;
 use super::router;
 use super::timers::Timers;
-use super::workers::{HandshakeJob, udp_worker};
+use super::{HandshakeJob, udp_worker};
 
 use std::fmt;
 use std::thread;

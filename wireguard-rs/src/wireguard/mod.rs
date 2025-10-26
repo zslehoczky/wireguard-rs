@@ -21,7 +21,7 @@ mod wireguard;
 
 // represents a WireGuard interface
 pub use wireguard::WireGuard;
-pub use workers::{handshake_worker, tun_worker};
+pub use workers::{HandshakeJob, handshake_worker, tun_worker, udp_worker};
 
 #[cfg(test)]
 use super::platform::dummy;
