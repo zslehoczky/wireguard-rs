@@ -73,7 +73,7 @@ fn handle_message<T: Tun, B: UDP>(
         &mut OsRng,
         &msg[..],
         if under_load {
-            Some(src.into_address())
+            Some(src.to_address())
         } else {
             None
         },
