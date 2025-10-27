@@ -226,8 +226,8 @@ fn spawn_uapi_config_message_handler<'scope, 'env>(
             if let Err(err) = || -> io::Result<_> {
                 let mut writer = BufWriter::new(reader.get_mut());
 
-                writer.write(response.as_bytes())?;
-                writer.write(format!("errno={errno}\n\n").as_bytes())?;
+                writer.write_all(response.as_bytes())?;
+                writer.write_all(format!("errno={errno}\n\n").as_bytes())?;
 
                 Ok(())
             }() {
