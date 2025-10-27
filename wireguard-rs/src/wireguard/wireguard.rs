@@ -223,7 +223,9 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             router::Device::new(n_cpus, writer);
 
         // create arc to state
-        let wg = WireGuard {
+        
+
+        WireGuard {
             inner: Arc::new(WireguardInner {
                 enabled: RwLock::new(false),
                 id: OsRng.r#gen(),
@@ -235,9 +237,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
                 runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
                 handshake_sender: Mutex::new(Some(sender)),
             }),
-        };
-
-        wg
+        }
     }
 
     pub fn close_handshake_queue(&self) {
