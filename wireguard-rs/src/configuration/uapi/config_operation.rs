@@ -23,7 +23,10 @@ pub fn parse_config_operation<R: Read>(
         }
     }
 
-    let lines: Vec<&str> = string_buffer.lines().filter(|&line| !line.is_empty()).collect();
+    let lines: Vec<&str> = string_buffer
+        .lines()
+        .filter(|&line| !line.is_empty())
+        .collect();
 
     if lines.is_empty() {
         log::error!("Empty line instead of operation");
