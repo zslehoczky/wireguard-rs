@@ -223,7 +223,6 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             router::Device::new(n_cpus, writer);
 
         // create arc to state
-        
 
         WireGuard {
             inner: Arc::new(WireguardInner {
