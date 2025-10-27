@@ -15,7 +15,7 @@ pub fn parse_config_operation<R: Read>(
 
     loop {
         if let Some(line) = read_line(reader, string_buffer)? {
-            if line == "" {
+            if line.is_empty() {
                 break;
             }
         } else {
@@ -23,9 +23,9 @@ pub fn parse_config_operation<R: Read>(
         }
     }
 
-    let lines: Vec<&str> = string_buffer.lines().filter(|&line| line != "").collect();
+    let lines: Vec<&str> = string_buffer.lines().filter(|&line| !line.is_empty()).collect();
 
-    if lines.len() == 0 {
+    if lines.is_empty() {
         log::error!("Empty line instead of operation");
 
         return Err(ConfigError::InvalidOperation);
@@ -33,7 +33,7 @@ pub fn parse_config_operation<R: Read>(
 
     let arguments_provided = lines.len() > 1;
 
-    match *lines.get(0).expect("empty vector already handled") {
+    match *lines.first().expect("empty vector already handled") {
         "get=1" => {
             if arguments_provided {
                 log::warn!("Get operation should be followed by an empty line");

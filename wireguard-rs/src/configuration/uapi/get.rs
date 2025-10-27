@@ -13,17 +13,14 @@ pub fn serialize<C: Configuration>(config: &C) -> String {
     };
 
     // serialize interface
-    config
-        .get_private_key()
-        .map(|sk| write("private_key", hex::encode(sk.to_bytes())));
+    if let Some(sk) = config
+        .get_private_key() { write("private_key", hex::encode(sk.to_bytes())) }
 
-    config
-        .get_listen_port()
-        .map(|port| write("listen_port", port.to_string()));
+    if let Some(port) = config
+        .get_listen_port() { write("listen_port", port.to_string()) }
 
-    config
-        .get_fwmark()
-        .map(|fwmark| write("fwmark", fwmark.to_string()));
+    if let Some(fwmark) = config
+        .get_fwmark() { write("fwmark", fwmark.to_string()) }
 
     // serialize all peers
     let mut peers = config.get_peers();

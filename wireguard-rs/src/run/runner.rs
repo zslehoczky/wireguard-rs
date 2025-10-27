@@ -91,7 +91,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
             config_sender,
         );
 
-        spawn_config_worker(&thread_scope, &wireguard_device, config_receiver);
+        spawn_config_worker(thread_scope, &wireguard_device, config_receiver);
 
         for handle in tun_reader_jobs {
             let _ = handle.join();
@@ -199,7 +199,7 @@ fn spawn_uapi_config_message_handler<'scope, 'env>(
                         receiver
                             .recv()
                             .expect("channel is open until result is received")
-                            .map(|string| Some(string))
+                            .map(Some)
                     }
                     None => Ok(None), // channel closed
                 },
