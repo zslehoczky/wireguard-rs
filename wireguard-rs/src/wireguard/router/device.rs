@@ -1,25 +1,19 @@
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::thread;
-use std::time::Instant;
 
-use spin::{Mutex, RwLock};
-use wg_crypto as crypto;
+use spin::RwLock;
 use wg_traits::{Endpoint, tun, udp};
 use zerocopy::LayoutVerified;
-
-use super::anti_replay::AntiReplay;
 
 use super::SIZE_MESSAGE_PREFIX;
 use super::constants::PARALLEL_QUEUE_SIZE;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
 use super::peer::{Peer, PeerHandle, new_peer};
-use super::types::{Callbacks, RouterError};
-
 use super::receive::ReceiveJob;
+use super::receiver_decryption_state::ReceiverDecryptionState;
 use super::route::RoutingTable;
+use super::types::{Callbacks, RouterError};
 use super::worker::{JobUnion, worker};
 
 use super::ParallelQueue;
@@ -32,24 +26,11 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
     pub(super) outbound: RwLock<(bool, Option<B>)>,
 
     // routing
-    #[allow(clippy::type_complexity)]
-    pub(super) recv: RwLock<HashMap<u32, Arc<DecryptionState<E, C, T, B>>>>, /* receiver id -> decryption state */
+    pub(super) recv: RwLock<ReceiverDecryptionState<E, C, T, B>>,
     pub(super) table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
     pub(super) work: ParallelQueue<JobUnion<E, C, T, B>>,
-}
-
-pub struct EncryptionState {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>, // keypair
-    pub(super) nonce: u64,                             // next available nonce
-}
-
-pub struct DecryptionState<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>,
-    pub(super) confirmed: AtomicBool,
-    pub(super) protector: Mutex<AntiReplay>,
-    pub(super) peer: Peer<E, C, T, B>,
 }
 
 pub struct Device<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
@@ -112,7 +93,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
                 work,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
-                recv: RwLock::new(HashMap::new()),
+                recv: RwLock::new(ReceiverDecryptionState::new()),
                 table: RoutingTable::new(),
             }),
         };
@@ -237,7 +218,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
         // lookup peer based on receiver id
         let dec = self.state.recv.read();
         let dec = dec
-            .get(&header.f_receiver.get())
+            .get(header.f_receiver.get() as usize)
+            .upgrade()
             .ok_or(RouterError::UnknownReceiverId)?;
 
         // create inbound job

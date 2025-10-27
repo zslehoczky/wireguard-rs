@@ -1,4 +1,4 @@
-use super::device::DecryptionState;
+use super::encryption_decryption_state::DecryptionState;
 use super::ip::inner_length;
 use super::messages::TransportHeader;
 use super::queue::{ParallelJob, Queue, SequentialJob};

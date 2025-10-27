@@ -6,7 +6,8 @@ use crate::wireguard::peer::KeyPair;
 use super::SIZE_MESSAGE_PREFIX;
 use super::anti_replay::AntiReplay;
 use super::constants::*;
-use super::device::{DecryptionState, Device, EncryptionState};
+use super::device::Device;
+use super::encryption_decryption_state::{DecryptionState, EncryptionState};
 use super::queue::Queue;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
@@ -164,8 +165,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
 
         if !release.is_empty() {
             let mut recv = peer.device.recv.write();
-            for id in &release {
-                recv.remove(id);
+            for &id in &release {
+                if let Err(err) = recv.remove(id as usize) {
+                    log::debug!("invalid receiver ID for remove: {id}, message: {err}");
+                }
             }
         }
 
@@ -186,6 +189,8 @@ pub fn new_peer<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
     device: Device<E, C, T, B>,
     opaque: C::Opaque,
 ) -> PeerHandle<E, C, T, B> {
+    device.recv.write().extend(6);
+
     // allocate peer object
     let peer = {
         Peer {
@@ -401,7 +406,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         {
             let mut recv = self.peer.device.recv.write();
             for id in release {
-                recv.remove(&id);
+                if let Err(err) = recv.remove(id as usize) {
+                    log::debug!("invalid receiver ID for remove: {id}, message: {err}");
+                }
             }
         }
 
@@ -461,16 +468,25 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
 
                 // purge recv map of previous id
                 if let Some(k) = &keys.previous {
-                    recv.remove(&k.local_id());
+                    if let Err(err) = recv.remove(k.local_id() as usize) {
+                        log::debug!(
+                            "invalid receiver ID for remove: {}, message: {err}",
+                            k.local_id()
+                        );
+                    }
+
                     release.push(k.local_id());
                 }
 
+                let receiver_id = new.recv.id as usize;
+
                 // map new id to decryption state
-                debug_assert!(!recv.contains_key(&new.recv.id));
-                recv.insert(
-                    new.recv.id,
-                    Arc::new(DecryptionState::new(self.peer.clone(), &new)),
-                );
+                debug_assert!(!recv.contains_key(receiver_id));
+                if let Err(err) =
+                    recv.insert(receiver_id, DecryptionState::new(self.peer.clone(), &new))
+                {
+                    log::error!("Error while inserting receiver ID {receiver_id}: {err}");
+                }
             }
             release
         };
