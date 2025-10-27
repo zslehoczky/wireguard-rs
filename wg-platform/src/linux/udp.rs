@@ -86,17 +86,18 @@ fn setsockopt<V: Sized>(
             fd,
             level,
             name,
-            mem::transmute(value),
+            value as *const V as *const libc::c_void,
             mem::size_of_val(value).try_into().unwrap(),
         )
     };
     if res == 0 {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to set sockopt (res = {}, errno = {})", res, errno()),
-        ))
+        Err(io::Error::other(format!(
+            "Failed to set sockopt (res = {}, errno = {})",
+            res,
+            errno()
+        )))
     }
 }
 
@@ -161,7 +162,7 @@ impl LinuxEndpoint {
         }
     }
 
-    pub fn into_address(&self) -> SocketAddr {
+    pub fn to_address(&self) -> SocketAddr {
         match self {
             LinuxEndpoint::V4(EndpointV4 { dst, .. }) => {
                 SocketAddr::V4(SocketAddrV4::new(
@@ -512,10 +513,7 @@ impl LinuxUDP {
         let fd: RawFd = unsafe { libc::socket(libc::AF_INET6, libc::SOCK_DGRAM, 0) };
         if fd < 0 {
             log::debug!("failed to create IPv6 socket (errno = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         setsockopt_int(fd, libc::SOL_SOCKET, libc::SO_REUSEADDR, 1)?;
@@ -542,10 +540,7 @@ impl LinuxUDP {
         };
         if err != 0 {
             log::debug!("failed to bind IPv6 socket (errno = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         // get the assigned port
@@ -559,10 +554,7 @@ impl LinuxUDP {
         };
         if err != 0 {
             log::debug!("failed to get port of IPv6 socket (errno  = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         // basic sanity checks
@@ -591,10 +583,7 @@ impl LinuxUDP {
         let fd: RawFd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
         if fd < 0 {
             log::debug!("failed to create IPv4 socket (errno = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         setsockopt_int(fd, libc::SOL_SOCKET, libc::SO_REUSEADDR, 1)?;
@@ -619,10 +608,7 @@ impl LinuxUDP {
         };
         if err != 0 {
             log::debug!("failed to bind IPv4 socket (errno = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         // get the assigned port
@@ -636,10 +622,7 @@ impl LinuxUDP {
         };
         if err != 0 {
             log::debug!("failed to get port of IPv4 socket (errno = {})", errno());
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to create socket",
-            ));
+            return Err(io::Error::other("failed to create socket"));
         }
 
         // basic sanity checks
@@ -713,8 +696,8 @@ impl Endpoint for LinuxEndpoint {
         LinuxEndpoint::from_address(addr)
     }
 
-    fn into_address(&self) -> SocketAddr {
-        self.into_address()
+    fn to_address(&self) -> SocketAddr {
+        self.to_address()
     }
 
     fn clear_src(&mut self) {

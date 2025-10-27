@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "unstable", feature(test))]
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, ScopedJoinHandle};
 use std::{env, process::exit};

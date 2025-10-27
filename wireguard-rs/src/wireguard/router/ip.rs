@@ -8,7 +8,7 @@ use zerocopy::{AsBytes, FromBytes};
 pub const VERSION_IP4: u8 = 4;
 pub const VERSION_IP6: u8 = 6;
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone, FromBytes, AsBytes)]
 pub struct IPv4Header {
     _f_space1: [u8; 2],
@@ -18,7 +18,7 @@ pub struct IPv4Header {
     pub f_destination: [u8; 4],
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone, FromBytes, AsBytes)]
 pub struct IPv6Header {
     _f_space1: [u8; 4],

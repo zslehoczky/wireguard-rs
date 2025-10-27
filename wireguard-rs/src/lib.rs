@@ -6,5 +6,4 @@ extern crate cpuprofiler;
 pub mod run;
 
 mod configuration;
-mod platform;
-mod wireguard;
+pub mod wireguard;

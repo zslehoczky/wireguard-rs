@@ -12,9 +12,6 @@ use rand::Rng;
 
 use super::*;
 
-#[cfg(feature = "unstable")]
-extern crate test;
-
 const SIZE_MSG: usize = 1024;
 const SIZE_KEEPALIVE: usize = message_data_len(0);
 const TIMEOUT: Duration = Duration::from_millis(1000);
@@ -132,7 +129,7 @@ fn test_outbound() {
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
     let router: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer);
-    router.set_outbound_writer(dummy::VoidBind::new());
+    router.set_outbound_writer(dummy::VoidBind);
 
     let tests = vec![
         ("192.168.1.0", 24, "192.168.1.20", true),
@@ -170,11 +167,11 @@ fn test_outbound() {
             len
         );
 
-        for set_key in vec![true, false] {
-            for confirm_with_staged_packet in vec![true, false] {
+        for set_key in [true, false] {
+            for confirm_with_staged_packet in [true, false] {
                 let send_keepalive = (!confirm_with_staged_packet || !okay) && set_key;
                 let send_payload = okay && set_key;
-                let need_key = ((confirm_with_staged_packet && set_key) || !set_key) && okay;
+                let need_key = (!set_key || confirm_with_staged_packet) && okay;
 
                 println!(
                     "  confirm_with_staged_packet = {}, send_keepalive = {}, set_key = {}",
@@ -297,7 +294,7 @@ fn test_bidirectional() {
     let mut rng = rand::thread_rng();
 
     for (p1, p2) in tests.iter() {
-        for confirm_with_staged_packet in vec![true, false] {
+        for confirm_with_staged_packet in [true, false] {
             println!(
                 "peer1 = {:?}, peer2 = {:?}, confirm_with_staged_packet = {}",
                 p1, p2, confirm_with_staged_packet
@@ -339,7 +336,7 @@ fn test_bidirectional() {
                 let (mask, len, _ip, _okay) = p2;
                 let mask: IpAddr = mask.parse().unwrap();
                 peer2.add_allowed_ip(mask, *len);
-                peer2.set_endpoint(dummy::UnitEndpoint::new());
+                peer2.set_endpoint(dummy::UnitEndpoint);
             }
 
             if confirm_with_staged_packet {
