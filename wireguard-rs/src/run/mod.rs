@@ -1,6 +1,8 @@
 pub mod error;
-pub mod run;
 
 mod config;
 mod profiler;
+mod runner;
 mod util;
+
+pub use runner::create_config_and_run;

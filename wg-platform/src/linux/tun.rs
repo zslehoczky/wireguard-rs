@@ -8,6 +8,7 @@ use wg_traits::tun::{PlatformTun, Reader, Status, Tun, Writer};
 
 const TUNSETIFF: u64 = 0x4004_54ca;
 const CLONE_DEVICE_PATH: &[u8] = b"/dev/net/tun\0";
+const NETLINK_BUFFER_SIZE: usize = 1 << 12; // 4096 bytes
 
 #[repr(C)]
 struct Ifreq {
@@ -119,7 +120,7 @@ fn get_ifindex(name: &[u8; libc::IFNAMSIZ]) -> i32 {
 
     let name = *name;
     let idx = unsafe {
-        let ptr: *const libc::c_char = mem::transmute(&name);
+        let ptr: *const libc::c_char = &name as *const [u8; 16] as *const i8;
         libc::if_nametoindex(ptr)
     };
     idx as i32
@@ -173,7 +174,7 @@ impl LinuxTunStatus {
         const INFO_SIZE: usize = mem::size_of::<IfInfomsg>();
         const HDR_SIZE: usize = mem::size_of::<libc::nlmsghdr>();
 
-        let mut buf = [0u8; 1 << 12];
+        let mut buf = [0u8; NETLINK_BUFFER_SIZE];
         log::debug!("netlink, fetch event (fd = {})", self.fd);
         loop {
             // attempt to return a buffered event
@@ -183,7 +184,7 @@ impl LinuxTunStatus {
 
             // read message
             let size: libc::ssize_t =
-                unsafe { libc::recv(self.fd, mem::transmute(&mut buf), buf.len(), 0) };
+                unsafe { libc::recv(self.fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0) };
             if size < 0 {
                 break Err(LinuxTunError::NetlinkFailure);
             }
@@ -282,7 +283,7 @@ impl LinuxTunStatus {
         let res = unsafe {
             libc::bind(
                 fd,
-                mem::transmute(&mut sockaddr),
+                &mut sockaddr as *mut libc::sockaddr_nl as *const libc::sockaddr,
                 mem::size_of::<libc::sockaddr_nl>() as u32,
             )
         };
@@ -291,10 +292,7 @@ impl LinuxTunStatus {
             Err(LinuxTunError::Closed)
         } else {
             Ok(LinuxTunStatus {
-                events: vec![
-                    #[cfg(feature = "start_up")]
-                    wg_traits::tun::TunEvent::Up(1500),
-                ],
+                events: vec![],
                 index: get_ifindex(&name),
                 fd,
                 name,

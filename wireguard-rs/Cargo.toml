@@ -43,7 +43,6 @@ libc.workspace = true
 [features]
 profiler = ["cpuprofiler"]
 start_up = []
-unstable = []
 default = []
 
 [dev-dependencies]
@@ -51,3 +50,9 @@ num_cpus.workspace = true
 pnet.workspace = true
 proptest.workspace = true
 rand_chacha.workspace = true
+bencher.workspace = true
+wg-platform = { path = "../wg-platform", features = ["dummy"] }
+
+[[bench]]
+name = "router"
+harness = false

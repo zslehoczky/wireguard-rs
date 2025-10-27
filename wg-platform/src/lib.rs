@@ -15,6 +15,10 @@ mod linux {
 
 mod unix;
 
+// Dummy implementations for testing
+#[cfg(feature = "dummy")]
+pub mod dummy;
+
 // Export the platform-specific types with unified names
 #[cfg(target_os = "macos")]
 pub use macos::tun::MacosTun as Tun;

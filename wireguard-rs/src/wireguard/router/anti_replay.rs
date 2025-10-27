@@ -140,11 +140,11 @@ mod tests {
             assert!(ar.update(i));
         }
         for i in 65537..66000 {
-            assert_eq!(ar.update(i), false);
+            assert!(!ar.update(i));
         }
 
         // Test max u64.
-        let next = u64::max_value();
+        let next = u64::MAX;
         assert!(ar.update(next));
         assert!(!ar.check(next));
         for i in (next - WINDOW_SIZE)..next {

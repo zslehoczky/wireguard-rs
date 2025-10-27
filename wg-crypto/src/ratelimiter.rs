@@ -164,7 +164,7 @@ mod tests {
 
             for ip in ips.iter() {
                 assert_eq!(
-                    ratelimiter.check_at(&ip, time),
+                    ratelimiter.check_at(ip, time),
                     item.allowed,
                     "test failed for {} on {}. expected: {}, got: {}",
                     ip,

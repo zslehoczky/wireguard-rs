@@ -408,7 +408,7 @@ impl MacosEndpoint {
         }
     }
 
-    pub fn into_address(&self) -> SocketAddr {
+    pub fn to_address(&self) -> SocketAddr {
         self.destination()
     }
 }
@@ -493,8 +493,8 @@ impl Endpoint for MacosEndpoint {
         MacosEndpoint::from_address(addr)
     }
 
-    fn into_address(&self) -> SocketAddr {
-        self.into_address()
+    fn to_address(&self) -> SocketAddr {
+        self.to_address()
     }
 
     fn clear_src(&mut self) {

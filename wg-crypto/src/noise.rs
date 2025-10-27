@@ -28,6 +28,10 @@ use super::types::*;
 
 use super::keypair::{Key, KeyPair};
 
+// Type aliases to reduce complexity
+type InitiationResult<'a, O, I, T> =
+    Result<(&'a Peer<O, I, T>, PublicKey, TemporaryState), HandshakeError>;
+
 pub type ChainKey = SecretBytes<32>;
 
 type HmacBlake2s256 = SimpleHmac<Blake2s256>;
@@ -147,97 +151,6 @@ fn kdf3<
     (t1.into(), t2.into(), t3.into())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const IDENTIFIER: &[u8] = b"WireGuard v1 zx2c4 Jason@zx2c4.com";
-    const CONSTRUCTION: &[u8] = b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
-
-    /* Sanity check precomputed initial chain key
-     */
-    #[test]
-    fn precomputed_chain_key() {
-        assert_eq!(INITIAL_CK, Hash::new([CONSTRUCTION]));
-    }
-
-    /* Sanity check precomputed initial hash transcript
-     */
-    #[test]
-    fn precomputed_hash() {
-        assert_eq!(INITIAL_HS, Hash::new([INITIAL_CK.as_ref(), IDENTIFIER]));
-    }
-
-    /* Sanity check the HKDF macro
-     *
-     * Test vectors generated using WireGuard-Go
-     */
-    #[test]
-    fn hkdf() {
-        let tests: Vec<(Vec<u8>, Vec<u8>, [u8; 32], [u8; 32], [u8; 32])> = vec![
-            (
-                vec![],
-                vec![],
-                [
-                    0x83, 0x87, 0xb4, 0x6b, 0xf4, 0x3e, 0xcc, 0xfc, //
-                    0xf3, 0x49, 0x55, 0x2a, 0x09, 0x5d, 0x83, 0x15, //
-                    0xc4, 0x05, 0x5b, 0xeb, 0x90, 0x20, 0x8f, 0xb1, //
-                    0xbe, 0x23, 0xb8, 0x94, 0xbc, 0x2e, 0xd5, 0xd0,
-                ],
-                [
-                    0x58, 0xa0, 0xe5, 0xf6, 0xfa, 0xef, 0xcc, 0xf4, //
-                    0x80, 0x7b, 0xff, 0x1f, 0x05, 0xfa, 0x8a, 0x92, //
-                    0x17, 0x94, 0x57, 0x62, 0x04, 0x0b, 0xce, 0xc2, //
-                    0xf4, 0xb4, 0xa6, 0x2b, 0xdf, 0xe0, 0xe8, 0x6e,
-                ],
-                [
-                    0x0c, 0xe6, 0xea, 0x98, 0xec, 0x54, 0x8f, 0x8e, //
-                    0x28, 0x1e, 0x93, 0xe3, 0x2d, 0xb6, 0x56, 0x21, //
-                    0xc4, 0x5e, 0xb1, 0x8d, 0xc6, 0xf0, 0xa7, 0xad, //
-                    0x94, 0x17, 0x86, 0x10, 0xa2, 0xf7, 0x33, 0x8e,
-                ],
-            ),
-            (
-                vec![0xde, 0xad, 0xbe, 0xef],
-                vec![],
-                [
-                    0x55, 0x32, 0x9d, 0xc8, 0x0e, 0x69, 0x0f, 0xd8, //
-                    0x6b, 0xd9, 0x66, 0x1f, 0x08, 0x51, 0xc9, 0xb3, //
-                    0x68, 0x6d, 0xf2, 0xb1, 0xfd, 0xa0, 0x34, 0x7b, //
-                    0xc3, 0xd2, 0x79, 0x58, 0x25, 0x4b, 0x32, 0xc6,
-                ],
-                [
-                    0x8d, 0xfc, 0x6d, 0x33, 0xa8, 0x11, 0x8f, 0xfe, //
-                    0x40, 0x8b, 0x31, 0xdd, 0xac, 0x25, 0xf7, 0x2a, //
-                    0xee, 0x91, 0x15, 0xa4, 0x5b, 0x69, 0xba, 0x17, //
-                    0x6a, 0xd0, 0x12, 0xb2, 0x43, 0x83, 0x4f, 0xee,
-                ],
-                [
-                    0xd6, 0x9e, 0x85, 0x2a, 0x28, 0x96, 0x56, 0x9e, //
-                    0xa5, 0x4a, 0x67, 0x96, 0x9a, 0xa1, 0x80, 0x02, //
-                    0x87, 0x92, 0x1d, 0xac, 0x53, 0xce, 0x6d, 0xb4, //
-                    0xb4, 0xe1, 0x21, 0x92, 0xf2, 0x63, 0xc4, 0xc4,
-                ],
-            ),
-        ];
-
-        for (key, input, t0, t1, t2) in &tests {
-            let tt0: SecretBytes<_> = kdf1(key, input);
-            assert_eq!(tt0.as_ref(), &t0[..], "kdf1 failed");
-
-            let (tt0, tt1): (SecretBytes<_>, SecretBytes<_>) = kdf2(key, input);
-            assert_eq!(tt0.as_ref(), &t0[..], "kdf2 failed");
-            assert_eq!(tt1.as_ref(), &t1[..], "kdf2 failed");
-
-            let (tt0, tt1, tt2): (SecretBytes<_>, SecretBytes<_>, SecretBytes<_>) =
-                kdf3(key, input);
-            assert_eq!(tt0.as_ref(), &t0[..], "kdf3 failed");
-            assert_eq!(tt1.as_ref(), &t1[..], "kdf3 failed");
-            assert_eq!(tt2.as_ref(), &t2[..], "kdf3 failed");
-        }
-    }
-}
-
 // Computes an X25519 shared secret.
 //
 // This function wraps dalek to add a zero-check.
@@ -331,7 +244,7 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
 
-    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, &static_static);
+    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, static_static);
 
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
@@ -368,7 +281,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
     device: &'a Device<O, I, T>,
     keyst: &KeyState<I>,
     msg: &NoiseInitiation,
-) -> Result<(&'a Peer<O, I, T>, PublicKey, TemporaryState), HandshakeError> {
+) -> InitiationResult<'a, O, I, T> {
     log::debug!("consume initiation");
 
     // initialize new state
@@ -431,7 +344,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
 
     // (C, k) := Kdf2(C, DH(S_priv, S_pub))
 
-    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, &static_static);
+    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, static_static);
 
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
@@ -678,5 +591,97 @@ pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
         })
     } else {
         Err(HandshakeError::InvalidState)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IDENTIFIER: &[u8] = b"WireGuard v1 zx2c4 Jason@zx2c4.com";
+    const CONSTRUCTION: &[u8] = b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
+
+    /* Sanity check precomputed initial chain key
+     */
+    #[test]
+    fn precomputed_chain_key() {
+        assert_eq!(INITIAL_CK, Hash::new([CONSTRUCTION]));
+    }
+
+    /* Sanity check precomputed initial hash transcript
+     */
+    #[test]
+    fn precomputed_hash() {
+        assert_eq!(INITIAL_HS, Hash::new([INITIAL_CK.as_ref(), IDENTIFIER]));
+    }
+
+    /* Sanity check the HKDF macro
+     *
+     * Test vectors generated using WireGuard-Go
+     */
+    #[test]
+    fn hkdf() {
+        type TestVector = (Vec<u8>, Vec<u8>, [u8; 32], [u8; 32], [u8; 32]);
+        let tests: Vec<TestVector> = vec![
+            (
+                vec![],
+                vec![],
+                [
+                    0x83, 0x87, 0xb4, 0x6b, 0xf4, 0x3e, 0xcc, 0xfc, //
+                    0xf3, 0x49, 0x55, 0x2a, 0x09, 0x5d, 0x83, 0x15, //
+                    0xc4, 0x05, 0x5b, 0xeb, 0x90, 0x20, 0x8f, 0xb1, //
+                    0xbe, 0x23, 0xb8, 0x94, 0xbc, 0x2e, 0xd5, 0xd0,
+                ],
+                [
+                    0x58, 0xa0, 0xe5, 0xf6, 0xfa, 0xef, 0xcc, 0xf4, //
+                    0x80, 0x7b, 0xff, 0x1f, 0x05, 0xfa, 0x8a, 0x92, //
+                    0x17, 0x94, 0x57, 0x62, 0x04, 0x0b, 0xce, 0xc2, //
+                    0xf4, 0xb4, 0xa6, 0x2b, 0xdf, 0xe0, 0xe8, 0x6e,
+                ],
+                [
+                    0x0c, 0xe6, 0xea, 0x98, 0xec, 0x54, 0x8f, 0x8e, //
+                    0x28, 0x1e, 0x93, 0xe3, 0x2d, 0xb6, 0x56, 0x21, //
+                    0xc4, 0x5e, 0xb1, 0x8d, 0xc6, 0xf0, 0xa7, 0xad, //
+                    0x94, 0x17, 0x86, 0x10, 0xa2, 0xf7, 0x33, 0x8e,
+                ],
+            ),
+            (
+                vec![0xde, 0xad, 0xbe, 0xef],
+                vec![],
+                [
+                    0x55, 0x32, 0x9d, 0xc8, 0x0e, 0x69, 0x0f, 0xd8, //
+                    0x6b, 0xd9, 0x66, 0x1f, 0x08, 0x51, 0xc9, 0xb3, //
+                    0x68, 0x6d, 0xf2, 0xb1, 0xfd, 0xa0, 0x34, 0x7b, //
+                    0xc3, 0xd2, 0x79, 0x58, 0x25, 0x4b, 0x32, 0xc6,
+                ],
+                [
+                    0x8d, 0xfc, 0x6d, 0x33, 0xa8, 0x11, 0x8f, 0xfe, //
+                    0x40, 0x8b, 0x31, 0xdd, 0xac, 0x25, 0xf7, 0x2a, //
+                    0xee, 0x91, 0x15, 0xa4, 0x5b, 0x69, 0xba, 0x17, //
+                    0x6a, 0xd0, 0x12, 0xb2, 0x43, 0x83, 0x4f, 0xee,
+                ],
+                [
+                    0xd6, 0x9e, 0x85, 0x2a, 0x28, 0x96, 0x56, 0x9e, //
+                    0xa5, 0x4a, 0x67, 0x96, 0x9a, 0xa1, 0x80, 0x02, //
+                    0x87, 0x92, 0x1d, 0xac, 0x53, 0xce, 0x6d, 0xb4, //
+                    0xb4, 0xe1, 0x21, 0x92, 0xf2, 0x63, 0xc4, 0xc4,
+                ],
+            ),
+        ];
+
+        for (key, input, t0, t1, t2) in &tests {
+            let tt0: SecretBytes<_> = kdf1(key, input);
+            assert_eq!(tt0.as_ref(), &t0[..], "kdf1 failed");
+
+            let (tt0, tt1): (SecretBytes<_>, SecretBytes<_>) = kdf2(key, input);
+            assert_eq!(tt0.as_ref(), &t0[..], "kdf2 failed");
+            assert_eq!(tt1.as_ref(), &t1[..], "kdf2 failed");
+
+            let (tt0, tt1, tt2): (SecretBytes<_>, SecretBytes<_>, SecretBytes<_>) =
+                kdf3(key, input);
+            assert_eq!(tt0.as_ref(), &t0[..], "kdf3 failed");
+            assert_eq!(tt1.as_ref(), &t1[..], "kdf3 failed");
+            assert_eq!(tt2.as_ref(), &t2[..], "kdf3 failed");
+        }
     }
 }

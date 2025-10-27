@@ -1,22 +1,37 @@
-use crate::platform::dummy::{PairBind, TunFakeIO, TunTest};
-use crate::wireguard::{WireGuard, dummy, handshake_worker, tun_worker};
-
 use std::convert::TryInto;
 use std::net::IpAddr;
-use std::thread;
 
 use crossbeam_channel::bounded;
-use hex;
-use rand_chacha::ChaCha8Rng;
-use rand_core::{RngCore, SeedableRng};
-use x25519_dalek::{PublicKey, StaticSecret};
 
+#[cfg(test)]
+use rand_chacha::ChaCha8Rng;
+#[cfg(test)]
+use rand_core::{RngCore, SeedableRng};
+
+#[cfg(test)]
 use pnet::packet::ipv4::MutableIpv4Packet;
+#[cfg(test)]
 use pnet::packet::ipv6::MutableIpv6Packet;
 
-pub fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
+#[cfg(test)]
+use super::{WireGuard, handshake_worker, tun_worker};
+
+#[cfg(test)]
+use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
+
+#[cfg(test)]
+use std::thread;
+
+#[cfg(test)]
+use hex;
+
+#[cfg(test)]
+use x25519_dalek::{PublicKey, StaticSecret};
+
+#[cfg(test)]
+pub(crate) fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     // expand pseudo random payload
-    let mut rng: _ = ChaCha8Rng::seed_from_u64(id);
+    let mut rng = ChaCha8Rng::seed_from_u64(id);
     let mut p: Vec<u8> = vec![0; size];
     rng.fill_bytes(&mut p);
 
@@ -57,6 +72,7 @@ pub fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     msg
 }
 
+#[cfg(test)]
 fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
 }
@@ -86,6 +102,7 @@ fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
     (fake, wireguard_device)
 }
 
+#[cfg(test)]
 /* Create and configure
  * two matching pure (no side-effects) instances of WireGuard.
  *
@@ -156,7 +173,7 @@ fn test_pure_wireguard() {
 
         // set endpoint (the other should be learned dynamically)
 
-        peer2.set_endpoint(dummy::UnitEndpoint::new());
+        peer2.set_endpoint(dummy::UnitEndpoint);
     }
 
     let num_packets = 20;
@@ -168,7 +185,7 @@ fn test_pure_wireguard() {
 
         for id in 0..num_packets {
             packets.push(make_packet(
-                50 * id as usize,                // size
+                50 * id,                         // size
                 "192.168.1.20".parse().unwrap(), // src
                 "192.168.2.10".parse().unwrap(), // dst
                 id as u64,                       // prng seed
@@ -199,7 +216,7 @@ fn test_pure_wireguard() {
 
         for id in 0..num_packets {
             packets.push(make_packet(
-                50 + 50 * id as usize,           // size
+                50 + 50 * id,                    // size
                 "192.168.2.10".parse().unwrap(), // src
                 "192.168.1.20".parse().unwrap(), // dst
                 (id + 100) as u64,               // prng seed

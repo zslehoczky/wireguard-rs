@@ -1,11 +1,7 @@
 //! Integration handshake tests
 
 use super::common::*;
-use crate::{
-    Device,
-    timestamp::StdTimestamp,
-    types::{Message, Output},
-};
+use crate::{Device, timestamp::StdTimestamp, types::Output};
 
 use core::net::SocketAddr;
 use core::time::Duration;
@@ -33,12 +29,10 @@ fn under_load() {
     let msg_init = dev1.begin(now, &mut OsRng, &pk2).unwrap();
 
     // 2. device-2 : responds with CookieReply
-    let msg_cookie: Message = match dev2
+    let Output { msg, .. } = dev2
         .process(now, &mut OsRng, msg_init.as_ref(), Some(src1))
-        .unwrap()
-    {
-        Output { msg, .. } => msg.unwrap(),
-    };
+        .unwrap();
+    let msg_cookie = msg.unwrap();
 
     // device-1 : processes CookieReply (no response)
     match dev1
@@ -69,7 +63,7 @@ fn under_load() {
             msg: Some(msg),
             key_pair: Some(kp),
         } => {
-            assert_eq!(kp.initiator, false);
+            assert!(!kp.initiator);
             msg
         }
         _ => panic!("unexpected response"),
@@ -117,7 +111,7 @@ fn under_load() {
             msg: Some(msg),
             key_pair: Some(kp),
         } => {
-            assert_eq!(kp.initiator, false);
+            assert!(!kp.initiator);
             (msg, kp)
         }
         _ => panic!("unexpected response"),
@@ -133,7 +127,7 @@ fn under_load() {
             msg: None,
             key_pair: Some(kp),
         } => {
-            assert_eq!(kp.initiator, true);
+            assert!(kp.initiator);
             kp
         }
         _ => panic!("unexpected response"),

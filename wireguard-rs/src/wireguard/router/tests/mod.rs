@@ -1,17 +1,13 @@
-mod bench;
-mod tests;
+mod router_tests;
 
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
 
 use crate::wireguard::peer::KeyPair;
 
-use super::SIZE_MESSAGE_PREFIX;
-use super::message_data_len;
-use super::{Callbacks, Device};
-
-use super::super::dummy;
 use super::super::tests::make_packet;
+use super::{Callbacks, Device, SIZE_MESSAGE_PREFIX, message_data_len};
+use wg_platform::dummy;
 
 use std::time::Instant;
 
@@ -25,7 +21,7 @@ fn pad(msg: &[u8]) -> Vec<u8> {
     o
 }
 
-pub fn dummy_keypair(initiator: bool) -> KeyPair {
+fn dummy_keypair(initiator: bool) -> KeyPair {
     let k1 = crypto::Key {
         key: SymKey::from([0x53u8; 32]),
         id: 0x646e6573,

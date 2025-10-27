@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use wireguard_rs::run::{error::Error, run::create_config_and_run};
+use wireguard_rs::run::{create_config_and_run, error::Error};
 
 fn main() -> ExitCode {
     match create_config_and_run() {

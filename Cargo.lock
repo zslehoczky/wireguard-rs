@@ -1351,9 +1351,11 @@ name = "wg-platform"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "hex",
  "libc",
  "log",
  "nix",
+ "rand 0.8.5",
  "wg-traits",
 ]
 
@@ -1426,6 +1428,7 @@ dependencies = [
  "aead 0.3.2",
  "anyhow",
  "arraydeque",
+ "bencher",
  "blake2",
  "byteorder",
  "chacha20poly1305",
