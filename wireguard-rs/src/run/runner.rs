@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "unstable", feature(test))]
-
 use std::env;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::process::exit;

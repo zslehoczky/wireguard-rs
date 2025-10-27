@@ -9,9 +9,14 @@ license.workspace = true
 wg-traits = { path = "../wg-traits" }
 anyhow.workspace = true
 log.workspace = true
+hex = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 nix.workspace = true
+
+[features]
+dummy = ["hex", "rand"]

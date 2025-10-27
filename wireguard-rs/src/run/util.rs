@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::process::exit;
 
-use libc::{c_char, chdir, chroot, fork, getpwnam, getuid, setgid, setsid, setuid, umask};
+use libc::{chdir, chroot, fork, getpwnam, getuid, setgid, setsid, setuid, umask};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DaemonizeError {
@@ -52,14 +52,14 @@ pub fn daemonize() -> Result<(), DaemonizeError> {
 
 pub fn drop_privileges() -> Result<(), DaemonizeError> {
     // retrieve nobody's uid & gid
-    let usr = unsafe { getpwnam("nobody\x00".as_ptr() as *const c_char) };
+    let usr = unsafe { getpwnam(c"nobody".as_ptr()) };
     if usr.is_null() {
         return Err(DaemonizeError::SetGroup);
     }
 
     // change root directory
     let uid = unsafe { getuid() };
-    if uid == 0 && unsafe { chroot("/tmp\x00".as_ptr() as *const c_char) } != 0 {
+    if uid == 0 && unsafe { chroot(c"/tmp".as_ptr()) } != 0 {
         return Err(DaemonizeError::Chroot);
     }
 
@@ -67,7 +67,7 @@ pub fn drop_privileges() -> Result<(), DaemonizeError> {
     unsafe { umask(0) };
 
     // change directory
-    if unsafe { chdir("/\x00".as_ptr() as *const c_char) } != 0 {
+    if unsafe { chdir(c"/".as_ptr()) } != 0 {
         return Err(DaemonizeError::Chdir);
     }
 

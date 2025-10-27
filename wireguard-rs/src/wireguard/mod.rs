@@ -7,9 +7,9 @@
 /// and the crypto-key router code together,
 /// e.g. every WireGuard peer consists of one handshake peer and one router peer.
 mod constants;
-mod peer;
+pub mod peer;
 mod queue;
-mod router;
+pub mod router;
 mod timers;
 mod workers;
 
@@ -22,6 +22,3 @@ mod wireguard;
 // represents a WireGuard interface
 pub use wireguard::WireGuard;
 pub use workers::tun_worker;
-
-#[cfg(test)]
-use super::platform::dummy;

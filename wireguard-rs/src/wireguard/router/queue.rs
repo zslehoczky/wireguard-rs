@@ -45,7 +45,7 @@ impl<J: SequentialJob> Queue<J> {
         // check if we are the first contender
         let pos = self.contenders.fetch_add(1, Ordering::SeqCst);
         if pos > 0 {
-            assert!(usize::max_value() > pos, "contenders overflow");
+            assert!(usize::MAX > pos, "contenders overflow");
             return;
         }
 

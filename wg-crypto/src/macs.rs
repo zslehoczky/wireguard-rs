@@ -320,7 +320,7 @@ mod tests {
     use x25519_dalek::StaticSecret;
 
     fn new_validator_generator() -> (Validator<std::time::Instant>, Generator<std::time::Instant>) {
-        let sk = StaticSecret::random_from_rng(&mut OsRng);
+        let sk = StaticSecret::random_from_rng(OsRng);
         let pk = PublicKey::from(&sk);
         (Validator::new(pk), Generator::new(pk))
     }
@@ -339,7 +339,7 @@ mod tests {
 
             // check validity of mac1
             validator.check_mac1(&inner1[..], &macs).expect("mac1 of inner1 did not validate");
-            assert_eq!(validator.check_mac2(time, &inner1[..], &src, &macs), false, "mac2 of inner2 did not validate");
+            assert!(!validator.check_mac2(time, &inner1[..], &src, &macs), "mac2 of inner2 did not validate");
             let msg = validator.create_cookie_reply(&mut OsRng, time, receiver, &src, &macs);
 
             // consume cookie reply
