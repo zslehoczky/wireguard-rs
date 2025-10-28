@@ -86,9 +86,8 @@ fn read_line<'buffer, R: Read>(
 }
 
 fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
-    let mut split = ln.splitn(2, '=');
-    match (split.next(), split.next()) {
-        (Some(key), Some(value)) => Ok((key.to_string(), value.to_string())),
+    match ln.split_once('=') {
+        Some((key, value)) => Ok((key.to_string(), value.to_string())),
         _ => {
             log::error!("Unable to parse key-value pair from string: {ln}");
 
