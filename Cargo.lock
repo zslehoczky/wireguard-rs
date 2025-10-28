@@ -1444,7 +1444,6 @@ dependencies = [
  "ip_network_table-deps-treebitmap",
  "libc",
  "log",
- "num_cpus",
  "pnet",
  "proptest",
  "rand 0.8.5",
