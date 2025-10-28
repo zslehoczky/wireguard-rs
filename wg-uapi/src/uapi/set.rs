@@ -3,7 +3,9 @@ use std::net::{IpAddr, SocketAddr};
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use super::{ConfigError, Configuration};
+use wg_traits::Configuration;
+
+use super::{PeerState, error::ConfigError};
 
 enum ParserState {
     Peer(ParsedPeer),
@@ -22,13 +24,13 @@ struct ParsedPeer {
     endpoint: Option<SocketAddr>,
 }
 
-pub struct LineParser<'a, C: Configuration> {
+pub struct LineParser<'a, C: Configuration<ConfigError, PeerState, PublicKey, StaticSecret>> {
     config: &'a mut C,
     state: ParserState,
 }
 
-impl<'a, C: Configuration> LineParser<'a, C> {
-    pub fn new(config: &'a mut C) -> LineParser<'a, C> {
+impl<'a, C: Configuration<ConfigError, PeerState, PublicKey, StaticSecret>> LineParser<'a, C> {
+    pub fn new(config: &'a mut C) -> Self {
         LineParser {
             config,
             state: ParserState::Interface,

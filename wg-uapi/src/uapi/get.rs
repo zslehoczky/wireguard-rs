@@ -1,6 +1,12 @@
-use super::Configuration;
+use x25519_dalek::{PublicKey, StaticSecret};
 
-pub fn serialize<C: Configuration>(config: &C) -> String {
+use wg_traits::Configuration;
+
+use super::{PeerState, error::ConfigError};
+
+pub fn serialize<C: Configuration<ConfigError, PeerState, PublicKey, StaticSecret>>(
+    config: &C,
+) -> String {
     let mut result_pieces = Vec::new();
 
     let mut write = |key: &'static str, value: String| {

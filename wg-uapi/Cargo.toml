@@ -1,0 +1,16 @@
+[package]
+name = "wg-uapi"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wg-crypto = { path = "../wg-crypto" }
+wg-traits = { path = "../wg-traits" }
+
+hex.workspace = true
+libc.workspace = true
+log.workspace = true
+subtle.workspace = true
+x25519-dalek.workspace = true

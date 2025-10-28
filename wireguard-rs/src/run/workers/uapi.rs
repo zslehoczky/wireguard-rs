@@ -4,18 +4,22 @@ use std::thread::{self, JoinHandle, ScopedJoinHandle};
 
 use wg_platform as plt;
 use wg_traits::{
+    Configuration,
     tun::Tun,
     uapi::{BindUAPI, PlatformUAPI},
     udp::PlatformUDP,
 };
+use wg_uapi::uapi::{
+    ConfigError, ConfigOperation, handle_config_operation, parse_config_operation,
+};
 
-use crate::configuration::{ConfigError, Configuration, WireGuardConfig, uapi};
+use crate::configuration::WireGuardConfig;
 use crate::run::{error::ExitCode, profiler::profiler_stop};
 use crate::wireguard::WireGuard;
 
 pub enum ConfigMessage {
     UapiConfigOperation(
-        uapi::ConfigOperation,
+        ConfigOperation,
         crossbeam_channel::Sender<Result<String, ConfigError>>,
     ),
     TunUp(usize),
@@ -51,7 +55,7 @@ fn config_worker<T: Tun, B: PlatformUDP>(
         match message {
             ConfigMessage::UapiConfigOperation(config_operation, sender) => {
                 sender
-                    .send(uapi::handle_config_operation(
+                    .send(handle_config_operation(
                         config_operation,
                         &mut wireguard_config,
                     ))
@@ -102,23 +106,24 @@ fn uapi_config_message_handler(
     let mut string_buffer = String::new();
 
     loop {
-        let result = uapi::parse_config_operation(&mut reader, &mut string_buffer).and_then(
-            |config_operation| match config_operation {
-                Some(config_operation) => {
-                    let (sender, receiver) = crossbeam_channel::unbounded();
+        let result =
+            parse_config_operation(&mut reader, &mut string_buffer).and_then(|config_operation| {
+                match config_operation {
+                    Some(config_operation) => {
+                        let (sender, receiver) = crossbeam_channel::unbounded();
 
-                    config_sender
-                        .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
-                        .expect("channel is open while this loop is running");
+                        config_sender
+                            .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
+                            .expect("channel is open while this loop is running");
 
-                    receiver
-                        .recv()
-                        .expect("channel is open until result is received")
-                        .map(Some)
+                        receiver
+                            .recv()
+                            .expect("channel is open until result is received")
+                            .map(Some)
+                    }
+                    None => Ok(None), // channel closed
                 }
-                None => Ok(None), // channel closed
-            },
-        );
+            });
 
         if let Ok(None) = result {
             // channel closed
