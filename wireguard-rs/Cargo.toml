@@ -26,7 +26,6 @@ hex.workspace = true
 hjul.workspace = true
 hmac.workspace = true
 log.workspace = true
-num_cpus.workspace = true
 rand.workspace = true
 rand_core.workspace = true
 ring.workspace = true

@@ -1,6 +1,8 @@
 use std::convert::TryInto;
 use std::net::IpAddr;
 
+use crossbeam_channel::bounded;
+
 #[cfg(test)]
 use rand_chacha::ChaCha8Rng;
 #[cfg(test)]
@@ -12,10 +14,10 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 
 #[cfg(test)]
-use super::{WireGuard, tun_worker};
+use super::{WireGuard, handshake_worker, tun_worker};
 
 #[cfg(test)]
-use wg_platform::dummy;
+use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
 
 #[cfg(test)]
 use std::thread;
@@ -75,6 +77,31 @@ fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
 }
 
+fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
+    let n_cpus: usize = 1;
+
+    let (sender, receiver) = bounded(n_cpus);
+
+    let (fake, tun_reader, tun_writer, _) = dummy::TunTest::create(true);
+    let wireguard_device: WireGuard<dummy::TunTest, dummy::PairBind> =
+        WireGuard::new(tun_writer, sender, n_cpus);
+
+    for _ in 0..n_cpus {
+        let wireguard_device = wireguard_device.clone();
+        let receiver = receiver.clone();
+
+        thread::spawn(move || handshake_worker(&wireguard_device, receiver));
+    }
+
+    {
+        let wireguard_device = wireguard_device.clone();
+
+        thread::spawn(move || tun_worker(&wireguard_device, tun_reader));
+    }
+
+    (fake, wireguard_device)
+}
+
 #[cfg(test)]
 /* Create and configure
  * two matching pure (no side-effects) instances of WireGuard.
@@ -91,20 +118,10 @@ fn test_pure_wireguard() {
 
     // create WG instances for dummy TUN devices
 
-    let (fake1, tun_reader1, tun_writer1, _) = dummy::TunTest::create(true);
-    let wg1: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer1);
-    let wireguard_device = wg1.clone();
-    thread::spawn(move || {
-        tun_worker(&wireguard_device, tun_reader1);
-    });
+    let (fake1, wg1) = create_wireguard_device();
     wg1.up(1500);
 
-    let (fake2, tun_reader2, tun_writer2, _) = dummy::TunTest::create(true);
-    let wg2: WireGuard<dummy::TunTest, dummy::PairBind> = WireGuard::new(tun_writer2);
-    let wireguard_device = wg2.clone();
-    thread::spawn(move || {
-        tun_worker(&wireguard_device, tun_reader2);
-    });
+    let (fake2, wg2) = create_wireguard_device();
     wg2.up(1500);
 
     // create pair bind to connect the interfaces "over the internet"

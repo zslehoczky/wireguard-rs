@@ -8,6 +8,8 @@ use std::sync::{
 use std::thread::{self, ScopedJoinHandle};
 
 use anyhow::anyhow;
+
+use crossbeam_channel::Receiver;
 use wg_platform as plt;
 use wg_traits::{
     tun::{Status, Tun, TunEvent},
@@ -16,7 +18,7 @@ use wg_traits::{
 };
 
 use crate::configuration::{ConfigError, Configuration, WireGuardConfig, uapi};
-use crate::wireguard::{WireGuard, tun_worker};
+use crate::wireguard::{HandshakeJob, WireGuard, handshake_worker, tun_worker};
 
 use super::config::Config;
 use super::error::{ErrorReason, ExitCode};
@@ -62,10 +64,20 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer);
+    let n_cpus: usize = std::thread::available_parallelism()
+        .expect("parallelism info should be available")
+        .into();
+
+    let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus);
+
+    let wireguard_device =
+        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus);
+
     let tun_reader_jobs_running = AtomicBool::new(true);
 
     thread::scope(|thread_scope| {
+        spawn_handshake_workers(thread_scope, &wireguard_device, handshake_receiver, n_cpus);
+
         let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
             .into_iter()
             .map(|reader| {
@@ -99,7 +111,9 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
         tun_reader_jobs_running.store(false, Ordering::Release);
 
-        // tun_event_loop and uapi_server joined here
+        wireguard_device.close_handshake_queue();
+
+        // scoped threads joined here
     });
 
     profiler_stop();
@@ -111,6 +125,20 @@ fn initialize_logger() {
     env_logger::builder()
         .try_init()
         .expect("Failed to initialize event logger");
+}
+
+fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    wireguard_device: &'env WireGuard<T, B>,
+    handshake_receiver: Receiver<HandshakeJob<B::Endpoint>>,
+    n_workers: usize,
+) -> Vec<ScopedJoinHandle<'scope, ()>> {
+    (0..n_workers)
+        .map(|_| {
+            let handshake_receiver = handshake_receiver.clone();
+            thread_scope.spawn(|| handshake_worker(wireguard_device, handshake_receiver))
+        })
+        .collect()
 }
 
 fn spawn_tun_event_loop<'scope, 'env, S: Status>(
