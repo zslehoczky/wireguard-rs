@@ -41,15 +41,6 @@ pub fn spawn_uapi_server(
     })
 }
 
-fn spawn_uapi_config_message_handler(
-    config_sender: crossbeam_channel::Sender<ConfigMessage>,
-    stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        uapi_config_message_handler(config_sender, stream);
-    })
-}
-
 fn config_worker<T: Tun, B: PlatformUDP>(
     wireguard_device: &WireGuard<T, B>,
     config_receiver: crossbeam_channel::Receiver<ConfigMessage>,
@@ -88,7 +79,11 @@ fn uapi_server(
         // accept and handle UAPI config connections
         match uapi.connect() {
             Ok(stream) => {
-                spawn_uapi_config_message_handler(config_sender.clone(), stream);
+                let config_sender = config_sender.clone();
+
+                thread::spawn(move || {
+                    uapi_config_message_handler(config_sender, stream);
+                });
             }
             Err(err) => {
                 log::error!("UAPI connection error: {}", err);
