@@ -1,11 +1,8 @@
 use std::env;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::process::exit;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc,
-};
-use std::thread::{self, ScopedJoinHandle};
+use std::sync::mpsc;
+use std::thread::{self, JoinHandle, ScopedJoinHandle};
 
 use anyhow::anyhow;
 
@@ -47,7 +44,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     let uapi_socket = plt::UAPI::bind(name.as_str())
         .map_err(|e| ErrorReason::UAPIListenerCreationFailed(anyhow!(e)))?;
 
-    let (tun_readers, tun_writer, mut tun_status) = plt::Tun::create(name.as_str())
+    let (tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
         .map_err(|e| ErrorReason::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     if config.drop_privileges {
@@ -73,8 +70,6 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     let wireguard_device =
         WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus);
 
-    let tun_reader_jobs_running = AtomicBool::new(true);
-
     thread::scope(|thread_scope| {
         spawn_handshake_workers(thread_scope, &wireguard_device, handshake_receiver, n_cpus);
 
@@ -89,28 +84,19 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
         let (config_sender, config_receiver) = mpsc::channel();
 
-        spawn_tun_event_loop(
-            thread_scope,
-            &tun_reader_jobs_running,
-            &mut tun_status,
-            config_sender.clone(),
-        );
+        // config producers
+        spawn_tun_event_loop(tun_status, config_sender.clone()); // detached
+        spawn_uapi_server(uapi_socket, config_sender); //detached
 
-        spawn_uapi_server(
-            thread_scope,
-            &tun_reader_jobs_running,
-            &uapi_socket,
-            config_sender,
-        );
-
+        // config consumer
         spawn_config_worker(thread_scope, &wireguard_device, config_receiver);
 
+        // wait until tun device is disconnected
         for handle in tun_reader_jobs {
             let _ = handle.join();
         }
 
-        tun_reader_jobs_running.store(false, Ordering::Release);
-
+        // signal shutdown to async workers (by closing producer channels)
         wireguard_device.close_handshake_queue();
 
         // scoped threads joined here
@@ -141,16 +127,15 @@ fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
         .collect()
 }
 
-fn spawn_tun_event_loop<'scope, 'env, S: Status>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    tun_reader_jobs_running: &'env AtomicBool,
-    tun_status: &'env mut S,
+fn spawn_tun_event_loop<S: Status>(
+    tun_status: S,
     config_sender: mpsc::Sender<ConfigMessage>,
-) -> ScopedJoinHandle<'scope, ()> {
-    thread_scope.spawn(|| {
+) -> JoinHandle<()> {
+    thread::spawn(|| {
         let config_sender = config_sender;
+        let mut tun_status = tun_status;
 
-        while tun_reader_jobs_running.load(Ordering::Acquire) {
+        loop {
             match tun_status.event() {
                 Err(e) => {
                     log::error!("Tun device error {}", e);
@@ -172,25 +157,19 @@ fn spawn_tun_event_loop<'scope, 'env, S: Status>(
     })
 }
 
-fn spawn_uapi_server<'scope, 'env>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    tun_reader_jobs_running: &'env AtomicBool,
-    uapi: &'env <plt::UAPI as PlatformUAPI>::Bind,
+fn spawn_uapi_server(
+    uapi: <plt::UAPI as PlatformUAPI>::Bind,
     config_sender: mpsc::Sender<ConfigMessage>,
-) -> ScopedJoinHandle<'scope, ()> {
-    thread_scope.spawn(|| {
+) -> JoinHandle<()> {
+    thread::spawn(|| {
         let config_sender = config_sender;
+        let uapi = uapi;
 
-        while tun_reader_jobs_running.load(Ordering::Acquire) {
+        loop {
             // accept and handle UAPI config connections
             match uapi.connect() {
                 Ok(stream) => {
-                    spawn_uapi_config_message_handler(
-                        thread_scope,
-                        tun_reader_jobs_running,
-                        config_sender.clone(),
-                        stream,
-                    );
+                    spawn_uapi_config_message_handler(config_sender.clone(), stream);
                 }
                 Err(err) => {
                     log::error!("UAPI connection error: {}", err);
@@ -202,19 +181,17 @@ fn spawn_uapi_server<'scope, 'env>(
     })
 }
 
-fn spawn_uapi_config_message_handler<'scope, 'env>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    tun_reader_jobs_running: &'env AtomicBool,
+fn spawn_uapi_config_message_handler(
     config_sender: mpsc::Sender<ConfigMessage>,
     stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
-) -> ScopedJoinHandle<'scope, ()> {
-    thread_scope.spawn(|| {
+) -> JoinHandle<()> {
+    thread::spawn(|| {
         let uapi_stream_sender = config_sender;
         let mut stream = stream;
         let mut reader = BufReader::new(&mut stream);
         let mut string_buffer = String::new();
 
-        'read_from_stream: while tun_reader_jobs_running.load(Ordering::Acquire) {
+        'read_from_stream: loop {
             let result = uapi::parse_config_operation(&mut reader, &mut string_buffer).and_then(
                 |config_operation| match config_operation {
                     Some(config_operation) => {
