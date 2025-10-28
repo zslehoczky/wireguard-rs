@@ -15,7 +15,7 @@ use wg_traits::{
 use crate::wireguard::{HandshakeJob, WireGuard};
 
 use handshake::spawn_handshake_workers;
-use tun::{spawn_tun_event_loop, spawn_tun_readers};
+use tun::{spawn_tun_event_loop, spawn_tun_workers};
 use uapi::{spawn_config_worker, spawn_uapi_server};
 
 pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
@@ -34,7 +34,7 @@ pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
             n_handshake_workers,
         );
 
-        let tun_reader_jobs = spawn_tun_readers(thread_scope, &wireguard_device, tun_readers);
+        let tun_reader_jobs = spawn_tun_workers(thread_scope, &wireguard_device, tun_readers);
 
         let (config_sender, config_receiver) = crossbeam_channel::unbounded();
 
