@@ -128,13 +128,10 @@ fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
 }
 
 fn spawn_tun_event_loop<S: Status>(
-    tun_status: S,
+    mut tun_status: S,
     config_sender: mpsc::Sender<ConfigMessage>,
 ) -> JoinHandle<()> {
-    thread::spawn(|| {
-        let config_sender = config_sender;
-        let mut tun_status = tun_status;
-
+    thread::spawn(move || {
         loop {
             match tun_status.event() {
                 Err(e) => {
@@ -161,10 +158,7 @@ fn spawn_uapi_server(
     uapi: <plt::UAPI as PlatformUAPI>::Bind,
     config_sender: mpsc::Sender<ConfigMessage>,
 ) -> JoinHandle<()> {
-    thread::spawn(|| {
-        let config_sender = config_sender;
-        let uapi = uapi;
-
+    thread::spawn(move || {
         loop {
             // accept and handle UAPI config connections
             match uapi.connect() {
@@ -183,11 +177,9 @@ fn spawn_uapi_server(
 
 fn spawn_uapi_config_message_handler(
     config_sender: mpsc::Sender<ConfigMessage>,
-    stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
+    mut stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
 ) -> JoinHandle<()> {
-    thread::spawn(|| {
-        let uapi_stream_sender = config_sender;
-        let mut stream = stream;
+    thread::spawn(move || {
         let mut reader = BufReader::new(&mut stream);
         let mut string_buffer = String::new();
 
@@ -197,7 +189,7 @@ fn spawn_uapi_config_message_handler(
                     Some(config_operation) => {
                         let (sender, receiver) = mpsc::channel();
 
-                        uapi_stream_sender
+                        config_sender
                             .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
                             .expect("channel is open while this loop is running");
 
