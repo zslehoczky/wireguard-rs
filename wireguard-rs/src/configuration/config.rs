@@ -30,15 +30,15 @@ pub struct PeerState {
     pub preshared_key: PSK,
 }
 
-pub struct WireGuardConfig<T: tun::Tun, B: udp::PlatformUDP> {
-    wireguard: WireGuard<T, B>,
+pub struct WireGuardConfig<'device, T: tun::Tun, B: udp::PlatformUDP> {
+    wireguard: &'device WireGuard<T, B>,
     port: u16,
     bind: Option<B::Owner>,
     fwmark: Option<u32>,
 }
 
-impl<T: tun::Tun, B: udp::PlatformUDP> WireGuardConfig<T, B> {
-    pub fn new(wg: WireGuard<T, B>) -> Self {
+impl<'device, T: tun::Tun, B: udp::PlatformUDP> WireGuardConfig<'device, T, B> {
+    pub fn new(wg: &'device WireGuard<T, B>) -> Self {
         WireGuardConfig {
             wireguard: wg,
             port: 0,
@@ -209,7 +209,7 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     Ok(())
 }
 
-impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
+impl<'device, T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<'device, T, B> {
     fn up(&mut self, mtu: usize) -> Result<(), ConfigError> {
         log::info!("configuration, set device up");
         self.wireguard.up(mtu);

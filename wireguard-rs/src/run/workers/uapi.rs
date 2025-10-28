@@ -45,7 +45,7 @@ fn config_worker<T: Tun, B: PlatformUDP>(
     wireguard_device: &WireGuard<T, B>,
     config_receiver: crossbeam_channel::Receiver<ConfigMessage>,
 ) {
-    let mut wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+    let mut wireguard_config = WireGuardConfig::new(wireguard_device);
 
     while let Ok(message) = config_receiver.recv() {
         match message {
