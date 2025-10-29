@@ -131,13 +131,10 @@ mod tests {
         let config_operation = parse_from_text("\n");
 
         assert!(config_operation.is_err());
-
-        match config_operation.err().unwrap() {
-            ConfigError::InvalidOperation => (),
-            _ => {
-                panic!();
-            }
-        }
+        assert!(matches!(
+            config_operation.err().unwrap(),
+            ConfigError::InvalidOperation
+        ));
     }
 
     #[test]
@@ -145,12 +142,10 @@ mod tests {
         const INPUT: &str = "get=1\n\
                             \n";
 
-        match unwrap_config_operation(parse_from_text(INPUT)) {
-            ConfigOperation::Get => (),
-            _ => {
-                panic!();
-            }
-        }
+        assert!(matches!(
+            unwrap_config_operation(parse_from_text(INPUT)),
+            ConfigOperation::Get
+        ));
     }
 
     #[test]
@@ -186,13 +181,10 @@ mod tests {
         let config_operation = parse_from_text(INPUT);
 
         assert!(config_operation.is_err());
-
-        match config_operation.err().unwrap() {
-            ConfigError::InvalidOperation => (),
-            _ => {
-                panic!();
-            }
-        }
+        assert!(matches!(
+            config_operation.err().unwrap(),
+            ConfigError::InvalidOperation
+        ));
     }
 
     #[test]
@@ -204,13 +196,10 @@ mod tests {
         let config_operation = parse_from_text(INPUT);
 
         assert!(config_operation.is_err());
-
-        match config_operation.err().unwrap() {
-            ConfigError::InvalidKeyValuePair => (),
-            _ => {
-                panic!();
-            }
-        }
+        assert!(matches!(
+            config_operation.err().unwrap(),
+            ConfigError::InvalidKeyValuePair
+        ));
     }
 
     #[test]
