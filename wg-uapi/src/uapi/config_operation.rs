@@ -159,13 +159,8 @@ mod tests {
             ConfigOperation::Set(key_value_pairs) => {
                 assert_eq!(key_value_pairs.len(), 2);
 
-                let (key, value) = &key_value_pairs[0];
-                assert_eq!(key, "a");
-                assert_eq!(value, "1");
-
-                let (key, value) = &key_value_pairs[1];
-                assert_eq!(key, "b");
-                assert_eq!(value, "2");
+                assert_eq!(key_value_pairs[0], (String::from("a"), String::from("1")));
+                assert_eq!(key_value_pairs[1], (String::from("b"), String::from("2")));
             }
             _ => {
                 panic!();
