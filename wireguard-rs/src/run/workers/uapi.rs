@@ -10,13 +10,15 @@ use wg_traits::{
     udp::PlatformUDP,
 };
 use wg_uapi::uapi::{
-    ConfigError, ConfigOperation, ReadNonEmptyLinesResult, handle_config_operation,
-    parse_config_operation, read_non_empty_lines, write_config_response,
+    ConfigError, ConfigOperation, handle_config_operation, parse_config_operation,
+    write_config_response,
 };
 
 use crate::configuration::WireGuardConfig;
 use crate::run::{error::ExitCode, profiler::profiler_stop};
 use crate::wireguard::WireGuard;
+
+use super::line_reader::{ReadNonEmptyLinesResult, read_non_empty_line_block};
 
 pub enum ConfigMessage {
     UapiConfigOperation(
@@ -107,15 +109,20 @@ fn uapi_config_message_handler(
     let mut string_buffer = String::new();
 
     loop {
-        let lines_result = match read_non_empty_lines(&mut reader, &mut string_buffer) {
+        string_buffer.clear();
+
+        let lines_result = match read_non_empty_line_block(&mut reader, &mut string_buffer) {
             ReadNonEmptyLinesResult::StreamOpen(val) => val,
             ReadNonEmptyLinesResult::StreamClosed => {
                 return;
             }
         };
 
+        let lines = string_buffer.lines().take_while(|&line| !line.is_empty());
+
         let response = lines_result
-            .and_then(parse_config_operation)
+            .map_err(|_| ConfigError::IOError)
+            .and_then(|_| parse_config_operation(lines))
             .and_then(|config_operation| {
                 let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
 
