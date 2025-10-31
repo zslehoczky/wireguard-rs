@@ -11,7 +11,7 @@ use wg_traits::{
 };
 use wg_uapi::uapi::{
     ConfigError, ConfigOperation, handle_config_operation, parse_config_operation,
-    write_config_response,
+    parse_non_empty_lines, write_config_response,
 };
 
 use crate::configuration::WireGuardConfig;
@@ -107,29 +107,30 @@ fn uapi_config_message_handler(
     let mut string_buffer = String::new();
 
     loop {
-        let result =
-            parse_config_operation(&mut reader, &mut string_buffer).and_then(|config_operation| {
-                match config_operation {
-                    Some(config_operation) => {
-                        let (sender, receiver) = crossbeam_channel::unbounded();
+        let lines_result = match parse_non_empty_lines(&mut reader, &mut string_buffer) {
+            None => {
+                // stream closed
+                return;
+            }
+            Some(val) => val,
+        };
 
-                        config_sender
-                            .send(ConfigMessage::UapiConfigOperation(config_operation, sender))
-                            .expect("channel is open while this loop is running");
+        let result = lines_result
+            .and_then(parse_config_operation)
+            .and_then(|config_operation| {
+                let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
 
-                        receiver
-                            .recv()
-                            .expect("channel is open until result is received")
-                            .map(Some)
-                    }
-                    None => Ok(None), // channel closed
-                }
+                config_sender
+                    .send(ConfigMessage::UapiConfigOperation(
+                        config_operation,
+                        config_result_sender,
+                    ))
+                    .expect("channel should be open while this loop is running");
+
+                config_result_receiver
+                    .recv()
+                    .expect("channel should be open until result is received")
             });
-
-        if let Ok(None) = result {
-            // channel closed
-            return;
-        }
 
         let mut writer = BufWriter::new(reader.get_mut());
 

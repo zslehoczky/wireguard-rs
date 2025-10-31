@@ -4,7 +4,7 @@ mod error;
 mod get;
 mod set;
 
-pub use config_operation::{ConfigOperation, parse_config_operation};
+pub use config_operation::{ConfigOperation, parse_config_operation, parse_non_empty_lines};
 pub use config_response::write_config_response;
 pub use error::ConfigError;
 

@@ -7,27 +7,29 @@ pub enum ConfigOperation {
     Set(Vec<(String, String)>),
 }
 
-pub fn parse_config_operation<R: Read>(
+pub fn parse_non_empty_lines<'buffer, R: Read>(
     reader: &mut BufReader<R>,
-    string_buffer: &mut String,
-) -> Result<Option<ConfigOperation>, ConfigError> {
+    string_buffer: &'buffer mut String,
+) -> Option<Result<Vec<&'buffer str>, ConfigError>> {
     string_buffer.clear();
 
-    loop {
-        if let Some(line) = read_line(reader, string_buffer)? {
-            if line.is_empty() {
-                break;
-            }
-        } else {
-            return Ok(None); // EOF reached
+    match read_lines(reader, string_buffer) {
+        ReadLinesResult::Eof => {
+            return None;
         }
-    }
+        ReadLinesResult::Err => {
+            return Some(Err(ConfigError::IOError));
+        }
+        _ => (),
+    };
 
-    let lines: Vec<&str> = string_buffer
+    Some(Ok(string_buffer
         .lines()
         .filter(|&line| !line.is_empty())
-        .collect();
+        .collect()))
+}
 
+pub fn parse_config_operation(lines: Vec<&str>) -> Result<ConfigOperation, ConfigError> {
     if lines.is_empty() {
         log::error!("Empty line instead of operation");
 
@@ -42,7 +44,7 @@ pub fn parse_config_operation<R: Read>(
                 log::warn!("Get operation should be followed by an empty line");
             }
 
-            Ok(Some(ConfigOperation::Get))
+            Ok(ConfigOperation::Get)
         }
         "set=1" => {
             if !arguments_provided {
@@ -55,7 +57,7 @@ pub fn parse_config_operation<R: Read>(
                 key_value_pairs.push(parse_key_value_pair(line)?);
             }
 
-            Ok(Some(ConfigOperation::Set(key_value_pairs)))
+            Ok(ConfigOperation::Set(key_value_pairs))
         }
         op => {
             log::error!("Unknown operation: {op}");
@@ -65,24 +67,56 @@ pub fn parse_config_operation<R: Read>(
     }
 }
 
+enum ReadLineResult<'buffer> {
+    Ok(&'buffer str),
+    Eof,
+    Err,
+}
+
 fn read_line<'buffer, R: Read>(
     reader: &mut BufReader<R>,
     string_buffer: &'buffer mut String,
-) -> Result<Option<&'buffer str>, ConfigError> {
+) -> ReadLineResult<'buffer> {
     let prev_len = string_buffer.len();
 
-    let n_chars = reader
-        .read_line(string_buffer)
-        .map_err(|_| ConfigError::IOError)?;
+    let n_chars = match reader.read_line(string_buffer) {
+        Ok(n_chars) => n_chars,
+        Err(_) => {
+            return ReadLineResult::Err;
+        }
+    };
 
     if n_chars == 0 {
-        // EOF reached
-        return Ok(None);
+        return ReadLineResult::Eof;
     }
 
     let line_content_without_newline = &string_buffer[prev_len..(string_buffer.len() - 1)];
 
-    Ok(Some(line_content_without_newline))
+    ReadLineResult::Ok(line_content_without_newline)
+}
+
+enum ReadLinesResult {
+    Ok,
+    Eof,
+    Err,
+}
+
+fn read_lines<R: Read>(reader: &mut BufReader<R>, string_buffer: &mut String) -> ReadLinesResult {
+    loop {
+        match read_line(reader, string_buffer) {
+            ReadLineResult::Ok(line) => {
+                if line.is_empty() {
+                    return ReadLinesResult::Ok;
+                }
+            }
+            ReadLineResult::Eof => {
+                return ReadLinesResult::Eof;
+            }
+            ReadLineResult::Err => {
+                return ReadLinesResult::Err;
+            }
+        }
+    }
 }
 
 fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
@@ -100,20 +134,21 @@ fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
 mod tests {
     use super::*;
 
-    fn parse_from_text(text: &'static str) -> Result<Option<ConfigOperation>, ConfigError> {
+    fn parse_from_text(text: &'static str) -> Option<Result<ConfigOperation, ConfigError>> {
         let mut reader = BufReader::new(text.as_bytes());
         let mut string_buffer = String::new();
 
-        parse_config_operation(&mut reader, &mut string_buffer)
+        parse_non_empty_lines(&mut reader, &mut string_buffer)
+            .map(|lines_result| lines_result.and_then(parse_config_operation))
     }
 
     fn unwrap_config_operation(
-        config_operation: Result<Option<ConfigOperation>, ConfigError>,
+        config_operation: Option<Result<ConfigOperation, ConfigError>>,
     ) -> ConfigOperation {
-        assert!(config_operation.is_ok());
+        assert!(config_operation.is_some());
 
         let config_operation = config_operation.unwrap();
-        assert!(config_operation.is_some());
+        assert!(config_operation.is_ok());
 
         config_operation.unwrap()
     }
@@ -122,18 +157,17 @@ mod tests {
     fn eof() {
         let config_operation = parse_from_text("");
 
-        assert!(config_operation.is_ok());
-        assert!(config_operation.unwrap().is_none());
+        assert!(config_operation.is_none());
     }
 
     #[test]
     fn empty_line() {
         let config_operation = parse_from_text("\n");
 
-        assert!(config_operation.is_err());
+        assert!(config_operation.is_some());
         assert!(matches!(
-            config_operation.err().unwrap(),
-            ConfigError::InvalidOperation
+            config_operation.unwrap(),
+            Err(ConfigError::InvalidOperation)
         ));
     }
 
@@ -175,10 +209,10 @@ mod tests {
 
         let config_operation = parse_from_text(INPUT);
 
-        assert!(config_operation.is_err());
+        assert!(config_operation.is_some());
         assert!(matches!(
-            config_operation.err().unwrap(),
-            ConfigError::InvalidOperation
+            config_operation.unwrap(),
+            Err(ConfigError::InvalidOperation)
         ));
     }
 
@@ -190,10 +224,10 @@ mod tests {
 
         let config_operation = parse_from_text(INPUT);
 
-        assert!(config_operation.is_err());
+        assert!(config_operation.is_some());
         assert!(matches!(
-            config_operation.err().unwrap(),
-            ConfigError::InvalidKeyValuePair
+            config_operation.unwrap(),
+            Err(ConfigError::InvalidKeyValuePair)
         ));
     }
 
@@ -207,7 +241,13 @@ mod tests {
         let mut reader = BufReader::new(INPUT.as_bytes());
         let mut string_buffer = String::new();
 
-        let _ = unwrap_config_operation(parse_config_operation(&mut reader, &mut string_buffer));
-        let _ = unwrap_config_operation(parse_config_operation(&mut reader, &mut string_buffer));
+        let _ = unwrap_config_operation(
+            parse_non_empty_lines(&mut reader, &mut string_buffer)
+                .map(|lines_result| lines_result.and_then(parse_config_operation)),
+        );
+        let _ = unwrap_config_operation(
+            parse_non_empty_lines(&mut reader, &mut string_buffer)
+                .map(|lines_result| lines_result.and_then(parse_config_operation)),
+        );
     }
 }
