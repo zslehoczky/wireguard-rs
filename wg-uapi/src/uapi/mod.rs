@@ -1,9 +1,11 @@
 mod config_operation;
+mod config_response;
 mod error;
 mod get;
 mod set;
 
 pub use config_operation::{ConfigOperation, parse_config_operation};
+pub use config_response::write_config_response;
 pub use error::ConfigError;
 
 use std::net::{IpAddr, SocketAddr};

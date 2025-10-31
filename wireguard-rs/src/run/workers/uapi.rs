@@ -1,4 +1,4 @@
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter};
 use std::process::exit;
 use std::thread::{self, JoinHandle, ScopedJoinHandle};
 
@@ -11,6 +11,7 @@ use wg_traits::{
 };
 use wg_uapi::uapi::{
     ConfigError, ConfigOperation, handle_config_operation, parse_config_operation,
+    write_config_response,
 };
 
 use crate::configuration::WireGuardConfig;
@@ -130,27 +131,9 @@ fn uapi_config_message_handler(
             return;
         }
 
-        let mut errno = 0;
+        let mut writer = BufWriter::new(reader.get_mut());
 
-        let response = match result {
-            Ok(response) => response.expect("None case was already handled"),
-            Err(err) => {
-                log::error!("Error during config operation: {err}");
-
-                errno = err.errno();
-
-                String::new()
-            }
-        };
-
-        if let Err(err) = || -> io::Result<_> {
-            let mut writer = BufWriter::new(reader.get_mut());
-
-            writer.write_all(response.as_bytes())?;
-            writer.write_all(format!("errno={errno}\n\n").as_bytes())?;
-
-            Ok(())
-        }() {
+        if let Err(err) = write_config_response(&mut writer, result) {
             log::error!("Error while writing to Unix socket: {err}");
         }
     }
