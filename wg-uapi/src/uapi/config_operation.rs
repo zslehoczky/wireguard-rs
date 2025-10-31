@@ -7,23 +7,28 @@ pub enum ConfigOperation {
     Set(Vec<(String, String)>),
 }
 
-pub fn parse_non_empty_lines<'buffer, R: Read>(
+pub enum ReadNonEmptyLinesResult<'buffer> {
+    StreamOpen(Result<Vec<&'buffer str>, ConfigError>),
+    StreamClosed,
+}
+
+pub fn read_non_empty_lines<'buffer, R: Read>(
     reader: &mut BufReader<R>,
     string_buffer: &'buffer mut String,
-) -> Option<Result<Vec<&'buffer str>, ConfigError>> {
+) -> ReadNonEmptyLinesResult<'buffer> {
     string_buffer.clear();
 
     match read_lines(reader, string_buffer) {
         ReadLinesResult::Eof => {
-            return None;
+            return ReadNonEmptyLinesResult::StreamClosed;
         }
         ReadLinesResult::Err => {
-            return Some(Err(ConfigError::IOError));
+            return ReadNonEmptyLinesResult::StreamOpen(Err(ConfigError::IOError));
         }
         _ => (),
     };
 
-    Some(Ok(string_buffer
+    ReadNonEmptyLinesResult::StreamOpen(Ok(string_buffer
         .lines()
         .filter(|&line| !line.is_empty())
         .collect()))
@@ -134,11 +139,20 @@ fn parse_key_value_pair(ln: &str) -> Result<(String, String), ConfigError> {
 mod tests {
     use super::*;
 
+    impl<'buffer> ReadNonEmptyLinesResult<'buffer> {
+        fn map<U, F: FnOnce(Result<Vec<&'buffer str>, ConfigError>) -> U>(self, f: F) -> Option<U> {
+            match self {
+                ReadNonEmptyLinesResult::StreamOpen(result) => Some(f(result)),
+                ReadNonEmptyLinesResult::StreamClosed => None,
+            }
+        }
+    }
+
     fn parse_from_text(text: &'static str) -> Option<Result<ConfigOperation, ConfigError>> {
         let mut reader = BufReader::new(text.as_bytes());
         let mut string_buffer = String::new();
 
-        parse_non_empty_lines(&mut reader, &mut string_buffer)
+        read_non_empty_lines(&mut reader, &mut string_buffer)
             .map(|lines_result| lines_result.and_then(parse_config_operation))
     }
 
@@ -242,11 +256,11 @@ mod tests {
         let mut string_buffer = String::new();
 
         let _ = unwrap_config_operation(
-            parse_non_empty_lines(&mut reader, &mut string_buffer)
+            read_non_empty_lines(&mut reader, &mut string_buffer)
                 .map(|lines_result| lines_result.and_then(parse_config_operation)),
         );
         let _ = unwrap_config_operation(
-            parse_non_empty_lines(&mut reader, &mut string_buffer)
+            read_non_empty_lines(&mut reader, &mut string_buffer)
                 .map(|lines_result| lines_result.and_then(parse_config_operation)),
         );
     }

@@ -10,8 +10,8 @@ use wg_traits::{
     udp::PlatformUDP,
 };
 use wg_uapi::uapi::{
-    ConfigError, ConfigOperation, handle_config_operation, parse_config_operation,
-    parse_non_empty_lines, write_config_response,
+    ConfigError, ConfigOperation, ReadNonEmptyLinesResult, handle_config_operation,
+    parse_config_operation, read_non_empty_lines, write_config_response,
 };
 
 use crate::configuration::WireGuardConfig;
@@ -107,15 +107,14 @@ fn uapi_config_message_handler(
     let mut string_buffer = String::new();
 
     loop {
-        let lines_result = match parse_non_empty_lines(&mut reader, &mut string_buffer) {
-            None => {
-                // stream closed
+        let lines_result = match read_non_empty_lines(&mut reader, &mut string_buffer) {
+            ReadNonEmptyLinesResult::StreamOpen(val) => val,
+            ReadNonEmptyLinesResult::StreamClosed => {
                 return;
             }
-            Some(val) => val,
         };
 
-        let result = lines_result
+        let response = lines_result
             .and_then(parse_config_operation)
             .and_then(|config_operation| {
                 let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
@@ -134,7 +133,7 @@ fn uapi_config_message_handler(
 
         let mut writer = BufWriter::new(reader.get_mut());
 
-        if let Err(err) = write_config_response(&mut writer, result) {
+        if let Err(err) = write_config_response(&mut writer, response) {
             log::error!("Error while writing to Unix socket: {err}");
         }
     }
