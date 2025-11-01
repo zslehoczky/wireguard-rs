@@ -1,25 +1,30 @@
 use std::io::{BufRead, BufReader, Error, Read};
 
-pub enum ReadNonEmptyLinesResult {
-    StreamOpen(Result<(), Error>),
-    StreamClosed,
+pub enum ReadLinesResult {
+    Ok,
+    Eof,
+    Err(Error),
 }
 
-pub fn read_non_empty_line_block<R: Read>(
+pub fn read_line_block<R: Read>(
     reader: &mut BufReader<R>,
     string_buffer: &mut String,
-) -> ReadNonEmptyLinesResult {
-    match read_lines(reader, string_buffer) {
-        ReadLinesResult::Eof => {
-            return ReadNonEmptyLinesResult::StreamClosed;
+) -> ReadLinesResult {
+    loop {
+        match read_line(reader, string_buffer) {
+            ReadLineResult::Ok(line) => {
+                if line.is_empty() {
+                    return ReadLinesResult::Ok;
+                }
+            }
+            ReadLineResult::Eof => {
+                return ReadLinesResult::Eof;
+            }
+            ReadLineResult::Err(err) => {
+                return ReadLinesResult::Err(err);
+            }
         }
-        ReadLinesResult::Err(err) => {
-            return ReadNonEmptyLinesResult::StreamOpen(Err(err));
-        }
-        _ => (),
-    };
-
-    ReadNonEmptyLinesResult::StreamOpen(Ok(()))
+    }
 }
 
 enum ReadLineResult<'buffer> {
@@ -45,80 +50,88 @@ fn read_line<'buffer, R: Read>(
         return ReadLineResult::Eof;
     }
 
-    let line_content_without_newline = &string_buffer[prev_len..(string_buffer.len() - 1)];
+    let line_content_without_newline = match string_buffer[prev_len..].strip_suffix('\n') {
+        Some(line) => line,
+        None => {
+            return ReadLineResult::Eof;
+        }
+    };
 
     ReadLineResult::Ok(line_content_without_newline)
-}
-
-enum ReadLinesResult {
-    Ok,
-    Eof,
-    Err(Error),
-}
-
-fn read_lines<R: Read>(reader: &mut BufReader<R>, string_buffer: &mut String) -> ReadLinesResult {
-    loop {
-        match read_line(reader, string_buffer) {
-            ReadLineResult::Ok(line) => {
-                if line.is_empty() {
-                    return ReadLinesResult::Ok;
-                }
-            }
-            ReadLineResult::Eof => {
-                return ReadLinesResult::Eof;
-            }
-            ReadLineResult::Err(err) => {
-                return ReadLinesResult::Err(err);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn read_from_text(text: &'static str) -> (ReadNonEmptyLinesResult, String) {
+    fn read_from_text(text: &'static str) -> (ReadLinesResult, Vec<String>) {
         let mut reader = BufReader::new(text.as_bytes());
         let mut string_buffer = String::new();
 
         (
-            read_non_empty_line_block(&mut reader, &mut string_buffer),
-            string_buffer,
+            read_line_block(&mut reader, &mut string_buffer),
+            string_buffer.lines().map(String::from).collect(),
         )
     }
 
     #[test]
-    fn eof() {
+    fn empty_input() {
         let (result, _) = read_from_text("");
 
-        assert!(matches!(result, ReadNonEmptyLinesResult::StreamClosed));
+        assert!(matches!(result, ReadLinesResult::Eof));
+    }
+
+    #[test]
+    fn incomplete_line() {
+        let (result, _) = read_from_text("abc");
+
+        assert!(matches!(result, ReadLinesResult::Eof));
     }
 
     #[test]
     fn empty_line() {
-        let (result, _) = read_from_text("\n");
+        let (result, lines) = read_from_text("\n");
 
-        assert!(matches!(result, ReadNonEmptyLinesResult::StreamOpen(Ok(_))));
+        assert!(matches!(result, ReadLinesResult::Ok));
+        assert_eq!(lines, vec![""]);
     }
 
     #[test]
-    fn parse_two_messages() {
-        const INPUT: &str = "a\n\
-                            \n\
-                            b\n\
-                            \n";
+    fn non_empty_line() {
+        let (result, _) = read_from_text("aaa\n");
+
+        assert!(matches!(result, ReadLinesResult::Eof));
+    }
+
+    #[test]
+    fn single_line_block() {
+        let (result, lines) = read_from_text("a\n\n");
+
+        assert!(matches!(result, ReadLinesResult::Ok));
+        assert_eq!(lines, vec!["a", ""]);
+    }
+
+    #[test]
+    fn two_line_blocks() {
+        const INPUT: &str = "a\n\nb\n\n";
 
         let mut reader = BufReader::new(INPUT.as_bytes());
         let mut string_buffer = String::new();
 
         assert!(matches!(
-            read_non_empty_line_block(&mut reader, &mut string_buffer),
-            ReadNonEmptyLinesResult::StreamOpen(Ok(_))
+            read_line_block(&mut reader, &mut string_buffer),
+            ReadLinesResult::Ok
         ));
+        let lines: Vec<_> = string_buffer.lines().collect();
+        assert_eq!(lines, vec!["a", ""]);
+
+        string_buffer.clear();
+
         assert!(matches!(
-            read_non_empty_line_block(&mut reader, &mut string_buffer),
-            ReadNonEmptyLinesResult::StreamOpen(Ok(_))
+            read_line_block(&mut reader, &mut string_buffer),
+            ReadLinesResult::Ok
         ));
+        let lines: Vec<_> = string_buffer.lines().collect();
+        assert_eq!(lines, vec!["b", ""]);
     }
 }

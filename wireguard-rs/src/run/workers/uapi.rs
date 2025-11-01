@@ -1,4 +1,4 @@
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::process::exit;
 use std::thread::{self, JoinHandle, ScopedJoinHandle};
 
@@ -18,7 +18,7 @@ use crate::configuration::WireGuardConfig;
 use crate::run::{error::ExitCode, profiler::profiler_stop};
 use crate::wireguard::WireGuard;
 
-use super::line_reader::{ReadNonEmptyLinesResult, read_non_empty_line_block};
+use super::line_reader::{ReadLinesResult, read_line_block};
 
 pub enum ConfigMessage {
     UapiConfigOperation(
@@ -106,42 +106,55 @@ fn uapi_config_message_handler(
     mut stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
 ) {
     let mut reader = BufReader::new(&mut stream);
-    let mut string_buffer = String::new();
+    let mut request_buffer = String::new();
 
     loop {
-        string_buffer.clear();
+        request_buffer.clear();
 
-        let lines_result = match read_non_empty_line_block(&mut reader, &mut string_buffer) {
-            ReadNonEmptyLinesResult::StreamOpen(val) => val,
-            ReadNonEmptyLinesResult::StreamClosed => {
+        match read_line_block(&mut reader, &mut request_buffer) {
+            ReadLinesResult::Eof => {
                 return;
             }
+            ReadLinesResult::Err(err) => {
+                log::error!("Error while reading from Unix socket: {err}. Closing socket.");
+
+                let mut writer = BufWriter::new(reader.get_mut());
+
+                handle_config_response(&mut writer, Err(ConfigError::IOError));
+
+                return;
+            }
+            ReadLinesResult::Ok => (),
         };
 
-        let lines = string_buffer.lines().take_while(|&line| !line.is_empty());
+        let request_lines = request_buffer.lines().take_while(|&line| !line.is_empty());
 
-        let response = lines_result
-            .map_err(|_| ConfigError::IOError)
-            .and_then(|_| parse_config_operation(lines))
-            .and_then(|config_operation| {
-                let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
+        let response = parse_config_operation(request_lines).and_then(|config_operation| {
+            let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
 
-                config_sender
-                    .send(ConfigMessage::UapiConfigOperation(
-                        config_operation,
-                        config_result_sender,
-                    ))
-                    .expect("channel should be open while this loop is running");
+            config_sender
+                .send(ConfigMessage::UapiConfigOperation(
+                    config_operation,
+                    config_result_sender,
+                ))
+                .expect("channel should be open while this loop is running");
 
-                config_result_receiver
-                    .recv()
-                    .expect("channel should be open until result is received")
-            });
+            config_result_receiver
+                .recv()
+                .expect("channel should be open until result is received")
+        });
 
         let mut writer = BufWriter::new(reader.get_mut());
 
-        if let Err(err) = write_config_response(&mut writer, response) {
-            log::error!("Error while writing to Unix socket: {err}");
-        }
+        handle_config_response(&mut writer, response);
+    }
+}
+
+fn handle_config_response<W: Write>(
+    writer: &mut BufWriter<W>,
+    response: Result<String, ConfigError>,
+) {
+    if let Err(err) = write_config_response(writer, response) {
+        log::error!("Error while writing to Unix socket: {err}");
     }
 }
