@@ -2,6 +2,7 @@ use std::iter::Iterator;
 
 use super::ConfigError;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ConfigOperation {
     Get,
     Set(Vec<(String, String)>),
@@ -95,17 +96,13 @@ mod tests {
                             b=2\n\
                             \n";
 
-        match unwrap_config_operation(parse_from_text(INPUT)) {
-            ConfigOperation::Set(key_value_pairs) => {
-                assert_eq!(key_value_pairs.len(), 2);
-
-                assert_eq!(key_value_pairs[0], (String::from("a"), String::from("1")));
-                assert_eq!(key_value_pairs[1], (String::from("b"), String::from("2")));
-            }
-            _ => {
-                panic!();
-            }
-        }
+        assert_eq!(
+            unwrap_config_operation(parse_from_text(INPUT)),
+            ConfigOperation::Set(vec![
+                (String::from("a"), String::from("1")),
+                (String::from("b"), String::from("2"))
+            ])
+        );
     }
 
     #[test]
