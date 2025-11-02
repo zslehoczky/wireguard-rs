@@ -39,7 +39,7 @@ env_logger = "0.11"
 hex = "0.4"
 hjul = "0.2.2"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"] }
-parking_lot = "^0.11"
+parking_lot = "0.12"
 spin = "0.7"
 zerocopy = "0.3"
 
