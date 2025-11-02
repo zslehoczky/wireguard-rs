@@ -21,7 +21,6 @@ crossbeam-channel.workspace = true
 dashmap.workspace = true
 digest.workspace = true
 env_logger.workspace = true
-generic-array.workspace = true
 hex.workspace = true
 hjul.workspace = true
 hmac.workspace = true
