@@ -20,7 +20,7 @@ aead = "0.5"
 blake2 = "0.10"
 chacha20poly1305 = "0.10"
 digest = "0.10"
-generic-array = "^0.14"
+generic-array = "=0.14.7"
 hmac = "0.12"
 rand = "0.8"
 rand_core = "0.6"
@@ -33,7 +33,7 @@ zeroize = "1.8.2"
 anyhow = "1.0.100"
 arraydeque = "0.4.5"
 byteorder = "1.5"
-crossbeam-channel = "^0.5"
+crossbeam-channel = "0.5"
 dashmap = "6.1"
 env_logger = "0.11"
 hex = "0.4"
@@ -44,13 +44,13 @@ spin = "0.10"
 zerocopy = "0.3"
 
 # Optional
-cpuprofiler = "*"
+cpuprofiler = "0.0.4"
 
 # IP network table
-treebitmap = { package = "ip_network_table-deps-treebitmap", version = "0.5.0" }
+treebitmap = { package = "ip_network_table-deps-treebitmap", version = "0.5" }
 
 # Unix dependencies
-libc = "^0.2"
+libc = "0.2"
 
 # macOS dependencies
 nix = { version = "0.30", features = ["ioctl", "net", "socket", "uio"] }
