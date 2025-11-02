@@ -19,15 +19,6 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aead"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc95d1bdb8e6666b2b217308eeeb09f2d6728d104be3e31916cc74d15420331"
-dependencies = [
- "generic-array",
-]
-
-[[package]]
-name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
@@ -197,7 +188,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
- "aead 0.5.2",
+ "aead",
  "chacha20",
  "cipher",
  "poly1305",
@@ -1321,7 +1312,7 @@ dependencies = [
 name = "wg-crypto"
 version = "0.1.4"
 dependencies = [
- "aead 0.3.2",
+ "aead",
  "bencher",
  "blake2",
  "byteorder",
@@ -1425,7 +1416,7 @@ dependencies = [
 name = "wireguard-rs"
 version = "0.1.4"
 dependencies = [
- "aead 0.3.2",
+ "aead",
  "anyhow",
  "arraydeque",
  "bencher",

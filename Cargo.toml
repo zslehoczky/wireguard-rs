@@ -16,7 +16,7 @@ version = "0.1.4"
 
 [workspace.dependencies]
 # Cryptography
-aead = "^0.3"
+aead = "0.5"
 blake2 = "0.10"
 chacha20poly1305 = "0.10"
 digest = "0.10"
