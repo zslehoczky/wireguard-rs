@@ -27,7 +27,6 @@ hjul.workspace = true
 hmac.workspace = true
 log.workspace = true
 rand.workspace = true
-rand_core.workspace = true
 ring.workspace = true
 spin.workspace = true
 subtle.workspace = true

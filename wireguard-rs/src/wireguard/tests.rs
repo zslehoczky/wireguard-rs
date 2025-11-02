@@ -6,7 +6,7 @@ use crossbeam_channel::bounded;
 #[cfg(test)]
 use rand_chacha::ChaCha8Rng;
 #[cfg(test)]
-use rand_core::{RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 
 #[cfg(test)]
 use pnet::packet::ipv4::MutableIpv4Packet;

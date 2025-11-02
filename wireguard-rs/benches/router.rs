@@ -6,7 +6,7 @@ use wireguard_rs::wireguard::router::{Callbacks, Device, SIZE_MESSAGE_PREFIX};
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use rand_chacha::ChaCha8Rng;
-use rand_core::{RngCore, SeedableRng};
+use rand_chacha::rand_core::{RngCore, SeedableRng};
 use std::convert::TryInto;
 use std::net::IpAddr;
 use std::sync::Arc;

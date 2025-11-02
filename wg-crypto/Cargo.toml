@@ -16,7 +16,6 @@ generic-array.workspace = true
 hmac.workspace = true
 log.workspace = true
 rand.workspace = true
-rand_core.workspace = true
 spin.workspace = true
 subtle.workspace = true
 x25519-dalek.workspace = true

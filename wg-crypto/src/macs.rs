@@ -1,7 +1,7 @@
 use aead::consts::U16;
+use aead::rand_core::{CryptoRng, RngCore};
 use blake2::digest::Mac;
 use rand::Rng;
-use rand_core::{CryptoRng, RngCore};
 use spin::RwLock;
 use zerocopy::{AsBytes, FromBytes, U32};
 use zeroize::{Zeroize, ZeroizeOnDrop};
