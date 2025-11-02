@@ -1199,9 +1199,12 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spin"
-version = "0.7.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13287b4da9d1207a4f4929ac390916d64eacfe236a487e9a9f5b3be392be5162"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "subtle"
@@ -1363,7 +1366,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "ring",
- "spin 0.7.1",
+ "spin 0.10.0",
  "subtle",
  "x25519-dalek",
  "zerocopy 0.3.2",
@@ -1612,7 +1615,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "ring",
- "spin 0.7.1",
+ "spin 0.10.0",
  "subtle",
  "wg-crypto",
  "wg-platform",
