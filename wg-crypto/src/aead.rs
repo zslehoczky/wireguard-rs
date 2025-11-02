@@ -1,7 +1,6 @@
 use core::fmt::Debug;
 
-use aead::KeyInit;
-use aead::generic_array::GenericArray;
+use aead::{KeyInit, generic_array::GenericArray};
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, XChaCha20Poly1305};
 use subtle::ConstantTimeEq;
 use zerocopy::{AsBytes, FromBytes};
