@@ -1316,6 +1316,7 @@ dependencies = [
  "chacha20",
  "chacha20poly1305",
  "dashmap",
+ "generic-array",
  "hex",
  "hmac",
  "log",
