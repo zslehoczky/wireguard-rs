@@ -57,7 +57,7 @@ nix = { version = "0.30", features = ["ioctl", "net", "socket", "uio"] }
 
 # Dev dependencies
 pnet = "0.35"
-proptest = "^0.10"
+proptest = "1.9"
 rand_chacha = "0.3"
 bencher = "0.1.5"
 chacha20 = "0.9"
