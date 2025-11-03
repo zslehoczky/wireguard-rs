@@ -1,5 +1,4 @@
 pub use std::num::NonZeroUsize;
-use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::{Receiver, Sender, bounded};
@@ -45,7 +44,7 @@ fn parallel_worker<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>
 }
 
 pub struct ParallelQueue<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    sender: Mutex<Option<Sender<ParallelJobUnion<E, C, T, B>>>>,
+    sender: Option<Sender<ParallelJobUnion<E, C, T, B>>>,
     handles: Vec<JoinHandle<()>>,
 }
 
@@ -67,20 +66,17 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelQueue
             .collect();
 
         Self {
-            sender: Mutex::new(Some(sender)),
+            sender: Some(sender),
             handles,
         }
     }
 
     pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
-        if let Some(s) = self
-            .sender
-            .lock()
-            .expect("sender should exist until drop is called")
+        self.sender
             .as_ref()
-        {
-            let _ = s.send(job);
-        }
+            .expect("sender should exist until drop is called")
+            .send(job)
+            .expect("receiver should exist while sender exists");
     }
 }
 
@@ -91,7 +87,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop
         log::trace!("parallel queue: begin drop");
 
         // close worker queue
-        *self.sender.lock().unwrap() = None;
+        self.sender = None;
 
         // join all worker threads
         while let Some(handle) = self.handles.pop() {
