@@ -1,10 +1,10 @@
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
-
 use super::types::Callbacks;
 
 use crossbeam_channel::Receiver;
+
 use wg_traits::{Endpoint, tun, udp};
 
 pub trait ParallelJob: Sized + SequentialJob {
