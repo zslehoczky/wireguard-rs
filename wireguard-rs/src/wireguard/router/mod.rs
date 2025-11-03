@@ -29,7 +29,7 @@ pub const fn message_data_len(payload: usize) -> usize {
     payload + mem::size_of::<TransportHeader>() + SIZE_TAG
 }
 
-pub use device::DeviceHandle as Device;
+pub use device::Device;
 pub use messages::TYPE_TRANSPORT;
 pub use peer::PeerHandle;
 pub use types::Callbacks;
