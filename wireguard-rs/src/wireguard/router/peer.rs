@@ -7,11 +7,11 @@ use super::SIZE_MESSAGE_PREFIX;
 use super::constants::*;
 use super::crypto_state::{DecryptionState, EncryptionState};
 use super::device::Device;
+use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
 use super::types::{Callbacks, RouterError};
-use super::worker::JobUnion;
 
 use core::mem;
 use core::ops::Deref;
@@ -270,7 +270,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
         if let Some(job) = job {
             log::debug!("schedule outbound job");
-            self.device.work.send(JobUnion::Outbound(job))
+            self.device.queue_job(ParallelJobUnion::Outbound(job))
         }
     }
 

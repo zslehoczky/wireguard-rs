@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::thread;
 
 use spin::RwLock;
 use zerocopy::LayoutVerified;
@@ -12,12 +11,11 @@ use super::SIZE_MESSAGE_PREFIX;
 use super::constants::PARALLEL_QUEUE_SIZE;
 use super::crypto_state::DecryptionState;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
-use super::parallel_queue::ParallelQueue;
+use super::parallel_queue::{ParallelJobUnion, NonZeroUsize, ParallelQueue};
 use super::peer::{Peer, PeerHandle, new_peer};
 use super::receive::ReceiveJob;
 use super::route::RoutingTable;
 use super::types::{Callbacks, RouterError};
-use super::worker::{JobUnion, worker};
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
@@ -32,11 +30,17 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
     pub(super) table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
-    pub(super) work: ParallelQueue<JobUnion<E, C, T, B>>,
+    parallel_queue: ParallelQueue<E, C, T, B>,
 }
 
 pub struct Device<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     inner: Arc<DeviceInner<E, C, T, B>>,
+}
+
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, T, B> {
+    pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
+        self.parallel_queue.queue_job(job);
+    }
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
@@ -65,34 +69,18 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Deref for Dev
 }
 
 pub struct DeviceHandle<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    state: Device<E, C, T, B>,            // reference to device state
-    handles: Vec<thread::JoinHandle<()>>, // join handles for workers
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop
-    for DeviceHandle<E, C, T, B>
-{
-    fn drop(&mut self) {
-        log::debug!("router: dropping device");
-
-        // close worker queue
-        self.state.work.close();
-
-        // join all worker threads
-        while let Some(handle) = self.handles.pop() {
-            handle.thread().unpark();
-            handle.join().unwrap();
-        }
-        log::debug!("router: joined with all workers from pool");
-    }
+    state: Device<E, C, T, B>, // reference to device state
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<E, C, T, B> {
     pub fn new(num_workers: usize, tun: T) -> DeviceHandle<E, C, T, B> {
-        let (work, mut consumers) = ParallelQueue::new(num_workers, PARALLEL_QUEUE_SIZE);
+        let parallel_queue = ParallelQueue::new(
+            NonZeroUsize::new(num_workers).expect("should not be zero"),
+            PARALLEL_QUEUE_SIZE,
+        );
         let device = Device {
             inner: Arc::new(DeviceInner {
-                work,
+                parallel_queue,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
                 recv: RwLock::new(HashMap::new()),
@@ -100,23 +88,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
             }),
         };
 
-        // start worker threads
-        let mut threads = Vec::with_capacity(num_workers);
-        while let Some(rx) = consumers.pop() {
-            threads.push(thread::spawn(move || worker(rx)));
-        }
-        debug_assert!(num_workers > 0, "zero worker threads");
-        debug_assert_eq!(
-            threads.len(),
-            num_workers,
-            "workers does not match consumers"
-        );
-
         // return exported device handle
-        DeviceHandle {
-            state: device,
-            handles: threads,
-        }
+        DeviceHandle { state: device }
     }
 
     pub fn send_raw(&self, msg: &[u8], dst: &mut E) -> Result<(), B::Error> {
@@ -229,7 +202,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
         // 1. add to sequential queue (drop if full)
         // 2. then add to parallel work queue (wait if full)
         if dec.peer.inbound.push(job.clone()) {
-            self.state.work.send(JobUnion::Inbound(job));
+            self.state.parallel_queue.queue_job(ParallelJobUnion::Inbound(job));
         }
         Ok(())
     }

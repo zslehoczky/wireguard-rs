@@ -11,7 +11,6 @@ mod route;
 mod send;
 mod sequential_queue;
 mod types;
-mod worker;
 
 #[cfg(test)]
 mod tests;
