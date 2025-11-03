@@ -4,8 +4,9 @@ use crate::wireguard::peer::KeyPair;
 
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
 use super::peer::Peer;
-use super::queue::{ParallelJob, Queue, SequentialJob};
+use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::types::Callbacks;
+use super::worker::ParallelJob;
 use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
 use alloc::sync::Arc;
@@ -53,7 +54,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SendJob<E, C,
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for SendJob<E, C, T, B>
 {
-    fn queue(&self) -> &Queue<Self> {
+    fn sequential_queue(&self) -> &SequentialQueue<Self> {
         &self.0.peer.outbound
     }
 

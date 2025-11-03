@@ -7,9 +7,9 @@ use super::SIZE_MESSAGE_PREFIX;
 use super::anti_replay::AntiReplay;
 use super::constants::*;
 use super::device::{DecryptionState, Device, EncryptionState};
-use super::queue::Queue;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
+use super::sequential_queue::SequentialQueue;
 use super::types::{Callbacks, RouterError};
 use super::worker::JobUnion;
 
@@ -36,8 +36,8 @@ pub struct KeyWheel {
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     pub(super) device: Device<E, C, T, B>,
     pub(super) opaque: C::Opaque,
-    pub(super) outbound: Queue<SendJob<E, C, T, B>>,
-    pub(super) inbound: Queue<ReceiveJob<E, C, T, B>>,
+    pub(super) outbound: SequentialQueue<SendJob<E, C, T, B>>,
+    pub(super) inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
     pub(super) staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     pub(super) keys: Mutex<KeyWheel>,
     pub(super) enc_key: Mutex<Option<EncryptionState>>,
@@ -192,8 +192,8 @@ pub fn new_peer<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
             inner: Arc::new(PeerInner {
                 opaque,
                 device,
-                inbound: Queue::new(),
-                outbound: Queue::new(),
+                inbound: SequentialQueue::new(),
+                outbound: SequentialQueue::new(),
                 enc_key: spin::Mutex::new(None),
                 endpoint: spin::Mutex::new(None),
                 keys: spin::Mutex::new(KeyWheel {

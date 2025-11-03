@@ -12,13 +12,7 @@ pub trait SequentialJob {
     fn sequential_work(self);
 }
 
-pub trait ParallelJob: Sized + SequentialJob {
-    fn queue(&self) -> &Queue<Self>;
-
-    fn parallel_work(&self);
-}
-
-pub struct Queue<J: SequentialJob> {
+pub struct SequentialQueue<J: SequentialJob> {
     contenders: AtomicUsize,
     queue: Mutex<ArrayDeque<[J; INORDER_QUEUE_SIZE]>>,
 
@@ -26,9 +20,9 @@ pub struct Queue<J: SequentialJob> {
     _flag: Mutex<()>,
 }
 
-impl<J: SequentialJob> Queue<J> {
-    pub fn new() -> Queue<J> {
-        Queue {
+impl<J: SequentialJob> SequentialQueue<J> {
+    pub fn new() -> SequentialQueue<J> {
+        SequentialQueue {
             contenders: AtomicUsize::new(0),
             queue: Mutex::new(ArrayDeque::new()),
 
@@ -121,7 +115,7 @@ mod tests {
             }
         }
 
-        fn hammer(queue: &Arc<Queue<TestJob>>, cnt: Arc<AtomicUsize>) -> usize {
+        fn hammer(queue: &Arc<SequentialQueue<TestJob>>, cnt: Arc<AtomicUsize>) -> usize {
             let mut jobs = 0;
             let mut rng = thread_rng();
             for _ in 0..10_000 {
@@ -147,7 +141,7 @@ mod tests {
             jobs
         }
 
-        let queue = Arc::new(Queue::new());
+        let queue = Arc::new(SequentialQueue::new());
         let counter = Arc::new(AtomicUsize::new(0));
 
         // repeatedly apply operations randomly from concurrent threads
@@ -181,7 +175,7 @@ mod tests {
             fn sequential_work(self) {}
         }
 
-        fn hammer(queue: &Arc<Queue<TestJob>>) {
+        fn hammer(queue: &Arc<SequentialQueue<TestJob>>) {
             let mut rng = thread_rng();
             for _ in 0..1_000_000 {
                 if rng.r#gen() {
@@ -192,7 +186,7 @@ mod tests {
             }
         }
 
-        let queue = Arc::new(Queue::new());
+        let queue = Arc::new(SequentialQueue::new());
 
         // repeatedly apply operations randomly from concurrent threads
         let other = {

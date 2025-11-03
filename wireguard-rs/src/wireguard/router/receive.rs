@@ -1,8 +1,9 @@
 use super::device::DecryptionState;
 use super::ip::inner_length;
 use super::messages::TransportHeader;
-use super::queue::{ParallelJob, Queue, SequentialJob};
+use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::types::Callbacks;
+use super::worker::ParallelJob;
 use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
 use alloc::sync::Arc;
@@ -48,7 +49,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E,
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for ReceiveJob<E, C, T, B>
 {
-    fn queue(&self) -> &Queue<Self> {
+    fn sequential_queue(&self) -> &SequentialQueue<Self> {
         &self.0.state.peer.inbound
     }
 

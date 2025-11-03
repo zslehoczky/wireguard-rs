@@ -5,10 +5,10 @@ mod ip;
 mod messages;
 mod parallel_queue;
 mod peer;
-mod queue;
 mod receive;
 mod route;
 mod send;
+mod sequential_queue;
 mod types;
 mod worker;
 
