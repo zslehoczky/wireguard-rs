@@ -10,19 +10,16 @@ use wg_crypto as crypto;
 use wg_traits::{Endpoint, tun, udp};
 use zerocopy::LayoutVerified;
 
-use super::anti_replay::AntiReplay;
-
 use super::SIZE_MESSAGE_PREFIX;
+use super::anti_replay::AntiReplay;
 use super::constants::PARALLEL_QUEUE_SIZE;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
+use super::parallel_queue::ParallelQueue;
 use super::peer::{Peer, PeerHandle, new_peer};
-use super::types::{Callbacks, RouterError};
-
 use super::receive::ReceiveJob;
 use super::route::RoutingTable;
+use super::types::{Callbacks, RouterError};
 use super::worker::{JobUnion, worker};
-
-use super::ParallelQueue;
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)

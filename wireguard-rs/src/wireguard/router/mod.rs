@@ -3,13 +3,13 @@ mod constants;
 mod device;
 mod ip;
 mod messages;
+mod parallel_queue;
 mod peer;
-mod route;
-mod types;
-
 mod queue;
 mod receive;
+mod route;
 mod send;
+mod types;
 mod worker;
 
 #[cfg(test)]
@@ -18,7 +18,6 @@ mod tests;
 use messages::TransportHeader;
 
 use super::constants::REJECT_AFTER_MESSAGES;
-use super::queue::ParallelQueue;
 
 use core::mem;
 
