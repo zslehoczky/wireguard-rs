@@ -11,7 +11,7 @@ use super::SIZE_MESSAGE_PREFIX;
 use super::constants::PARALLEL_QUEUE_SIZE;
 use super::crypto_state::DecryptionState;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
-use super::parallel_queue::{ParallelJobUnion, NonZeroUsize, ParallelQueue};
+use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{Peer, PeerHandle, new_peer};
 use super::receive::ReceiveJob;
 use super::route::RoutingTable;
@@ -202,7 +202,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
         // 1. add to sequential queue (drop if full)
         // 2. then add to parallel work queue (wait if full)
         if dec.peer.inbound.push(job.clone()) {
-            self.state.parallel_queue.queue_job(ParallelJobUnion::Inbound(job));
+            self.state
+                .parallel_queue
+                .queue_job(ParallelJobUnion::Inbound(job));
         }
         Ok(())
     }
