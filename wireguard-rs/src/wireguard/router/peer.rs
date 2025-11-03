@@ -4,9 +4,9 @@ use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
 use crate::wireguard::peer::KeyPair;
 
 use super::SIZE_MESSAGE_PREFIX;
-use super::anti_replay::AntiReplay;
 use super::constants::*;
-use super::device::{DecryptionState, Device, EncryptionState};
+use super::crypto_state::{DecryptionState, EncryptionState};
+use super::device::Device;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
@@ -15,7 +15,6 @@ use super::worker::JobUnion;
 
 use core::mem;
 use core::ops::Deref;
-use core::sync::atomic::AtomicBool;
 
 use alloc::sync::Arc;
 
@@ -116,26 +115,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PeerHandle(format: TODO)")
-    }
-}
-
-impl EncryptionState {
-    fn new(keypair: &Arc<KeyPair>) -> EncryptionState {
-        EncryptionState {
-            nonce: 0,
-            keypair: keypair.clone(),
-        }
-    }
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DecryptionState<E, C, T, B> {
-    fn new(peer: Peer<E, C, T, B>, keypair: &Arc<KeyPair>) -> DecryptionState<E, C, T, B> {
-        DecryptionState {
-            confirmed: AtomicBool::new(keypair.initiator),
-            keypair: keypair.clone(),
-            protector: spin::Mutex::new(AntiReplay::new()),
-            peer,
-        }
     }
 }
 

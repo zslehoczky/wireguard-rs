@@ -1,18 +1,16 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::thread;
-use std::time::Instant;
 
-use spin::{Mutex, RwLock};
-use wg_crypto as crypto;
-use wg_traits::{Endpoint, tun, udp};
+use spin::RwLock;
 use zerocopy::LayoutVerified;
 
+use wg_traits::{Endpoint, tun, udp};
+
 use super::SIZE_MESSAGE_PREFIX;
-use super::anti_replay::AntiReplay;
 use super::constants::PARALLEL_QUEUE_SIZE;
+use super::crypto_state::DecryptionState;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
 use super::parallel_queue::ParallelQueue;
 use super::peer::{Peer, PeerHandle, new_peer};
@@ -35,18 +33,6 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
 
     // work queue
     pub(super) work: ParallelQueue<JobUnion<E, C, T, B>>,
-}
-
-pub struct EncryptionState {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>, // keypair
-    pub(super) nonce: u64,                             // next available nonce
-}
-
-pub struct DecryptionState<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>,
-    pub(super) confirmed: AtomicBool,
-    pub(super) protector: Mutex<AntiReplay>,
-    pub(super) peer: Peer<E, C, T, B>,
 }
 
 pub struct Device<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
