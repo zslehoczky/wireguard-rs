@@ -1,5 +1,5 @@
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 use std::sync::{Arc, Weak};
 
 use wg_traits::Endpoint;
@@ -63,7 +63,10 @@ impl Owner for StdUdpOwner {
     }
 
     fn set_fwmark(&mut self, _value: Option<u32>) -> io::Result<()> {
-        unimplemented!("std udp doesn't support fwmark")
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "std udp doesn't support fwmark",
+        ))
     }
 }
 
@@ -125,6 +128,7 @@ impl Endpoint for StdUdpEndpoint {
     }
 
     fn clear_src(&mut self) {
-        todo!("don't know what this is yet")
+        self.addr.set_ip(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        self.addr.set_port(0);
     }
 }
