@@ -11,8 +11,22 @@ pub struct StdUdpOwner {
 
 impl StdUdpOwner {
     pub fn new(socket_v4: Arc<UdpSocket>, socket_v6: Arc<UdpSocket>, port: u16) -> Self {
-        debug_assert!(socket_v4.local_addr().unwrap().port() == port);
-        debug_assert!(socket_v6.local_addr().unwrap().port() == port);
+        debug_assert_eq!(
+            if port == 0 {
+                0
+            } else {
+                socket_v4.local_addr().unwrap().port()
+            },
+            port
+        );
+        debug_assert_eq!(
+            if port == 0 {
+                0
+            } else {
+                socket_v6.local_addr().unwrap().port()
+            },
+            port
+        );
 
         Self {
             _sockets: vec![socket_v4, socket_v6],

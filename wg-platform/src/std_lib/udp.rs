@@ -22,6 +22,8 @@ impl PlatformUDP for StdUdp {
     type Owner = StdUdpOwner;
 
     fn bind(port: u16) -> io::Result<(Vec<Self::Reader>, Self::Writer, Self::Owner)> {
+        log::trace!("Creating new StdUdp with port: {port}");
+
         let socket_v4 = Arc::new(UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::LOCALHOST,
             port,
