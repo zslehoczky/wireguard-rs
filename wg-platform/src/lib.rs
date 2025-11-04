@@ -11,10 +11,7 @@ mod linux {
     pub mod tun;
 }
 
-mod std_lib {
-    pub mod udp;
-}
-
+mod std_lib;
 mod unix;
 
 pub use std_lib::udp::StdUdp as UDP;
