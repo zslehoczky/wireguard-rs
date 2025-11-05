@@ -9,3 +9,13 @@ use std::io;
 fn get_connection_aborted_err() -> io::Error {
     io::Error::new(io::ErrorKind::ConnectionAborted, "UDP socket closed")
 }
+
+pub enum StdUdpSocket<Socket> {
+    Dual {
+        socket: Socket,
+    },
+    Separate {
+        socket_v4: Socket,
+        socket_v6: Socket,
+    },
+}

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use wg_traits::udp::{PlatformUDP, UDP};
 
 use super::{
-    udp_endpoint::StdUdpEndpoint, udp_owner::StdUdpOwner, udp_reader::StdUdpReader,
+    StdUdpSocket, udp_endpoint::StdUdpEndpoint, udp_owner::StdUdpOwner, udp_reader::StdUdpReader,
     udp_writer::StdUdpWriter,
 };
 
@@ -24,24 +24,35 @@ impl PlatformUDP for StdUdp {
     fn bind(port: u16) -> io::Result<(Vec<Self::Reader>, Self::Writer, Self::Owner)> {
         log::trace!("Creating new StdUdp with port: {port}");
 
-        let socket_v4 = Arc::new(UdpSocket::bind(SocketAddrV4::new(
-            Ipv4Addr::UNSPECIFIED,
-            port,
-        ))?);
-        let socket_v6 = Arc::new(UdpSocket::bind(SocketAddrV6::new(
-            Ipv6Addr::UNSPECIFIED,
-            port,
-            0,
-            0,
-        ))?);
+        let socket_v6 = UdpSocket::bind(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0))?;
 
-        Ok((
-            vec![
-                StdUdpReader::new(Arc::downgrade(&socket_v4)),
-                StdUdpReader::new(Arc::downgrade(&socket_v6)),
-            ],
-            StdUdpWriter::new(Arc::downgrade(&socket_v4), Arc::downgrade(&socket_v6)),
-            StdUdpOwner::new(socket_v4, socket_v6, port),
-        ))
+        let socket = match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) {
+            Ok(socket_v4) => StdUdpSocket::Separate {
+                socket_v4: Arc::new(socket_v4),
+                socket_v6: Arc::new(socket_v6),
+            },
+            Err(_) => StdUdpSocket::Dual {
+                socket: Arc::new(socket_v6),
+            },
+        };
+
+        let (readers, writer) = match &socket {
+            StdUdpSocket::Dual { socket } => (
+                vec![StdUdpReader::new(Arc::downgrade(&socket))],
+                StdUdpWriter::from_dual(Arc::downgrade(socket)),
+            ),
+            StdUdpSocket::Separate {
+                socket_v4,
+                socket_v6,
+            } => (
+                vec![
+                    StdUdpReader::new(Arc::downgrade(&socket_v4)),
+                    StdUdpReader::new(Arc::downgrade(&socket_v6)),
+                ],
+                StdUdpWriter::from_separate(Arc::downgrade(&socket_v4), Arc::downgrade(&socket_v6)),
+            ),
+        };
+
+        Ok((readers, writer, StdUdpOwner::new(socket, port)))
     }
 }
