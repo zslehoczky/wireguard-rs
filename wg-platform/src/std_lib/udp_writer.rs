@@ -18,9 +18,9 @@ impl StdUdpWriter {
         }
     }
 
-    pub fn from_separate(socket_v4: Weak<UdpSocket>, socket_v6: Weak<UdpSocket>) -> Self {
+    pub fn from_single(socket_v4: Weak<UdpSocket>, socket_v6: Weak<UdpSocket>) -> Self {
         Self {
-            socket: StdUdpSocket::Separate {
+            socket: StdUdpSocket::Single {
                 socket_v4,
                 socket_v6,
             },
@@ -34,7 +34,7 @@ impl Writer<StdUdpEndpoint> for StdUdpWriter {
     fn write(&self, buf: &[u8], dst: &mut StdUdpEndpoint) -> io::Result<()> {
         let socket = match &self.socket {
             StdUdpSocket::Dual { socket } => socket,
-            StdUdpSocket::Separate {
+            StdUdpSocket::Single {
                 socket_v4,
                 socket_v6,
             } => match dst.to_address() {

@@ -27,7 +27,7 @@ impl PlatformUDP for StdUdp {
         let socket_v6 = UdpSocket::bind(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0))?;
 
         let socket = match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) {
-            Ok(socket_v4) => StdUdpSocket::Separate {
+            Ok(socket_v4) => StdUdpSocket::Single {
                 socket_v4: Arc::new(socket_v4),
                 socket_v6: Arc::new(socket_v6),
             },
@@ -37,20 +37,29 @@ impl PlatformUDP for StdUdp {
         };
 
         let (readers, writer) = match &socket {
-            StdUdpSocket::Dual { socket } => (
-                vec![StdUdpReader::new(Arc::downgrade(&socket))],
-                StdUdpWriter::from_dual(Arc::downgrade(socket)),
-            ),
-            StdUdpSocket::Separate {
+            StdUdpSocket::Dual { socket } => {
+                let socket = Arc::downgrade(socket);
+
+                (
+                    vec![StdUdpReader::new(socket.clone())],
+                    StdUdpWriter::from_dual(socket),
+                )
+            }
+            StdUdpSocket::Single {
                 socket_v4,
                 socket_v6,
-            } => (
-                vec![
-                    StdUdpReader::new(Arc::downgrade(&socket_v4)),
-                    StdUdpReader::new(Arc::downgrade(&socket_v6)),
-                ],
-                StdUdpWriter::from_separate(Arc::downgrade(&socket_v4), Arc::downgrade(&socket_v6)),
-            ),
+            } => {
+                let socket_v4 = Arc::downgrade(socket_v4);
+                let socket_v6 = Arc::downgrade(socket_v6);
+
+                (
+                    vec![
+                        StdUdpReader::new(socket_v4.clone()),
+                        StdUdpReader::new(socket_v6.clone()),
+                    ],
+                    StdUdpWriter::from_single(socket_v4, socket_v6),
+                )
+            }
         };
 
         Ok((readers, writer, StdUdpOwner::new(socket, port)))

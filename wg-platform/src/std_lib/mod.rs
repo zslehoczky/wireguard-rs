@@ -14,7 +14,7 @@ pub enum StdUdpSocket<Socket> {
     Dual {
         socket: Socket,
     },
-    Separate {
+    Single {
         socket_v4: Socket,
         socket_v6: Socket,
     },
