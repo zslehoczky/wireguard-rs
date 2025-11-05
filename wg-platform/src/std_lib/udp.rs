@@ -25,11 +25,11 @@ impl PlatformUDP for StdUdp {
         log::trace!("Creating new StdUdp with port: {port}");
 
         let socket_v4 = Arc::new(UdpSocket::bind(SocketAddrV4::new(
-            Ipv4Addr::LOCALHOST,
+            Ipv4Addr::UNSPECIFIED,
             port,
         ))?);
         let socket_v6 = Arc::new(UdpSocket::bind(SocketAddrV6::new(
-            Ipv6Addr::LOCALHOST,
+            Ipv6Addr::UNSPECIFIED,
             port,
             0,
             0,
