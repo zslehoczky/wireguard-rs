@@ -1354,6 +1354,7 @@ dependencies = [
  "hex",
  "libc",
  "log",
+ "net2",
  "nix",
  "rand 0.8.5",
  "wg-traits",
