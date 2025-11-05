@@ -8,6 +8,8 @@ pub struct StdUdpEndpoint {
 
 impl Endpoint for StdUdpEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
+        // map IPv6 to IPv4 if possible
+        let addr = SocketAddr::new(addr.ip().to_canonical(), addr.port());
         Self { addr }
     }
 
