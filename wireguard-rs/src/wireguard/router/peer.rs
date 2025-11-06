@@ -5,7 +5,7 @@ use crate::wireguard::peer::KeyPair;
 
 use super::SIZE_MESSAGE_PREFIX;
 use super::constants::*;
-use super::crypto_state::{DecryptionState, EncryptionState};
+use super::crypto_state::{EncryptionState, crypto_state};
 use super::device::Device;
 use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
@@ -306,7 +306,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
             }
 
             // allocate new encryption state
-            let ekey = Some(EncryptionState::new(next));
+            let ekey = Some(EncryptionState::new(next.clone()));
 
             // rotate key-wheel
             let mut swap = None;
@@ -419,10 +419,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
             let mut keys = self.peer.keys.lock();
             let mut release = std::mem::take(&mut keys.retired);
 
+            let (enc_state, dec_state) = crypto_state(self.peer.clone(), new.clone());
+
             // update key-wheel
             if new.initiator {
                 // start using key for encryption
-                *self.peer.enc_key.lock() = Some(EncryptionState::new(&new));
+                *self.peer.enc_key.lock() = Some(enc_state);
 
                 // move current into previous
                 keys.previous = keys.current.as_ref().cloned();
@@ -446,10 +448,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
 
                 // map new id to decryption state
                 debug_assert!(!recv.contains_key(&new.recv.id));
-                recv.insert(
-                    new.recv.id,
-                    Arc::new(DecryptionState::new(self.peer.clone(), &new)),
-                );
+                recv.insert(new.recv.id, Arc::new(dec_state));
             }
             release
         };

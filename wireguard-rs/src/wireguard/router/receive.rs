@@ -14,10 +14,12 @@ use zerocopy::{AsBytes, LayoutVerified};
 
 use wg_traits::{Endpoint, tun, udp};
 
+use super::peer::Peer;
+
 struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    ready: AtomicBool,                       // job status
-    buffer: Mutex<(Option<E>, Vec<u8>)>,     // endpoint & ciphertext buffer
-    state: Arc<DecryptionState<E, C, T, B>>, // decryption state (keys and replay protector)
+    ready: AtomicBool,                             // job status
+    buffer: Mutex<(Option<E>, Vec<u8>)>,           // endpoint & ciphertext buffer
+    state: Arc<DecryptionState<Peer<E, C, T, B>>>, // decryption state (keys and replay protector)
 }
 
 pub struct ReceiveJob<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
@@ -35,7 +37,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E, C, T, B> {
     pub fn new(
         buffer: Vec<u8>,
-        state: Arc<DecryptionState<E, C, T, B>>,
+        state: Arc<DecryptionState<Peer<E, C, T, B>>>,
         endpoint: E,
     ) -> ReceiveJob<E, C, T, B> {
         ReceiveJob(Arc::new(Inner {
