@@ -7,7 +7,7 @@ use hmac::{Mac, SimpleHmac};
 // DH
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
-use rand_core::{CryptoRng, RngCore};
+use aead::rand_core::{CryptoRng, RngCore};
 
 use zerocopy::U32;
 use zeroize::{Zeroize, ZeroizeOnDrop};

@@ -1,8 +1,6 @@
 use bencher::{Bencher, benchmark_group, benchmark_main};
-use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::cipher::{KeyInit, KeyIvInit, StreamCipher, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, aead::AeadMutInPlace};
-use digest::KeyInit;
-use generic_array::GenericArray;
 use poly1305::Poly1305;
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce as RingNonce, UnboundKey};
 
