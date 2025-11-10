@@ -18,7 +18,7 @@ cleanup() {
         echo "Warning: $INTERFACE still exists after cleanup"
     fi
 
-    rm -f /tmp/wg_client.log /tmp/client_key 2>/dev/null || true
+    rm -f /tmp/client_key 2>/dev/null || true
     echo "[+] Cleanup complete"
 }
 
