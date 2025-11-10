@@ -102,9 +102,6 @@ pub trait Configuration {
     /// "bind" implementation.
     fn set_fwmark(&self, mark: Option<u32>) -> Result<(), ConfigError>;
 
-    /// Removes all peers from the device
-    fn _replace_peers(&self);
-
     /// Remove the peer from the
     ///
     /// # Arguments
@@ -156,17 +153,6 @@ pub trait Configuration {
     /// - `peer': The public key of the peer
     /// - `psk`
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64);
-
-    /// Remove all allowed IPs from the peer
-    ///
-    /// # Arguments
-    ///
-    /// - `peer': The public key of the peer
-    ///
-    /// # Returns
-    ///
-    /// An error if no such peer exists
-    fn _replace_allowed_ips(&self, peer: &PublicKey);
 
     /// Add a new allowed subnet to the peer
     ///
@@ -302,10 +288,6 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
         }
     }
 
-    fn _replace_peers(&self) {
-        self.lock().wireguard._clear_peers();
-    }
-
     fn remove_peer(&self, peer: &PublicKey) {
         self.lock().wireguard.remove_peer(peer);
     }
@@ -327,12 +309,6 @@ impl<T: tun::Tun, B: udp::PlatformUDP> Configuration for WireGuardConfig<T, B> {
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64) {
         if let Some(peer) = self.lock().wireguard.peers.read().get(peer) {
             peer.opaque().set_persistent_keepalive_interval(secs);
-        }
-    }
-
-    fn _replace_allowed_ips(&self, peer: &PublicKey) {
-        if let Some(peer) = self.lock().wireguard.peers.read().get(peer) {
-            peer._remove_allowed_ips();
         }
     }
 
