@@ -1,5 +1,5 @@
 build:
-    cargo build
+    cargo build --release
 
 test:
     cargo test --verbose
@@ -19,9 +19,9 @@ check-build:
 integration: build
     #!/usr/bin/env bash
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        cd docker && ./run-tests-macos.sh ../target/debug/wireguard-rs
+        cd docker && ./run-tests-macos.sh ../target/release/wireguard-rs
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        cd docker && ./run-tests-linux.sh ../target/debug/wireguard-rs
+        cd docker && ./run-tests-linux.sh ../target/release/wireguard-rs
     else
         echo "Unsupported OS: $OSTYPE"
         exit 1
