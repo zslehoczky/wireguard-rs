@@ -33,6 +33,8 @@ jobs:
           ~/.cargo/bin
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
     - name: Install cargo-hack
       run: cargo install cargo-hack --locked || [ -f ~/.cargo/bin/cargo-hack ]
     - name: Install just
@@ -41,8 +43,16 @@ jobs:
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y wireguard-tools
     - name: Run Continuous Integration Checks (Linux)
+      id: ci_linux
       if: runner.os == 'Linux'
       run: just ci
     - name: Run Continuous Integration Checks (macOS)
       if: runner.os == 'macOS'
       run: just build check-fmt test
+    - name: Save CI log (Linux)
+      if: failure() && steps.ci_linux.conclusion == 'failure' && runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: wg_client.log
+        path: /tmp/wg_client.log
+        retention-days: 7

@@ -19,7 +19,7 @@ cleanup() {
         sudo ip link delete "$INTERFACE" 2>/dev/null || true
     fi
 
-    rm -f /tmp/wg_client.log /tmp/client_key 2>/dev/null || true
+    rm -f /tmp/client_key 2>/dev/null || true
     echo "[+] Cleanup complete"
 }
 
