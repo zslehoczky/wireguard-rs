@@ -11,12 +11,10 @@ blake2.workspace = true
 byteorder.workspace = true
 chacha20poly1305.workspace = true
 dashmap.workspace = true
-digest.workspace = true
-generic-array.workspace = true
+generic-array = "=0.14.7" # fix version to avoid update because of deprecation warnings
 hmac.workspace = true
 log.workspace = true
 rand.workspace = true
-rand_core.workspace = true
 spin.workspace = true
 subtle.workspace = true
 x25519-dalek.workspace = true

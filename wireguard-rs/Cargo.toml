@@ -20,15 +20,12 @@ chacha20poly1305.workspace = true
 cpuprofiler = { workspace = true, optional = true }
 crossbeam-channel.workspace = true
 dashmap.workspace = true
-digest.workspace = true
 env_logger.workspace = true
-generic-array.workspace = true
 hex.workspace = true
 hjul.workspace = true
 hmac.workspace = true
 log.workspace = true
 rand.workspace = true
-rand_core.workspace = true
 ring.workspace = true
 spin.workspace = true
 subtle.workspace = true

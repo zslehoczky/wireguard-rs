@@ -7,7 +7,7 @@ use crate::{
 };
 
 use core::{ops::Add, time::Duration};
-use rand_core::{CryptoRng, Error as RngError, RngCore};
+use rand::{CryptoRng, Error as RngError, RngCore};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 type DeviceSetup<O, I> = (
