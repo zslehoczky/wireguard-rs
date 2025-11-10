@@ -131,7 +131,7 @@ fn test_outbound() {
     let router: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer);
     router.set_outbound_writer(dummy::VoidBind);
 
-    let tests = vec![
+    let tests = [
         ("192.168.1.0", 24, "192.168.1.20", true),
         ("172.133.133.133", 32, "172.133.133.133", true),
         ("172.133.133.133", 32, "172.133.133.132", false),
