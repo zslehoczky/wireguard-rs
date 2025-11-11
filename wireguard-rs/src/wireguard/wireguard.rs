@@ -177,7 +177,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         let enabled = self.enabled.read();
 
         // create timers (lookup by public key)
-        let timers = Timers::new::<T, B>(self.clone(), pk, *enabled);
+        let timers = Timers::new::<T, B>(self, &pk, *enabled);
 
         // create new router peer
         let peer: router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =

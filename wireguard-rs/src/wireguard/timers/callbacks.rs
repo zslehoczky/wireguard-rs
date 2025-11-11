@@ -1,55 +1,72 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use log::debug;
-
 use hjul::{Runner, Timer};
+use log::debug;
 use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::wireguard::WireGuard;
-use crate::wireguard::constants::*;
+use crate::wireguard::{WireGuard, constants::*, peer::PeerInner, router::PeerHandle};
 
 use super::Timers;
 
-/// Find peer based on public key and assign to variable, or call return from parent scope if
-/// not found
-macro_rules! fetch_peer {
-    ( $wireguard_device:expr, $public_key_of_peer:expr, $peer:ident) => {
-        let peers = $wireguard_device.peers.read();
-        let $peer = match peers.get(&$public_key_of_peer) {
-            None => {
-                return;
-            }
-            Some(peer) => peer,
-        };
-    };
+pub fn spawn_timer<F, T: Tun, B: UDP>(
+    wireguard_device: &WireGuard<T, B>,
+    public_key_of_peer: PublicKey,
+    runner: &Runner,
+    callback: F,
+) -> Timer
+where
+    F: 'static + Fn(&WireGuard<T, B>, &PublicKey) + Send + Sync,
+{
+    let wireguard_device = wireguard_device.clone();
+    runner.timer(move || callback(&wireguard_device, &public_key_of_peer))
 }
 
-/// Find peer and timers based on public key and assign them to variables, or call return from
-/// parent scope if peer not found or timers not enabled
-macro_rules! fetch_peer_and_timers {
-    ( $wireguard_device:expr, $public_key_of_peer:expr, $peer:ident, $timers:ident) => {
-        fetch_peer!($wireguard_device, $public_key_of_peer, $peer);
+type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerInner<T, B>, Tw, Bw>;
 
-        let $timers = $peer.timers();
-        if !$timers.enabled {
+fn call_with_peer<F, T: Tun, B: UDP>(
+    wireguard_device: &WireGuard<T, B>,
+    public_key_of_peer: &PublicKey,
+    callback: F,
+) where
+    F: Fn(&Peer<T, B, B::Endpoint, T::Writer, B::Writer>),
+{
+    let peers = wireguard_device.peers.read();
+    let peer = match peers.get(public_key_of_peer) {
+        None => {
             return;
         }
+        Some(peer) => peer,
     };
+
+    callback(peer)
+}
+
+fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
+    wireguard_device: &WireGuard<T, B>,
+    public_key_of_peer: &PublicKey,
+    callback: F,
+) where
+    F: Fn(&Peer<T, B, B::Endpoint, T::Writer, B::Writer>, &Timers),
+{
+    call_with_peer(wireguard_device, public_key_of_peer, |peer| {
+        let timers = peer.timers();
+        if !timers.enabled {
+            return;
+        }
+
+        callback(peer, &timers);
+    })
 }
 
 impl Timers {
-    pub fn create_retransmit_handshake_timer<T: Tun, B: UDP>(
-        wireguard_device: WireGuard<T, B>,
-        public_key_of_peer: PublicKey,
-        runner: &Runner,
-    ) -> Timer {
-        runner.timer(move || {
-            // create variables 'peer' and 'timers'
-            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
-
+    pub fn retransmit_handshake<T: Tun, B: UDP>(
+        wireguard_device: &WireGuard<T, B>,
+        public_key_of_peer: &PublicKey,
+    ) {
+        call_with_peer_and_timers(wireguard_device, public_key_of_peer, |peer, timers| {
             // check if handshake attempts remaining
             let attempts = timers.handshake_attempts.fetch_add(1, Ordering::SeqCst);
             if attempts > MAX_TIMER_HANDSHAKES {
@@ -75,15 +92,11 @@ impl Timers {
         })
     }
 
-    pub fn create_send_keepalive_timer<T: Tun, B: UDP>(
-        wireguard_device: WireGuard<T, B>,
-        public_key_of_peer: PublicKey,
-        runner: &Runner,
-    ) -> Timer {
-        runner.timer(move || {
-            // create variables 'peer' and 'timers'
-            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
-
+    pub fn send_keepalive<T: Tun, B: UDP>(
+        wireguard_device: &WireGuard<T, B>,
+        public_key_of_peer: &PublicKey,
+    ) {
+        call_with_peer_and_timers(wireguard_device, public_key_of_peer, |peer, timers| {
             // send keepalive and schedule next keepalive
             peer.send_keepalive();
             if timers.needs_another_keepalive() {
@@ -92,15 +105,11 @@ impl Timers {
         })
     }
 
-    pub fn create_new_handshake_timer<T: Tun, B: UDP>(
-        wireguard_device: WireGuard<T, B>,
-        public_key_of_peer: PublicKey,
-        runner: &Runner,
-    ) -> Timer {
-        runner.timer(move || {
-            // create variable 'peer'
-            fetch_peer!(wireguard_device, public_key_of_peer, peer);
-
+    pub fn new_handshake<T: Tun, B: UDP>(
+        wireguard_device: &WireGuard<T, B>,
+        public_key_of_peer: &PublicKey,
+    ) {
+        call_with_peer(wireguard_device, public_key_of_peer, |peer| {
             // clear source and retry
             log::debug!(
                 "Retrying handshake with {} because we stopped hearing back after {} seconds",
@@ -112,15 +121,11 @@ impl Timers {
         })
     }
 
-    pub fn create_zero_key_material_timer<T: Tun, B: UDP>(
-        wireguard_device: WireGuard<T, B>,
-        public_key_of_peer: PublicKey,
-        runner: &Runner,
-    ) -> Timer {
-        runner.timer(move || {
-            // create variable 'peer'
-            fetch_peer!(wireguard_device, public_key_of_peer, peer);
-
+    pub fn zero_key_material<T: Tun, B: UDP>(
+        wireguard_device: &WireGuard<T, B>,
+        public_key_of_peer: &PublicKey,
+    ) {
+        call_with_peer(wireguard_device, public_key_of_peer, |peer| {
             log::trace!("{} : timer fired (zero_key_material)", peer);
 
             // null all key-material
@@ -128,15 +133,11 @@ impl Timers {
         })
     }
 
-    pub fn create_send_persistent_keepalive_timer<T: Tun, B: UDP>(
-        wireguard_device: WireGuard<T, B>,
-        public_key_of_peer: PublicKey,
-        runner: &Runner,
-    ) -> Timer {
-        runner.timer(move || {
-            // create variables 'peer' and 'timers'
-            fetch_peer_and_timers!(wireguard_device, public_key_of_peer, peer, timers);
-
+    pub fn send_persistent_keepalive<T: Tun, B: UDP>(
+        wireguard_device: &WireGuard<T, B>,
+        public_key_of_peer: &PublicKey,
+    ) {
+        call_with_peer_and_timers(wireguard_device, public_key_of_peer, |peer, timers| {
             log::trace!("{} : timer fired (send_persistent_keepalive)", peer);
 
             // send and schedule persistent keepalive
