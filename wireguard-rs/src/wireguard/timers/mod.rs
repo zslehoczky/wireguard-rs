@@ -3,7 +3,7 @@ mod callbacks;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use hjul::Timer;
+use hjul::{Runner, Timer};
 use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
@@ -11,7 +11,17 @@ use wg_traits::{tun::Tun, udp::UDP};
 use crate::wireguard::WireGuard;
 use crate::wireguard::constants::*;
 
-use callbacks::spawn_timer;
+pub fn spawn_timer<F, T: Tun, B: UDP>(
+    wireguard_device: WireGuard<T, B>,
+    public_key_of_peer: PublicKey,
+    runner: &Runner,
+    callback: F,
+) -> Timer
+where
+    F: 'static + Fn(&WireGuard<T, B>, &PublicKey) + Send + Sync,
+{
+    runner.timer(move || callback(&wireguard_device, &public_key_of_peer))
+}
 
 pub struct Timers {
     // only updated during configuration
@@ -50,31 +60,31 @@ impl Timers {
             sent_lastminute_handshake: AtomicBool::new(false),
             handshake_attempts: AtomicUsize::new(0),
             retransmit_handshake: spawn_timer(
-                wireguard_device,
+                wireguard_device.clone(),
                 *public_key_of_peer,
                 &runner,
                 Self::retransmit_handshake,
             ),
             send_keepalive: spawn_timer(
-                wireguard_device,
+                wireguard_device.clone(),
                 *public_key_of_peer,
                 &runner,
                 Self::send_keepalive,
             ),
             new_handshake: spawn_timer(
-                wireguard_device,
+                wireguard_device.clone(),
                 *public_key_of_peer,
                 &runner,
                 Self::new_handshake,
             ),
             zero_key_material: spawn_timer(
-                wireguard_device,
+                wireguard_device.clone(),
                 *public_key_of_peer,
                 &runner,
                 Self::zero_key_material,
             ),
             send_persistent_keepalive: spawn_timer(
-                wireguard_device,
+                wireguard_device.clone(),
                 *public_key_of_peer,
                 &runner,
                 Self::send_persistent_keepalive,

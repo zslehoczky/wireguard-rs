@@ -1,7 +1,6 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use hjul::{Runner, Timer};
 use log::debug;
 use x25519_dalek::PublicKey;
 
@@ -10,19 +9,6 @@ use wg_traits::{tun::Tun, udp::UDP};
 use crate::wireguard::{WireGuard, constants::*, peer::PeerInner, router::PeerHandle};
 
 use super::Timers;
-
-pub fn spawn_timer<F, T: Tun, B: UDP>(
-    wireguard_device: &WireGuard<T, B>,
-    public_key_of_peer: PublicKey,
-    runner: &Runner,
-    callback: F,
-) -> Timer
-where
-    F: 'static + Fn(&WireGuard<T, B>, &PublicKey) + Send + Sync,
-{
-    let wireguard_device = wireguard_device.clone();
-    runner.timer(move || callback(&wireguard_device, &public_key_of_peer))
-}
 
 type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerInner<T, B>, Tw, Bw>;
 
