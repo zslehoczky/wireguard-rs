@@ -57,7 +57,7 @@ fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
             return;
         }
 
-        callback(peer, &timers);
+        callback(peer, &timers)
     })
 }
 
