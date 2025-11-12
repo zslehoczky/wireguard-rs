@@ -4,18 +4,17 @@ use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
 use crate::wireguard::peer::KeyPair;
 
 use super::SIZE_MESSAGE_PREFIX;
-use super::anti_replay::AntiReplay;
 use super::constants::*;
-use super::device::{DecryptionState, Device, EncryptionState};
-use super::queue::Queue;
+use super::crypto_state::{EncryptionState, crypto_state};
+use super::device::Device;
+use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
+use super::sequential_queue::SequentialQueue;
 use super::types::{Callbacks, RouterError};
-use super::worker::JobUnion;
 
 use core::mem;
 use core::ops::Deref;
-use core::sync::atomic::AtomicBool;
 
 use alloc::sync::Arc;
 
@@ -36,8 +35,8 @@ pub struct KeyWheel {
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     pub(super) device: Device<E, C, T, B>,
     pub(super) opaque: C::Opaque,
-    pub(super) outbound: Queue<SendJob<E, C, T, B>>,
-    pub(super) inbound: Queue<ReceiveJob<E, C, T, B>>,
+    pub(super) outbound: SequentialQueue<SendJob<E, C, T, B>>,
+    pub(super) inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
     pub(super) staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     pub(super) keys: Mutex<KeyWheel>,
     pub(super) enc_key: Mutex<Option<EncryptionState>>,
@@ -119,26 +118,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> fmt::Display
     }
 }
 
-impl EncryptionState {
-    fn new(keypair: &Arc<KeyPair>) -> EncryptionState {
-        EncryptionState {
-            nonce: 0,
-            keypair: keypair.clone(),
-        }
-    }
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DecryptionState<E, C, T, B> {
-    fn new(peer: Peer<E, C, T, B>, keypair: &Arc<KeyPair>) -> DecryptionState<E, C, T, B> {
-        DecryptionState {
-            confirmed: AtomicBool::new(keypair.initiator),
-            keypair: keypair.clone(),
-            protector: spin::Mutex::new(AntiReplay::new()),
-            peer,
-        }
-    }
-}
-
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for PeerHandle<E, C, T, B> {
     fn drop(&mut self) {
         let peer = &self.peer;
@@ -192,8 +171,8 @@ pub fn new_peer<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
             inner: Arc::new(PeerInner {
                 opaque,
                 device,
-                inbound: Queue::new(),
-                outbound: Queue::new(),
+                inbound: SequentialQueue::new(),
+                outbound: SequentialQueue::new(),
                 enc_key: spin::Mutex::new(None),
                 endpoint: spin::Mutex::new(None),
                 keys: spin::Mutex::new(KeyWheel {
@@ -291,7 +270,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
         if let Some(job) = job {
             log::debug!("schedule outbound job");
-            self.device.work.send(JobUnion::Outbound(job))
+            self.device.queue_job(ParallelJobUnion::Outbound(job))
         }
     }
 
@@ -327,7 +306,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
             }
 
             // allocate new encryption state
-            let ekey = Some(EncryptionState::new(next));
+            let ekey = Some(EncryptionState::new(next.clone()));
 
             // rotate key-wheel
             let mut swap = None;
@@ -440,10 +419,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
             let mut keys = self.peer.keys.lock();
             let mut release = std::mem::take(&mut keys.retired);
 
+            let (enc_state, dec_state) = crypto_state(self.peer.clone(), new.clone());
+
             // update key-wheel
             if new.initiator {
                 // start using key for encryption
-                *self.peer.enc_key.lock() = Some(EncryptionState::new(&new));
+                *self.peer.enc_key.lock() = Some(enc_state);
 
                 // move current into previous
                 keys.previous = keys.current.as_ref().cloned();
@@ -467,10 +448,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
 
                 // map new id to decryption state
                 debug_assert!(!recv.contains_key(&new.recv.id));
-                recv.insert(
-                    new.recv.id,
-                    Arc::new(DecryptionState::new(self.peer.clone(), &new)),
-                );
+                recv.insert(new.recv.id, Arc::new(dec_state));
             }
             release
         };

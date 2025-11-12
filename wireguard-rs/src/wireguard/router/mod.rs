@@ -1,16 +1,16 @@
 mod anti_replay;
 mod constants;
+mod crypto_state;
 mod device;
 mod ip;
 mod messages;
+mod parallel_queue;
 mod peer;
-mod route;
-mod types;
-
-mod queue;
 mod receive;
+mod route;
 mod send;
-mod worker;
+mod sequential_queue;
+mod types;
 
 #[cfg(test)]
 mod tests;
@@ -18,7 +18,6 @@ mod tests;
 use messages::TransportHeader;
 
 use super::constants::REJECT_AFTER_MESSAGES;
-use super::queue::ParallelQueue;
 
 use core::mem;
 
@@ -30,7 +29,7 @@ pub const fn message_data_len(payload: usize) -> usize {
     payload + mem::size_of::<TransportHeader>() + SIZE_TAG
 }
 
-pub use device::DeviceHandle as Device;
+pub use device::Device;
 pub use messages::TYPE_TRANSPORT;
 pub use peer::PeerHandle;
 pub use types::Callbacks;
