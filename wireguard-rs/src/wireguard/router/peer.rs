@@ -508,13 +508,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         self.peer.device.table.list(&self.peer)
     }
 
-    /// Clear subnets mapped to the peer.
-    /// After the call, no subnets will be cryptkey routed to the peer.
-    /// Used for the UAPI command "replace_allowed_ips=true"
-    pub fn _remove_allowed_ips(&self) {
-        self.peer.device.table.remove(&self.peer)
-    }
-
     pub fn clear_src(&self) {
         if let Some(e) = (*self.peer.endpoint.lock()).as_mut() {
             e.clear_src()
