@@ -144,10 +144,6 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
         }
     }
 
-    fn _replace_peers(&self) {
-        self.wireguard._clear_peers();
-    }
-
     fn remove_peer(&self, peer: &PublicKey) {
         self.wireguard.remove_peer(peer);
     }
@@ -169,12 +165,6 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64) {
         if let Some(peer) = self.wireguard.peers.read().get(peer) {
             peer.opaque().set_persistent_keepalive_interval(secs);
-        }
-    }
-
-    fn _replace_allowed_ips(&self, peer: &PublicKey) {
-        if let Some(peer) = self.wireguard.peers.read().get(peer) {
-            peer._remove_allowed_ips();
         }
     }
 

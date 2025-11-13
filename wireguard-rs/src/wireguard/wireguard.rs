@@ -139,10 +139,6 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         *enabled = true;
     }
 
-    pub fn _clear_peers(&self) {
-        self.peers.write()._clear();
-    }
-
     pub fn remove_peer(&self, pk: &PublicKey) {
         let _ = self.peers.write().remove(pk);
     }

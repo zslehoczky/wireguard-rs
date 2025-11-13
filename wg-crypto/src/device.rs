@@ -52,11 +52,6 @@ pub struct Device<O, I: Instant, T: Timestamp> {
  * It also abstracts away the problem of PublicKey not being hashable.
  */
 impl<O, I: Instant, T: Timestamp> Device<O, I, T> {
-    pub fn _clear(&mut self) {
-        self.id_map.clear();
-        self.pk_map.clear();
-    }
-
     /// Enables enumeration of (public key, opaque) pairs
     /// without exposing internal peer type.
     pub fn iter(&'_ self) -> impl Iterator<Item = (PublicKey, &O)> {

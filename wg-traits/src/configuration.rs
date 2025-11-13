@@ -40,9 +40,6 @@ pub trait Configuration<ConfigError, PeerState, PublicKey, StaticSecret> {
     /// "bind" implementation.
     fn set_fwmark(&mut self, mark: Option<u32>) -> Result<(), ConfigError>;
 
-    /// Removes all peers from the device
-    fn _replace_peers(&self);
-
     /// Remove the peer from the
     ///
     /// # Arguments
@@ -94,17 +91,6 @@ pub trait Configuration<ConfigError, PeerState, PublicKey, StaticSecret> {
     /// - `peer': The public key of the peer
     /// - `psk`
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64);
-
-    /// Remove all allowed IPs from the peer
-    ///
-    /// # Arguments
-    ///
-    /// - `peer': The public key of the peer
-    ///
-    /// # Returns
-    ///
-    /// An error if no such peer exists
-    fn _replace_allowed_ips(&self, peer: &PublicKey);
 
     /// Add a new allowed subnet to the peer
     ///

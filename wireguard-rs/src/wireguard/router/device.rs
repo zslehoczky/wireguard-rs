@@ -1,28 +1,21 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::thread;
-use std::time::Instant;
 
-use spin::{Mutex, RwLock};
-use wg_crypto as crypto;
-use wg_traits::{Endpoint, tun, udp};
+use spin::RwLock;
 use zerocopy::LayoutVerified;
 
-use super::anti_replay::AntiReplay;
+use wg_traits::{Endpoint, tun, udp};
 
 use super::SIZE_MESSAGE_PREFIX;
 use super::constants::PARALLEL_QUEUE_SIZE;
+use super::crypto_state::DecryptionState;
 use super::messages::{TYPE_TRANSPORT, TransportHeader};
+use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{Peer, PeerHandle, new_peer};
-use super::types::{Callbacks, RouterError};
-
 use super::receive::ReceiveJob;
 use super::route::RoutingTable;
-use super::worker::{JobUnion, worker};
-
-use super::ParallelQueue;
+use super::types::{Callbacks, RouterError};
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
@@ -33,111 +26,37 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
 
     // routing
     #[allow(clippy::type_complexity)]
-    pub(super) recv: RwLock<HashMap<u32, Arc<DecryptionState<E, C, T, B>>>>, /* receiver id -> decryption state */
+    pub(super) recv: RwLock<HashMap<u32, Arc<DecryptionState<Peer<E, C, T, B>>>>>, /* receiver id -> decryption state */
     pub(super) table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
-    pub(super) work: ParallelQueue<JobUnion<E, C, T, B>>,
-}
-
-pub struct EncryptionState {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>, // keypair
-    pub(super) nonce: u64,                             // next available nonce
-}
-
-pub struct DecryptionState<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    pub(super) keypair: Arc<crypto::KeyPair<Instant>>,
-    pub(super) confirmed: AtomicBool,
-    pub(super) protector: Mutex<AntiReplay>,
-    pub(super) peer: Peer<E, C, T, B>,
+    parallel_queue: ParallelQueue<E, C, T, B>,
 }
 
 pub struct Device<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     inner: Arc<DeviceInner<E, C, T, B>>,
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
-    fn clone(&self) -> Self {
-        Device {
-            inner: self.inner.clone(),
-        }
-    }
-}
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, T, B> {
+    pub fn new(num_workers: usize, tun: T) -> Self {
+        let parallel_queue = ParallelQueue::new(
+            NonZeroUsize::new(num_workers).expect("should not be zero"),
+            PARALLEL_QUEUE_SIZE,
+        );
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PartialEq
-    for Device<E, C, T, B>
-{
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, C, T, B> {}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, C, T, B> {
-    type Target = DeviceInner<E, C, T, B>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-pub struct DeviceHandle<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    state: Device<E, C, T, B>,            // reference to device state
-    handles: Vec<thread::JoinHandle<()>>, // join handles for workers
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop
-    for DeviceHandle<E, C, T, B>
-{
-    fn drop(&mut self) {
-        log::debug!("router: dropping device");
-
-        // close worker queue
-        self.state.work.close();
-
-        // join all worker threads
-        while let Some(handle) = self.handles.pop() {
-            handle.thread().unpark();
-            handle.join().unwrap();
-        }
-        log::debug!("router: joined with all workers from pool");
-    }
-}
-
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<E, C, T, B> {
-    pub fn new(num_workers: usize, tun: T) -> DeviceHandle<E, C, T, B> {
-        let (work, mut consumers) = ParallelQueue::new(num_workers, PARALLEL_QUEUE_SIZE);
-        let device = Device {
+        Self {
             inner: Arc::new(DeviceInner {
-                work,
+                parallel_queue,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
                 recv: RwLock::new(HashMap::new()),
                 table: RoutingTable::new(),
             }),
-        };
-
-        // start worker threads
-        let mut threads = Vec::with_capacity(num_workers);
-        while let Some(rx) = consumers.pop() {
-            threads.push(thread::spawn(move || worker(rx)));
-        }
-        debug_assert!(num_workers > 0, "zero worker threads");
-        debug_assert_eq!(
-            threads.len(),
-            num_workers,
-            "workers does not match consumers"
-        );
-
-        // return exported device handle
-        DeviceHandle {
-            state: device,
-            handles: threads,
         }
     }
 
     pub fn send_raw(&self, msg: &[u8], dst: &mut E) -> Result<(), B::Error> {
-        let bind = self.state.outbound.read();
+        let bind = self.outbound.read();
         if bind.0
             && let Some(bind) = bind.1.as_ref()
         {
@@ -150,13 +69,13 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
     /// When the router is brought down it:
     /// - Prevents transmission of outbound messages.
     pub fn down(&self) {
-        self.state.outbound.write().0 = false;
+        self.outbound.write().0 = false;
     }
 
     /// Brints the router up
     /// When the router is brought up it enables the transmission of outbound messages.
     pub fn up(&self) {
-        self.state.outbound.write().0 = true;
+        self.outbound.write().0 = true;
     }
 
     /// A new secret key has been set for the device.
@@ -172,7 +91,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
     pub fn new_peer(&self, opaque: C::Opaque) -> PeerHandle<E, C, T, B> {
-        new_peer(self.state.clone(), opaque)
+        new_peer(self.clone(), opaque)
     }
 
     /// Cryptkey routes and sends a plaintext message (IP packet)
@@ -192,7 +111,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
 
         // lookup peer based on IP packet destination address
         let peer = self
-            .state
             .table
             .get_route(packet)
             .ok_or(RouterError::NoCryptoKeyRoute)?;
@@ -235,7 +153,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
         );
 
         // lookup peer based on receiver id
-        let dec = self.state.recv.read();
+        let dec = self.recv.read();
         let dec = dec
             .get(&header.f_receiver.get())
             .ok_or(RouterError::UnknownReceiverId)?;
@@ -246,13 +164,43 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> DeviceHandle<
         // 1. add to sequential queue (drop if full)
         // 2. then add to parallel work queue (wait if full)
         if dec.peer.inbound.push(job.clone()) {
-            self.state.work.send(JobUnion::Inbound(job));
+            self.parallel_queue
+                .queue_job(ParallelJobUnion::Inbound(job));
         }
         Ok(())
     }
 
     /// Set outbound writer
     pub fn set_outbound_writer(&self, new: B) {
-        self.state.outbound.write().1 = Some(new);
+        self.outbound.write().1 = Some(new);
+    }
+
+    pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
+        self.parallel_queue.queue_job(job);
+    }
+}
+
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
+    fn clone(&self) -> Self {
+        Device {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PartialEq
+    for Device<E, C, T, B>
+{
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, C, T, B> {}
+
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, C, T, B> {
+    type Target = DeviceInner<E, C, T, B>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
