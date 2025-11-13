@@ -1,6 +1,6 @@
 use std::io::{BufReader, BufWriter, Write};
 use std::process::exit;
-use std::thread::{self, JoinHandle, ScopedJoinHandle};
+use std::thread;
 
 use wg_platform as plt;
 use wg_traits::{
@@ -29,26 +29,7 @@ pub enum ConfigMessage {
     TunDown,
 }
 
-pub fn spawn_config_worker<'scope, 'env, T: Tun, B: PlatformUDP>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_device: &'env WireGuard<T, B>,
-    config_receiver: crossbeam_channel::Receiver<ConfigMessage>,
-) -> ScopedJoinHandle<'scope, ()> {
-    thread_scope.spawn(|| {
-        config_worker(wireguard_device, config_receiver);
-    })
-}
-
-pub fn spawn_uapi_server(
-    uapi: <plt::UAPI as PlatformUAPI>::Bind,
-    config_sender: crossbeam_channel::Sender<ConfigMessage>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        uapi_server(uapi, config_sender);
-    })
-}
-
-fn config_worker<T: Tun, B: PlatformUDP>(
+pub fn config_worker<T: Tun, B: PlatformUDP>(
     wireguard_device: &WireGuard<T, B>,
     config_receiver: crossbeam_channel::Receiver<ConfigMessage>,
 ) {
@@ -78,7 +59,7 @@ fn config_worker<T: Tun, B: PlatformUDP>(
     }
 }
 
-fn uapi_server(
+pub fn uapi_server_worker(
     uapi: <plt::UAPI as PlatformUAPI>::Bind,
     config_sender: crossbeam_channel::Sender<ConfigMessage>,
 ) {

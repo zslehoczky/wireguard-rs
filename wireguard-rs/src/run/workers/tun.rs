@@ -1,5 +1,5 @@
 use std::process::exit;
-use std::thread::{self, JoinHandle, ScopedJoinHandle};
+use std::thread::{self, ScopedJoinHandle};
 
 use wg_traits::{
     tun::{Status, Tun, TunEvent},
@@ -10,15 +10,6 @@ use crate::run::{error::ExitCode, profiler::profiler_stop};
 use crate::wireguard::{WireGuard, tun_worker};
 
 use super::uapi::ConfigMessage;
-
-pub fn spawn_tun_event_loop<S: Status>(
-    tun_status: S,
-    config_sender: crossbeam_channel::Sender<ConfigMessage>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        tun_event_loop(tun_status, config_sender);
-    })
-}
 
 pub fn spawn_tun_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
@@ -35,7 +26,7 @@ pub fn spawn_tun_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
         .collect()
 }
 
-fn tun_event_loop<S: Status>(
+pub fn tun_event_loop_worker<S: Status>(
     mut tun_status: S,
     config_sender: crossbeam_channel::Sender<ConfigMessage>,
 ) {

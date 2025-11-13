@@ -16,8 +16,8 @@ use wg_traits::{
 use crate::wireguard::{HandshakeJob, WireGuard};
 
 use handshake::spawn_handshake_workers;
-use tun::{spawn_tun_event_loop, spawn_tun_workers};
-use uapi::{spawn_config_worker, spawn_uapi_server};
+use tun::{spawn_tun_workers, tun_event_loop_worker};
+use uapi::{config_worker, uapi_server_worker};
 
 pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
     uapi_socket: <plt::UAPI as PlatformUAPI>::Bind,
@@ -40,11 +40,20 @@ pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
         let (config_sender, config_receiver) = crossbeam_channel::unbounded();
 
         // config producers
-        let tun_event_loop = spawn_tun_event_loop(tun_status, config_sender.clone());
-        let uapi_server = spawn_uapi_server(uapi_socket, config_sender);
+        let tun_event_loop = thread::spawn({
+            let config_sender = config_sender.clone();
+            || {
+                tun_event_loop_worker(tun_status, config_sender);
+            }
+        });
+        let uapi_server = thread::spawn(|| {
+            uapi_server_worker(uapi_socket, config_sender);
+        });
 
         // config consumer
-        spawn_config_worker(thread_scope, &wireguard_device, config_receiver);
+        thread_scope.spawn(|| {
+            config_worker(&wireguard_device, config_receiver);
+        });
 
         // wait until tun device is disconnected
         for handle in tun_reader_jobs {
