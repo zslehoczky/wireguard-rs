@@ -18,7 +18,7 @@ use crate::configuration::WireGuardConfig;
 use crate::run::{error::ExitCode, profiler::profiler_stop};
 use crate::wireguard::WireGuard;
 
-use super::line_reader::{ReadLinesResult, read_line_block};
+use super::line_reader::{ReadOutcome, read_line_block};
 
 pub enum ConfigMessage {
     UapiConfigOperation(
@@ -87,16 +87,14 @@ fn uapi_config_message_handler(
     mut stream: <<plt::UAPI as PlatformUAPI>::Bind as BindUAPI>::Stream,
 ) {
     let mut reader = BufReader::new(&mut stream);
-    let mut request_buffer = String::new();
 
     loop {
-        request_buffer.clear();
-
-        match read_line_block(&mut reader, &mut request_buffer) {
-            ReadLinesResult::Eof => {
+        let request_text = match read_line_block(&mut reader) {
+            Ok(ReadOutcome::Ready(val)) => val,
+            Ok(ReadOutcome::Eof) => {
                 return;
             }
-            ReadLinesResult::Err(err) => {
+            Err(err) => {
                 log::error!("Error while reading from Unix socket: {err}. Closing socket.");
 
                 let mut writer = BufWriter::new(reader.get_mut());
@@ -105,10 +103,9 @@ fn uapi_config_message_handler(
 
                 return;
             }
-            ReadLinesResult::Ok => (),
         };
 
-        let request_lines = request_buffer.lines().take_while(|&line| !line.is_empty());
+        let request_lines = request_text.lines().take_while(|&line| !line.is_empty());
 
         let response = parse_config_operation(request_lines).and_then(|config_operation| {
             let (config_result_sender, config_result_receiver) = crossbeam_channel::bounded(1);
