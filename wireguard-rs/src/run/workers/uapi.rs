@@ -130,7 +130,7 @@ fn uapi_config_message_handler(
         let request_lines = request_buffer.lines().take_while(|&line| !line.is_empty());
 
         let response = parse_config_operation(request_lines).and_then(|config_operation| {
-            let (config_result_sender, config_result_receiver) = crossbeam_channel::unbounded();
+            let (config_result_sender, config_result_receiver) = crossbeam_channel::bounded(1);
 
             config_sender
                 .send(ConfigMessage::UapiConfigOperation(
