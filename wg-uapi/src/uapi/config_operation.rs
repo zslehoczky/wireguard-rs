@@ -23,11 +23,9 @@ pub fn parse_config_operation<'a, I: Iterator<Item = &'a str>>(
     match first_line {
         "get=1" => Ok(ConfigOperation::Get),
         "set=1" => {
-            let mut key_value_pairs = Vec::new();
-
-            for line in lines {
-                key_value_pairs.push(parse_key_value_pair(line)?);
-            }
+            let key_value_pairs = lines
+                .map(parse_key_value_pair)
+                .collect::<Result<Vec<_>, ConfigError>>()?;
 
             Ok(ConfigOperation::Set(key_value_pairs))
         }
