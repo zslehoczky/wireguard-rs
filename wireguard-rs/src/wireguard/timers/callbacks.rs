@@ -20,14 +20,9 @@ fn call_with_peer<F, T: Tun, B: UDP>(
     F: Fn(&Peer<T, B, B::Endpoint, T::Writer, B::Writer>),
 {
     let peers = wireguard_device.peers.read();
-    let peer = match peers.get(public_key_of_peer) {
-        None => {
-            return;
-        }
-        Some(peer) => peer,
-    };
-
-    callback(peer)
+    if let Some(peer) = peers.get(public_key_of_peer) {
+        callback(peer)
+    }
 }
 
 fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
@@ -39,11 +34,9 @@ fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
 {
     call_with_peer(wireguard_device, public_key_of_peer, |peer| {
         let timers = peer.timers();
-        if !timers.enabled {
-            return;
+        if timers.enabled {
+            callback(peer, &timers)
         }
-
-        callback(peer, &timers)
     })
 }
 
