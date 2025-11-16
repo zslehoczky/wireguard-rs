@@ -8,7 +8,6 @@
 /// e.g. every WireGuard peer consists of one handshake peer and one router peer.
 mod constants;
 pub mod peer;
-mod queue;
 pub mod router;
 mod timers;
 mod workers;

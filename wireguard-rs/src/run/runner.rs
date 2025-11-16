@@ -1,24 +1,17 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::{self, ScopedJoinHandle};
-use std::{env, process::exit};
+use std::env;
 
 use anyhow::anyhow;
 
-use crossbeam_channel::Receiver;
 use wg_platform as plt;
-use wg_traits::{
-    tun::{Status, Tun, TunEvent},
-    uapi::{BindUAPI, PlatformUAPI},
-    udp::PlatformUDP,
-};
+use wg_traits::uapi::PlatformUAPI;
 
-use crate::configuration::{Configuration, WireGuardConfig, uapi};
-use crate::wireguard::{HandshakeJob, WireGuard, handshake_worker, tun_worker};
+use crate::wireguard::WireGuard;
 
 use super::config::Config;
-use super::error::{ErrorReason, ExitCode};
+use super::error::ErrorReason;
 use super::profiler::{profiler_start, profiler_stop};
 use super::util;
+use super::workers::run_workers;
 
 pub fn create_config_and_run() -> Result<(), ErrorReason> {
     // parse command line arguments
@@ -33,7 +26,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
     let uapi_socket = plt::UAPI::bind(name.as_str())
         .map_err(|e| ErrorReason::UAPIListenerCreationFailed(anyhow!(e)))?;
 
-    let (tun_readers, tun_writer, mut tun_status) = plt::Tun::create(name.as_str())
+    let (tun_readers, tun_writer, tun_status) = plt::Tun::create(name.as_str())
         .map_err(|e| ErrorReason::TUNDeviceCreationFailed(anyhow!(e)))?;
 
     if config.drop_privileges {
@@ -50,57 +43,22 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     profiler_start(name.as_str());
 
-    let n_cpus: usize = std::thread::available_parallelism()
-        .expect("parallelism info should be available")
-        .into();
+    let n_cpus =
+        std::thread::available_parallelism().expect("parallelism info should be available");
 
-    let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus);
+    let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus.get());
 
     let wireguard_device =
-        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus);
-    let wireguard_config = WireGuardConfig::new(wireguard_device.clone());
+        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus.get());
 
-    let tun_reader_jobs_running = AtomicBool::new(true);
-
-    thread::scope(|thread_scope| {
-        spawn_handshake_workers(thread_scope, &wireguard_device, handshake_receiver, n_cpus);
-
-        let tun_reader_jobs: Vec<ScopedJoinHandle<'_, ()>> = tun_readers
-            .into_iter()
-            .map(|reader| {
-                thread_scope.spawn(|| {
-                    tun_worker(&wireguard_device, reader);
-                })
-            })
-            .collect();
-
-        spawn_tun_event_loop(
-            thread_scope,
-            &wireguard_config,
-            &mut tun_status,
-            &tun_reader_jobs_running,
-        );
-
-        spawn_uapi_server(
-            thread_scope,
-            &wireguard_config,
-            &uapi_socket,
-            &tun_reader_jobs_running,
-        );
-
-        let _: Vec<_> = tun_reader_jobs
-            .into_iter()
-            .map(|handle| {
-                let _ = handle.join();
-            })
-            .collect();
-
-        tun_reader_jobs_running.store(false, Ordering::Release);
-
-        wireguard_device.close_handshake_queue();
-
-        // scoped threads joined here
-    });
+    run_workers(
+        uapi_socket,
+        tun_readers,
+        tun_status,
+        handshake_receiver,
+        n_cpus,
+        wireguard_device,
+    );
 
     profiler_stop();
 
@@ -111,75 +69,4 @@ fn initialize_logger() {
     env_logger::builder()
         .try_init()
         .expect("Failed to initialize event logger");
-}
-
-fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_device: &'env WireGuard<T, B>,
-    handshake_receiver: Receiver<HandshakeJob<B::Endpoint>>,
-    n_workers: usize,
-) -> Vec<ScopedJoinHandle<'scope, ()>> {
-    (0..n_workers)
-        .map(|_| {
-            let handshake_receiver = handshake_receiver.clone();
-            thread_scope.spawn(|| handshake_worker(wireguard_device, handshake_receiver))
-        })
-        .collect()
-}
-
-fn spawn_tun_event_loop<'scope, 'env, T: Tun, B: PlatformUDP, S: Status>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_config: &'env WireGuardConfig<T, B>,
-    tun_status: &'env mut S,
-    tun_reader_jobs_running: &'env AtomicBool,
-) -> ScopedJoinHandle<'scope, ()> {
-    thread_scope.spawn(|| {
-        while tun_reader_jobs_running.load(Ordering::Acquire) {
-            match tun_status.event() {
-                Err(e) => {
-                    log::error!("Tun device error {}", e);
-                    profiler_stop();
-                    exit(ExitCode::TUNDeviceError as i32);
-                }
-                Ok(TunEvent::Up(mtu)) => {
-                    log::info!("Tun up (mtu = {})", mtu);
-                    let _ = wireguard_config.up(mtu); // TODO: handle
-                }
-                Ok(TunEvent::Down) => {
-                    log::info!("Tun down");
-                    wireguard_config.down();
-                }
-            }
-        }
-    })
-}
-
-fn spawn_uapi_server<'scope, 'env, T: Tun, B: PlatformUDP, U: BindUAPI + Send + Sync>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_config: &'env WireGuardConfig<T, B>,
-    uapi: &'env U,
-    tun_reader_jobs_running: &'env AtomicBool,
-) -> ScopedJoinHandle<'scope, ()>
-where
-    <U as BindUAPI>::Stream: Send,
-    <U as BindUAPI>::Stream: 'env,
-{
-    thread_scope.spawn(|| {
-        while tun_reader_jobs_running.load(Ordering::Acquire) {
-            // accept and handle UAPI config connections
-            match uapi.connect() {
-                Ok(stream) => {
-                    thread_scope.spawn(|| {
-                        let mut stream = stream;
-                        uapi::handle(&mut stream, wireguard_config);
-                    });
-                }
-                Err(err) => {
-                    log::error!("UAPI connection error: {}", err);
-                    profiler_stop();
-                    exit(ExitCode::UAPIConnectionError as i32);
-                }
-            }
-        }
-    })
 }

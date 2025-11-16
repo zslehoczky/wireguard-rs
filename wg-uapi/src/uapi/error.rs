@@ -15,7 +15,7 @@ pub enum ConfigError {
     InvalidKeepaliveInterval,
     InvalidAllowedIp,
     InvalidOperation,
-    LineTooLong,
+    InvalidKeyValuePair,
     IOError,
     UnsupportedValue,
     UnsupportedProtocolVersion,
@@ -53,10 +53,10 @@ impl ConfigError {
             ConfigError::InvalidKeepaliveInterval => EINVAL,
             ConfigError::InvalidAllowedIp => EINVAL,
             ConfigError::InvalidOperation => EINVAL,
+            ConfigError::InvalidKeyValuePair => EINVAL,
             ConfigError::UnsupportedValue => EINVAL,
 
             // other protocol errors
-            ConfigError::LineTooLong => EPROTO,
             ConfigError::InvalidKey => EPROTO,
             ConfigError::UnsupportedProtocolVersion => EPROTO,
 

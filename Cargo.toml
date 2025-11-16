@@ -4,6 +4,7 @@ members = [
     "wg-crypto",
     "wg-traits",
     "wg-platform",
+    "wg-uapi",
 ]
 
 resolver = "2"

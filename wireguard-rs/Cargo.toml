@@ -9,6 +9,7 @@ license.workspace = true
 wg-crypto = { path = "../wg-crypto" }
 wg-traits = { path = "../wg-traits" }
 wg-platform = { path = "../wg-platform" }
+wg-uapi = { path = "../wg-uapi" }
 
 aead.workspace = true
 anyhow.workspace = true

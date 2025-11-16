@@ -1350,6 +1350,19 @@ name = "wg-traits"
 version = "0.1.4"
 
 [[package]]
+name = "wg-uapi"
+version = "0.1.4"
+dependencies = [
+ "hex",
+ "libc",
+ "log",
+ "subtle",
+ "wg-crypto",
+ "wg-traits",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "winapi"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1576,6 +1589,7 @@ dependencies = [
  "wg-crypto",
  "wg-platform",
  "wg-traits",
+ "wg-uapi",
  "x25519-dalek",
  "zerocopy 0.3.2",
  "zeroize",
