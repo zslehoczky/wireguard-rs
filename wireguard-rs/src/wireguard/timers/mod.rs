@@ -3,25 +3,13 @@ mod callbacks;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use hjul::{Runner, Timer};
+use hjul::Timer;
 use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::wireguard::WireGuard;
 use crate::wireguard::constants::*;
-
-pub fn spawn_timer<F, T: Tun, B: UDP>(
-    wireguard_device: WireGuard<T, B>,
-    public_key_of_peer: PublicKey,
-    runner: &Runner,
-    callback: F,
-) -> Timer
-where
-    F: 'static + Fn(&WireGuard<T, B>, &PublicKey) + Send + Sync,
-{
-    runner.timer(move || callback(&wireguard_device, &public_key_of_peer))
-}
 
 pub struct Timers {
     // only updated during configuration
@@ -52,6 +40,13 @@ impl Timers {
     ) -> Timers {
         let runner = wireguard_device.runner.lock();
 
+        let spawn_timer = |callback: fn(&WireGuard<T, B>, &PublicKey)| {
+            let wireguard_device = wireguard_device.clone();
+            let public_key_of_peer = *public_key_of_peer;
+
+            runner.timer(move || callback(&wireguard_device, &public_key_of_peer))
+        };
+
         // create a timer instance for the provided peer
         Timers {
             enabled: timers_started,
@@ -59,36 +54,11 @@ impl Timers {
             need_another_keepalive: AtomicBool::new(false),
             sent_lastminute_handshake: AtomicBool::new(false),
             handshake_attempts: AtomicUsize::new(0),
-            retransmit_handshake: spawn_timer(
-                wireguard_device.clone(),
-                *public_key_of_peer,
-                &runner,
-                Self::retransmit_handshake,
-            ),
-            send_keepalive: spawn_timer(
-                wireguard_device.clone(),
-                *public_key_of_peer,
-                &runner,
-                Self::send_keepalive,
-            ),
-            new_handshake: spawn_timer(
-                wireguard_device.clone(),
-                *public_key_of_peer,
-                &runner,
-                Self::new_handshake,
-            ),
-            zero_key_material: spawn_timer(
-                wireguard_device.clone(),
-                *public_key_of_peer,
-                &runner,
-                Self::zero_key_material,
-            ),
-            send_persistent_keepalive: spawn_timer(
-                wireguard_device.clone(),
-                *public_key_of_peer,
-                &runner,
-                Self::send_persistent_keepalive,
-            ),
+            retransmit_handshake: spawn_timer(Self::retransmit_handshake),
+            send_keepalive: spawn_timer(Self::send_keepalive),
+            new_handshake: spawn_timer(Self::new_handshake),
+            zero_key_material: spawn_timer(Self::zero_key_material),
+            send_persistent_keepalive: spawn_timer(Self::send_persistent_keepalive),
         }
     }
 
