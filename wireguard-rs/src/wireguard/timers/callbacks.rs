@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use log::debug;
@@ -30,12 +29,12 @@ fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
     public_key_of_peer: &PublicKey,
     callback: F,
 ) where
-    F: Fn(&Peer<T, B, B::Endpoint, T::Writer, B::Writer>, &Timers),
+    F: Fn(&Peer<T, B, B::Endpoint, T::Writer, B::Writer>, &mut Timers),
 {
     call_with_peer(wireguard_device, public_key_of_peer, |peer| {
-        let timers = peer.timers();
+        let mut timers = peer.timers_mut();
         if timers.enabled {
-            callback(peer, &timers)
+            callback(peer, &mut timers)
         }
     })
 }
@@ -47,7 +46,10 @@ impl Timers {
     ) {
         call_with_peer_and_timers(wireguard_device, public_key_of_peer, |peer, timers| {
             // check if handshake attempts remaining
-            let attempts = timers.handshake_attempts.fetch_add(1, Ordering::SeqCst);
+            let attempts = {
+                timers.handshake_attempts += 1;
+                timers.handshake_attempts
+            };
             if attempts > MAX_TIMER_HANDSHAKES {
                 debug!(
                     "Handshake for peer {} did not complete after {} attempts, giving up",

@@ -1,6 +1,5 @@
 mod callbacks;
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use hjul::Timer;
@@ -16,9 +15,9 @@ pub struct Timers {
     enabled: bool,
     keepalive_interval: u64,
 
-    handshake_attempts: AtomicUsize,
-    sent_lastminute_handshake: AtomicBool,
-    need_another_keepalive: AtomicBool,
+    handshake_attempts: usize,
+    sent_lastminute_handshake: bool,
+    need_another_keepalive: bool,
 
     retransmit_handshake: Timer,
     send_keepalive: Timer,
@@ -29,8 +28,8 @@ pub struct Timers {
 
 impl Timers {
     #[inline(always)]
-    fn needs_another_keepalive(&self) -> bool {
-        self.need_another_keepalive.swap(false, Ordering::SeqCst)
+    fn needs_another_keepalive(&mut self) -> bool {
+        std::mem::replace(&mut self.need_another_keepalive, false)
     }
 
     pub fn new<T: Tun, B: UDP>(
@@ -51,9 +50,9 @@ impl Timers {
         Timers {
             enabled: timers_started,
             keepalive_interval: 0, // disabled
-            need_another_keepalive: AtomicBool::new(false),
-            sent_lastminute_handshake: AtomicBool::new(false),
-            handshake_attempts: AtomicUsize::new(0),
+            need_another_keepalive: false,
+            sent_lastminute_handshake: false,
+            handshake_attempts: 0,
             retransmit_handshake: spawn_timer(Self::retransmit_handshake),
             send_keepalive: spawn_timer(Self::send_keepalive),
             new_handshake: spawn_timer(Self::new_handshake),
@@ -94,10 +93,9 @@ impl Timers {
         self.new_handshake.stop();
 
         // reset all timer state
-        self.handshake_attempts.store(0, Ordering::SeqCst);
-        self.sent_lastminute_handshake
-            .store(false, Ordering::SeqCst);
-        self.need_another_keepalive.store(false, Ordering::SeqCst);
+        self.handshake_attempts = 0;
+        self.sent_lastminute_handshake = false;
+        self.need_another_keepalive = false;
     }
 
     pub fn start_new_handshake_timer(&self) {
@@ -106,9 +104,9 @@ impl Timers {
         }
     }
 
-    pub fn queue_another_keepalive(&self) {
+    pub fn queue_another_keepalive(&mut self) {
         if self.enabled && !self.send_keepalive.start(KEEPALIVE_TIMEOUT) {
-            self.need_another_keepalive.store(true, Ordering::SeqCst)
+            self.need_another_keepalive = true
         }
     }
 
@@ -132,12 +130,11 @@ impl Timers {
     }
 
     /// Return Some(()) if timers are enabled, None otherwise
-    pub fn stop_retransmit_handshake_timer(&self) -> Option<()> {
+    pub fn stop_retransmit_handshake_timer(&mut self) -> Option<()> {
         if self.enabled {
             self.retransmit_handshake.stop();
-            self.handshake_attempts.store(0, Ordering::SeqCst);
-            self.sent_lastminute_handshake
-                .store(false, Ordering::SeqCst);
+            self.handshake_attempts = 0;
+            self.sent_lastminute_handshake = false;
 
             return Some(());
         }
@@ -171,12 +168,12 @@ impl Timers {
         }
     }
 
-    pub fn reset_handshake_attempts(&self) {
-        self.handshake_attempts.store(0, Ordering::SeqCst);
+    pub fn reset_handshake_attempts(&mut self) {
+        self.handshake_attempts = 0;
     }
 
     /// Return true if the event hasn't been registered before this call, otherwise false
-    pub fn register_lastminute_handshake_sent(&self) -> bool {
-        !self.sent_lastminute_handshake.swap(true, Ordering::Acquire)
+    pub fn register_lastminute_handshake_sent(&mut self) -> bool {
+        !std::mem::replace(&mut self.sent_lastminute_handshake, true)
     }
 }

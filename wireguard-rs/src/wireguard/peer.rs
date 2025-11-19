@@ -106,7 +106,7 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
 
     /* should be called after an authenticated data packet is received */
     pub fn timers_data_received(&self) {
-        self.timers().queue_another_keepalive();
+        self.timers_mut().queue_another_keepalive();
     }
 
     /* Should be called after any type of authenticated packet is sent, whether:
@@ -140,7 +140,7 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
      */
     pub fn timers_handshake_complete(&self) {
         log::trace!("timers_handshake_complete");
-        let timers_update_result = self.timers().stop_retransmit_handshake_timer();
+        let timers_update_result = self.timers_mut().stop_retransmit_handshake_timer();
         if timers_update_result.is_some() {
             *self.walltime_last_handshake.lock() = Some(SystemTime::now());
         }
@@ -183,7 +183,7 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
 
     pub fn packet_send_queued_handshake_initiation(&self, is_retry: bool) {
         if !is_retry {
-            self.timers().reset_handshake_attempts();
+            self.timers_mut().reset_handshake_attempts();
         }
         self.packet_send_handshake_initiation();
     }
@@ -247,7 +247,7 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
             Instant::now() - keypair.birth > REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
         }
 
-        if keep_key_fresh(keypair) && peer.timers().register_lastminute_handshake_sent() {
+        if keep_key_fresh(keypair) && peer.timers_mut().register_lastminute_handshake_sent() {
             peer.packet_send_queued_handshake_initiation(false);
         }
     }
