@@ -142,10 +142,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
         }
 
         if !release.is_empty() {
-            let mut recv = peer.device.recv.write();
-            for id in &release {
-                recv.remove(id);
-            }
+            peer.device.remove_receivers(release);
         }
 
         // null key-material
@@ -377,11 +374,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         keys.retired.extend(&release[..]);
 
         // update inbound "recv" map
-        {
-            let mut recv = self.peer.device.recv.write();
-            for id in release {
-                recv.remove(&id);
-            }
+        if !release.is_empty() {
+            self.peer.device.remove_receivers(release);
         }
 
         // clear encryption state
@@ -436,20 +430,14 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
             };
 
             // update incoming packet id map
-            {
-                log::trace!("peer.add_keypair: updating inbound id map");
-                let mut recv = self.peer.device.recv.write();
-
-                // purge recv map of previous id
-                if let Some(k) = &keys.previous {
-                    recv.remove(&k.local_id());
-                    release.push(k.local_id());
-                }
-
-                // map new id to decryption state
-                debug_assert!(!recv.contains_key(&new.recv.id));
-                recv.insert(new.recv.id, Arc::new(dec_state));
+            if let Some(id) = self.peer.device.add_receiver(
+                keys.previous.as_ref().map(|k| k.local_id()),
+                new.recv.id,
+                dec_state,
+            ) {
+                release.push(id);
             }
+
             release
         };
 

@@ -26,7 +26,7 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
 
     // routing
     #[allow(clippy::type_complexity)]
-    pub(super) recv: RwLock<HashMap<u32, Arc<DecryptionState<Peer<E, C, T, B>>>>>, /* receiver id -> decryption state */
+    recv: RwLock<HashMap<u32, Arc<DecryptionState<Peer<E, C, T, B>>>>>, /* receiver id -> decryption state */
     pub(super) table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
@@ -177,6 +177,37 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
 
     pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
         self.parallel_queue.queue_job(job);
+    }
+
+    pub fn add_receiver(
+        &self,
+        prev_id: Option<u32>,
+        new_id: u32,
+        decryption_state: DecryptionState<Peer<E, C, T, B>>,
+    ) -> Option<u32> {
+        let mut release = None;
+
+        log::trace!("peer.add_keypair: updating inbound id map");
+        let mut recv = self.inner.recv.write();
+
+        // purge recv map of previous id
+        if let Some(prev_id) = prev_id {
+            recv.remove(&prev_id);
+            release = Some(prev_id);
+        }
+
+        // map new id to decryption state
+        debug_assert!(!recv.contains_key(&new_id));
+        recv.insert(new_id, Arc::new(decryption_state));
+
+        release
+    }
+
+    pub fn remove_receivers(&self, release: Vec<u32>) {
+        let mut recv = self.inner.recv.write();
+        for id in &release {
+            recv.remove(id);
+        }
     }
 }
 
