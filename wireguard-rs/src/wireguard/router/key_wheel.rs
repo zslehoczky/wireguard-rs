@@ -43,11 +43,10 @@ impl KeyWheel {
     }
 
     pub fn rotate(&mut self) {
-        let mut other = None;
+        swap(&mut self.previous, &mut self.current);
+        swap(&mut self.current, &mut self.next);
 
-        swap(&mut self.next, &mut other);
-        swap(&mut self.current, &mut other);
-        swap(&mut self.previous, &mut other);
+        self.next = None;
     }
 
     pub fn update(&mut self, new: Arc<KeyPair>) {
