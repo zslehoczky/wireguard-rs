@@ -165,7 +165,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
 
         // 1. add to sequential queue (drop if full)
         // 2. then add to parallel work queue (wait if full)
-        if dec.peer.inbound.push(job.clone()) {
+        if dec.peer.get_inbound().push(job.clone()) {
             self.parallel_queue
                 .queue_job(ParallelJobUnion::Inbound(job));
         }

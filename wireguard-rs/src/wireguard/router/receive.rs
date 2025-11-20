@@ -52,7 +52,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for ReceiveJob<E, C, T, B>
 {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
-        &self.0.state.peer.inbound
+        self.0.state.peer.get_inbound()
     }
 
     /* The parallel section of an incoming job:

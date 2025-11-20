@@ -55,7 +55,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for SendJob<E, C, T, B>
 {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
-        &self.0.peer.outbound
+        self.0.peer.get_outbound()
     }
 
     fn parallel_work(&self) {

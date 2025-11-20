@@ -25,8 +25,8 @@ use super::sequential_queue::SequentialQueue;
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     device: Device<E, C, T, B>,
     opaque: C::Opaque,
-    pub(super) outbound: SequentialQueue<SendJob<E, C, T, B>>,
-    pub(super) inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
+    outbound: SequentialQueue<SendJob<E, C, T, B>>,
+    inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
     pub(super) staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     pub(super) keys: Mutex<KeyWheel>,
     pub(super) enc_key: Mutex<Option<EncryptionState>>,
@@ -284,6 +284,14 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
     pub fn get_opaque(&self) -> &C::Opaque {
         &self.opaque
+    }
+
+    pub fn get_outbound(&self) -> &SequentialQueue<SendJob<E, C, T, B>> {
+        &self.outbound
+    }
+
+    pub fn get_inbound(&self) -> &SequentialQueue<ReceiveJob<E, C, T, B>> {
+        &self.inbound
     }
 }
 

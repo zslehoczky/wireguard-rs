@@ -85,6 +85,12 @@ impl<J: SequentialJob> SequentialQueue<J> {
     }
 }
 
+impl<J: SequentialJob> Default for SequentialQueue<J> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
