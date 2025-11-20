@@ -24,7 +24,7 @@ use super::sequential_queue::SequentialQueue;
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     device: Device<E, C, T, B>,
-    pub(super) opaque: C::Opaque,
+    opaque: C::Opaque,
     pub(super) outbound: SequentialQueue<SendJob<E, C, T, B>>,
     pub(super) inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
     pub(super) staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
@@ -280,6 +280,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
     pub fn write_inbound(&self, data: &[u8]) {
         self.device.write_inbound(data)
+    }
+
+    pub fn get_opaque(&self) -> &C::Opaque {
+        &self.opaque
     }
 }
 

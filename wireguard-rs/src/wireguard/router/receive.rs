@@ -177,6 +177,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         }
 
         // trigger callback
-        C::recv(&peer.opaque, msg.1.len(), true, &job.state.keypair);
+        C::recv(peer.get_opaque(), msg.1.len(), true, &job.state.keypair);
     }
 }
