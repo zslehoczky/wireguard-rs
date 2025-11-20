@@ -21,7 +21,7 @@ type ReceiverLookup<P> = HashMap<u32, Arc<DecryptionState<P>>>; /* receiver id -
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
-    pub(super) inbound: T,
+    inbound: T,
 
     // outbound writer (Bind)
     pub(super) outbound: RwLock<(bool, Option<B>)>,
@@ -209,6 +209,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         for id in release {
             recv.remove(id);
         }
+    }
+
+    pub fn write_inbound(&self, data: &[u8]) {
+        self.inbound.write(data).unwrap_or_else(|e| {
+            log::debug!("failed to write inbound packet to TUN: {:?}", e);
+        })
     }
 }
 

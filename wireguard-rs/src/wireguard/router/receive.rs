@@ -173,9 +173,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         if let Some(inner) = inner_length(packet)
             && inner + SIZE_TAG <= packet.len()
         {
-            let _ = peer.device.inbound.write(&packet[..inner]).map_err(|e| {
-                log::debug!("failed to write inbound packet to TUN: {:?}", e);
-            });
+            peer.device.write_inbound(&packet[..inner]);
         }
 
         // trigger callback
