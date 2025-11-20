@@ -3,14 +3,15 @@ use wg_traits::{Endpoint, tun, udp};
 use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
 use crate::wireguard::peer::KeyPair;
 
+use super::callbacks::Callbacks;
 use super::constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX};
 use super::crypto_state::{EncryptionState, crypto_state};
 use super::device::Device;
 use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
+use super::router_error::RouterError;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
-use super::types::{Callbacks, RouterError};
 
 use core::mem;
 use core::ops::Deref;
