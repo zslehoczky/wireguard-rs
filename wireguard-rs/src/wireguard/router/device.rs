@@ -7,8 +7,7 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::SIZE_MESSAGE_PREFIX;
-use super::constants::PARALLEL_QUEUE_SIZE;
+use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::crypto_state::DecryptionState;
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{Peer, PeerHandle, new_peer};

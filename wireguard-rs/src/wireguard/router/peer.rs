@@ -3,8 +3,7 @@ use wg_traits::{Endpoint, tun, udp};
 use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
 use crate::wireguard::peer::KeyPair;
 
-use super::SIZE_MESSAGE_PREFIX;
-use super::constants::*;
+use super::constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX};
 use super::crypto_state::{EncryptionState, crypto_state};
 use super::device::Device;
 use super::parallel_queue::ParallelJobUnion;

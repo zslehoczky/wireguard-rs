@@ -1,10 +1,10 @@
+use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::crypto_state::DecryptionState;
 use super::ip::inner_length;
 use super::parallel_queue::ParallelJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::TransportHeader;
 use super::types::Callbacks;
-use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};

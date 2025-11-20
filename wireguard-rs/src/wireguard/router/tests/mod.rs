@@ -6,7 +6,10 @@ use wg_crypto::SymKey;
 use crate::wireguard::peer::KeyPair;
 
 use super::super::tests::make_packet;
-use super::{Callbacks, Device, SIZE_MESSAGE_PREFIX, message_data_len};
+use super::{
+    Callbacks, Device,
+    constants::{SIZE_MESSAGE_PREFIX, message_data_len},
+};
 use wg_platform::dummy;
 
 use std::time::Instant;
