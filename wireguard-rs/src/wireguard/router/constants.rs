@@ -1,6 +1,6 @@
-pub use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
+use std::mem::size_of;
 
-use core::mem::size_of;
+pub use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
 
 use super::transport::TransportHeader;
 

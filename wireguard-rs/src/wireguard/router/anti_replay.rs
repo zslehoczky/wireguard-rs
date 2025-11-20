@@ -1,5 +1,3 @@
-use core::mem;
-
 // Implementation of RFC 6479.
 // https://tools.ietf.org/html/rfc6479
 
@@ -15,7 +13,7 @@ type Word = u32;
 #[cfg(target_pointer_width = "32")]
 const REDUNDANT_BIT_SHIFTS: usize = 5;
 
-const SIZE_OF_WORD: usize = mem::size_of::<Word>() * 8;
+const SIZE_OF_WORD: usize = Word::BITS as usize;
 
 const BITMAP_BITLEN: usize = 2048;
 const BITMAP_LEN: usize = BITMAP_BITLEN / SIZE_OF_WORD;

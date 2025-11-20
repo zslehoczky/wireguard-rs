@@ -1,3 +1,12 @@
+use std::fmt;
+use std::mem::{swap, take};
+use std::net::{IpAddr, SocketAddr};
+use std::ops::Deref;
+use std::sync::Arc;
+
+use arraydeque::{ArrayDeque, Wrapping};
+use spin::Mutex;
+
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
@@ -12,18 +21,6 @@ use super::receive::ReceiveJob;
 use super::router_error::RouterError;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
-
-use core::mem;
-use core::ops::Deref;
-
-use alloc::sync::Arc;
-
-// TODO: consider no_std alternatives
-use std::fmt;
-use std::net::{IpAddr, SocketAddr};
-
-use arraydeque::{ArrayDeque, Wrapping};
-use spin::Mutex;
 
 pub struct KeyWheel {
     next: Option<Arc<KeyPair>>,     // next key state (unconfirmed)
@@ -306,10 +303,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
             let ekey = Some(EncryptionState::new(next.clone()));
 
             // rotate key-wheel
-            let mut swap = None;
-            mem::swap(&mut keys.next, &mut swap);
-            mem::swap(&mut keys.current, &mut swap);
-            mem::swap(&mut keys.previous, &mut swap);
+            let mut other = None;
+            swap(&mut keys.next, &mut other);
+            swap(&mut keys.current, &mut other);
+            swap(&mut keys.previous, &mut other);
 
             // tell the world outside the router that a key was confirmed
             C::key_confirmed(&self.opaque);
@@ -411,7 +408,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         let release = {
             let new = Arc::new(new);
             let mut keys = self.peer.keys.lock();
-            let mut release = std::mem::take(&mut keys.retired);
+            let mut release = take(&mut keys.retired);
 
             let (enc_state, dec_state) = crypto_state(self.peer.clone(), new.clone());
 

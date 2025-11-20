@@ -1,4 +1,4 @@
-use core::mem;
+use std::mem::size_of;
 
 use byteorder::BigEndian;
 use zerocopy::LayoutVerified;
@@ -42,7 +42,7 @@ pub fn inner_length(packet: &[u8]) -> Option<usize> {
             let (header, _): (LayoutVerified<&[u8], IPv6Header>, _) =
                 LayoutVerified::new_from_prefix(packet)?;
 
-            Some(header.f_len.get() as usize + mem::size_of::<IPv6Header>())
+            Some(header.f_len.get() as usize + size_of::<IPv6Header>())
         }
         _ => None,
     }
