@@ -1,5 +1,4 @@
 use std::fmt;
-use std::mem::{swap, take};
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -16,18 +15,12 @@ use super::callbacks::Callbacks;
 use super::constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX};
 use super::crypto_state::{EncryptionState, crypto_state};
 use super::device::Device;
+use super::key_wheel::KeyWheel;
 use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
 use super::router_error::RouterError;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
-
-pub struct KeyWheel {
-    next: Option<Arc<KeyPair>>,     // next key state (unconfirmed)
-    current: Option<Arc<KeyPair>>,  // current key state (used for encryption)
-    previous: Option<Arc<KeyPair>>, // old key state (used for decryption)
-    retired: Vec<u32>,              // retired ids
-}
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     pub(super) device: Device<E, C, T, B>,
@@ -120,33 +113,13 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
         let peer = &self.peer;
 
         // remove from cryptkey router
-
         self.peer.device.table.remove(peer);
 
         // release ids from the receiver map
-
-        let mut keys = peer.keys.lock();
-        let mut release = Vec::with_capacity(3);
-
-        if let Some(k) = keys.next.as_ref() {
-            release.push(k.recv.id)
-        }
-        if let Some(k) = keys.current.as_ref() {
-            release.push(k.recv.id)
-        }
-        if let Some(k) = keys.previous.as_ref() {
-            release.push(k.recv.id)
-        }
-
+        let release = peer.keys.lock().reset(false);
         if !release.is_empty() {
-            peer.device.remove_receivers(release);
+            peer.device.remove_receivers(&release[..]);
         }
-
-        // null key-material
-
-        keys.next = None;
-        keys.current = None;
-        keys.previous = None;
 
         *peer.enc_key.lock() = None;
         *peer.endpoint.lock() = None;
@@ -169,12 +142,7 @@ pub fn new_peer<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
                 outbound: SequentialQueue::new(),
                 enc_key: spin::Mutex::new(None),
                 endpoint: spin::Mutex::new(None),
-                keys: spin::Mutex::new(KeyWheel {
-                    next: None,
-                    current: None,
-                    previous: None,
-                    retired: vec![],
-                }),
+                keys: spin::Mutex::new(KeyWheel::new()),
                 staged_packets: spin::Mutex::new(ArrayDeque::new()),
             }),
         }
@@ -289,12 +257,14 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
         {
             // take lock and check keypair = keys.next
             let mut keys = self.keys.lock();
-            let next = match keys.next.as_ref() {
+
+            let next = match keys.get_next() {
                 Some(next) => next,
                 None => {
                     return;
                 }
             };
+
             if !Arc::ptr_eq(next, keypair) {
                 return;
             }
@@ -302,11 +272,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
             // allocate new encryption state
             let ekey = Some(EncryptionState::new(next.clone()));
 
-            // rotate key-wheel
-            let mut other = None;
-            swap(&mut keys.next, &mut other);
-            swap(&mut keys.current, &mut other);
-            swap(&mut keys.previous, &mut other);
+            keys.rotate();
 
             // tell the world outside the router that a key was confirmed
             C::key_confirmed(&self.opaque);
@@ -354,25 +320,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     pub fn zero_keys(&self) {
         log::trace!("peer.zero_keys");
 
-        let mut release: Vec<u32> = Vec::with_capacity(3);
-        let mut keys = self.peer.keys.lock();
-
-        // update key-wheel
-
-        if let Some(k) = keys.next.take() {
-            release.push(k.local_id())
-        }
-        if let Some(k) = keys.current.take() {
-            release.push(k.local_id())
-        }
-        if let Some(k) = keys.previous.take() {
-            release.push(k.local_id())
-        }
-        keys.retired.extend(&release[..]);
-
-        // update inbound "recv" map
+        // reset key-wheel and release keys
+        let release = self.keys.lock().reset(true);
         if !release.is_empty() {
-            self.peer.device.remove_receivers(release);
+            self.device.remove_receivers(&release[..]);
         }
 
         // clear encryption state
@@ -406,32 +357,30 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
 
         let initiator = new.initiator;
         let release = {
-            let new = Arc::new(new);
             let mut keys = self.peer.keys.lock();
-            let mut release = take(&mut keys.retired);
+            let mut release = keys.take_retired();
 
-            let (enc_state, dec_state) = crypto_state(self.peer.clone(), new.clone());
+            let prev_id = keys.get_prev().map(|k| k.local_id());
+            let new_id = new.recv.id;
+
+            let new = Arc::new(new);
+
+            let (encryption_state, decryption_state) = crypto_state(self.peer.clone(), new.clone());
 
             // update key-wheel
-            if new.initiator {
-                // start using key for encryption
-                *self.peer.enc_key.lock() = Some(enc_state);
+            keys.update(new);
 
-                // move current into previous
-                keys.previous = keys.current.as_ref().cloned();
-                keys.current = Some(new.clone());
-            } else {
-                // store the key and await confirmation
-                keys.previous = keys.next.as_ref().cloned();
-                keys.next = Some(new.clone());
-            };
+            if initiator {
+                // start using key for encryption
+                *self.peer.enc_key.lock() = Some(encryption_state);
+            }
 
             // update incoming packet id map
-            if let Some(id) = self.peer.device.add_receiver(
-                keys.previous.as_ref().map(|k| k.local_id()),
-                new.recv.id,
-                dec_state,
-            ) {
+            if let Some(id) = self
+                .peer
+                .device
+                .add_receiver(prev_id, new_id, decryption_state)
+            {
                 release.push(id);
             }
 

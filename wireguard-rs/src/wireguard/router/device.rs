@@ -203,9 +203,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         release
     }
 
-    pub fn remove_receivers(&self, release: Vec<u32>) {
+    pub fn remove_receivers(&self, release: &[u32]) {
         let mut recv = self.inner.recv.write();
-        for id in &release {
+        for id in release {
             recv.remove(id);
         }
     }
