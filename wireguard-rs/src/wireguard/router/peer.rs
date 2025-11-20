@@ -27,10 +27,10 @@ pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E
     opaque: C::Opaque,
     outbound: SequentialQueue<SendJob<E, C, T, B>>,
     inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
-    pub(super) staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
-    pub(super) keys: Mutex<KeyWheel>,
-    pub(super) enc_key: Mutex<Option<EncryptionState>>,
-    pub(super) endpoint: Mutex<Option<E>>,
+    staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
+    keys: Mutex<KeyWheel>,
+    enc_key: Mutex<Option<EncryptionState>>,
+    endpoint: Mutex<Option<E>>,
 }
 
 /// A Peer dereferences to its opaque type:
@@ -292,6 +292,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
     pub fn get_inbound(&self) -> &SequentialQueue<ReceiveJob<E, C, T, B>> {
         &self.inbound
+    }
+
+    pub fn update_endpoint(&self, new_endpoint: Option<E>) {
+        *self.endpoint.lock() = new_endpoint;
     }
 }
 

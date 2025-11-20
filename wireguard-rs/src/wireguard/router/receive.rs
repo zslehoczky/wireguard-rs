@@ -166,7 +166,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         }
 
         // update endpoint
-        *peer.endpoint.lock() = endpoint;
+        peer.update_endpoint(endpoint);
 
         // check if should be written to TUN
         // (keep-alive and malformed packets will have no inner length)
