@@ -17,6 +17,8 @@ use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
+type ReceiverLookup<P> = HashMap<u32, Arc<DecryptionState<P>>>; /* receiver id -> decryption state */
+
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
     pub(super) inbound: T,
@@ -25,8 +27,7 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
     pub(super) outbound: RwLock<(bool, Option<B>)>,
 
     // routing
-    #[allow(clippy::type_complexity)]
-    recv: RwLock<HashMap<u32, Arc<DecryptionState<Peer<E, C, T, B>>>>>, /* receiver id -> decryption state */
+    recv: RwLock<ReceiverLookup<Peer<E, C, T, B>>>,
     pub(super) table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
