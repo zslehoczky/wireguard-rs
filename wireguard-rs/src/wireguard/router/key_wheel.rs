@@ -1,4 +1,4 @@
-use std::mem::{swap, take};
+use std::mem::swap;
 use std::sync::Arc;
 
 use crate::wireguard::peer::KeyPair;
@@ -7,7 +7,6 @@ pub struct KeyWheel {
     next: Option<Arc<KeyPair>>,     // next key state (unconfirmed)
     current: Option<Arc<KeyPair>>,  // current key state (used for encryption)
     previous: Option<Arc<KeyPair>>, // old key state (used for decryption)
-    retired: Vec<u32>,              // retired ids
 }
 
 impl KeyWheel {
@@ -16,7 +15,6 @@ impl KeyWheel {
             next: None,
             current: None,
             previous: None,
-            retired: vec![],
         }
     }
 
@@ -28,7 +26,7 @@ impl KeyWheel {
         self.previous.as_ref()
     }
 
-    pub fn reset(&mut self, retire: bool) -> Vec<u32> {
+    pub fn reset(&mut self) -> Vec<u32> {
         let mut release = Vec::with_capacity(3);
 
         if let Some(k) = self.next.take() {
@@ -41,10 +39,6 @@ impl KeyWheel {
             release.push(k.recv.id)
         }
 
-        if retire {
-            self.retired.extend(&release[..]);
-        }
-
         release
     }
 
@@ -54,10 +48,6 @@ impl KeyWheel {
         swap(&mut self.next, &mut other);
         swap(&mut self.current, &mut other);
         swap(&mut self.previous, &mut other);
-    }
-
-    pub fn take_retired(&mut self) -> Vec<u32> {
-        take(&mut self.retired)
     }
 
     pub fn update(&mut self, new: Arc<KeyPair>) {

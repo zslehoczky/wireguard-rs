@@ -116,9 +116,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
         self.peer.device.table.remove(peer);
 
         // release ids from the receiver map
-        let release = peer.keys.lock().reset(false);
-        if !release.is_empty() {
-            peer.device.remove_receivers(&release[..]);
+        let released_ids = peer.keys.lock().reset();
+        if !released_ids.is_empty() {
+            peer.device.remove_receivers(&released_ids[..]);
         }
 
         *peer.enc_key.lock() = None;
@@ -321,9 +321,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         log::trace!("peer.zero_keys");
 
         // reset key-wheel and release keys
-        let release = self.keys.lock().reset(true);
-        if !release.is_empty() {
-            self.device.remove_receivers(&release[..]);
+        let released_ids = self.keys.lock().reset();
+        if !released_ids.is_empty() {
+            self.device.remove_receivers(&released_ids[..]);
         }
 
         // clear encryption state
@@ -356,9 +356,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         log::trace!("Router, add_keypair: {:?}", new);
 
         let initiator = new.initiator;
-        let release = {
+        let released_id = {
             let mut keys = self.peer.keys.lock();
-            let mut release = keys.take_retired();
 
             let prev_id = keys.get_prev().map(|k| k.local_id());
             let new_id = new.recv.id;
@@ -376,15 +375,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
             }
 
             // update incoming packet id map
-            if let Some(id) = self
-                .peer
+            self.peer
                 .device
                 .add_receiver(prev_id, new_id, decryption_state)
-            {
-                release.push(id);
-            }
-
-            release
         };
 
         // schedule confirmation
@@ -400,11 +393,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
             log::trace!("peer.add_keypair: key attempted confirmed");
         }
 
-        debug_assert!(
-            release.len() <= 3,
-            "since the key-wheel contains at most 3 keys"
-        );
-        release
+        match released_id {
+            Some(id) => vec![id],
+            None => vec![],
+        }
     }
 
     pub fn send_keepalive(&self) {
