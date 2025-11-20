@@ -24,7 +24,7 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
     inbound: T,
 
     // outbound writer (Bind)
-    pub(super) outbound: RwLock<(bool, Option<B>)>,
+    outbound: RwLock<(bool, Option<B>)>,
 
     // routing
     recv: RwLock<ReceiverLookup<Peer<E, C, T, B>>>,
@@ -215,6 +215,19 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         self.inbound.write(data).unwrap_or_else(|e| {
             log::debug!("failed to write inbound packet to TUN: {:?}", e);
         })
+    }
+
+    pub fn read_outbound(&self, msg: &[u8], endpoint: &mut E) -> Result<(), RouterError> {
+        let outbound = self.outbound.read();
+        let (open, outbound) = outbound.deref();
+        if *open {
+            outbound
+                .as_ref()
+                .ok_or(RouterError::SendError)
+                .and_then(|w| w.write(msg, endpoint).map_err(|_| RouterError::SendError))
+        } else {
+            Ok(())
+        }
     }
 }
 

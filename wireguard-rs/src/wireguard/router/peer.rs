@@ -164,18 +164,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, 
     pub fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
         // send to endpoint (if known)
         match self.endpoint.lock().as_mut() {
-            Some(endpoint) => {
-                let outbound = self.device.outbound.read();
-                if outbound.0 {
-                    outbound
-                        .1
-                        .as_ref()
-                        .ok_or(RouterError::SendError)
-                        .and_then(|w| w.write(msg, endpoint).map_err(|_| RouterError::SendError))
-                } else {
-                    Ok(())
-                }
-            }
+            Some(endpoint) => self.device.read_outbound(msg, endpoint),
             None => Err(RouterError::NoEndpoint),
         }
     }
