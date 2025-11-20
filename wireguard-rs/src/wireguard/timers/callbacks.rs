@@ -6,11 +6,11 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::wireguard::{WireGuard, constants::*, peer::PeerInner, router::PeerHandle};
+use crate::wireguard::{WireGuard, constants::*, peer::PeerCallbacks, router::PeerHandle};
 
 use super::Timers;
 
-type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerInner<T, B>, Tw, Bw>;
+type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerCallbacks<T, B>, Tw, Bw>;
 
 fn call_with_peer<F, T: Tun, B: UDP>(
     wireguard_device: &WireGuard<T, B>,

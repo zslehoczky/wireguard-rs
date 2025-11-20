@@ -1,4 +1,5 @@
 use std::fmt;
+use std::marker::PhantomData;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -19,7 +20,7 @@ use super::workers::HandshakeJob;
 
 pub type KeyPair = crypto::KeyPair<Instant>;
 
-pub struct PeerInner<T: Tun, B: UDP> {
+pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
     pub id: u64,
 
@@ -42,7 +43,7 @@ pub struct PeerInner<T: Tun, B: UDP> {
     pub timers: RwLock<Timers>,
 }
 
-impl<T: Tun, B: UDP> PeerInner<T, B> {
+impl<T: Tun, B: UDP> PeerState<T, B> {
     /* Queue a handshake request for the parallel workers
      * (if one does not already exist)
      *
@@ -189,8 +190,13 @@ impl<T: Tun, B: UDP> PeerInner<T, B> {
     }
 }
 
-impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
-    type Opaque = Self;
+pub struct PeerCallbacks<T: Tun, B: UDP> {
+    tun: PhantomData<T>,
+    udp: PhantomData<B>,
+}
+
+impl<T: Tun, B: UDP> Callbacks for PeerCallbacks<T, B> {
+    type Opaque = PeerState<T, B>;
 
     /* Called after the router encrypts a transport message destined for the peer.
      * This method is called, even if the encrypted payload is empty (keepalive)
@@ -271,8 +277,8 @@ impl<T: Tun, B: UDP> Callbacks for PeerInner<T, B> {
     }
 }
 
-impl<T: Tun, B: UDP> fmt::Display for PeerInner<T, B> {
+impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "peer(id = {})", self.id)
+        f.debug_struct("PeerState").field("id", &self.id).finish()
     }
 }

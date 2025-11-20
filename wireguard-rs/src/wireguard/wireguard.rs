@@ -1,5 +1,5 @@
 use super::constants::*;
-use super::peer::PeerInner;
+use super::peer::{PeerCallbacks, PeerState};
 use super::router;
 use super::timers::Timers;
 use super::{HandshakeJob, udp_worker};
@@ -39,14 +39,14 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     #[allow(clippy::type_complexity)]
     pub peers: RwLock<
         crypto::Device<
-            router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer>,
+            router::PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
             std::time::Instant,
             StdTimestamp,
         >,
     >,
 
     // cryptokey router
-    pub router: router::Device<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer>,
+    pub router: router::Device<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
 
     // handshake related state
     pub last_under_load: Mutex<Instant>,
@@ -176,8 +176,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         let timers = Timers::new::<T, B>(self, &pk, *enabled);
 
         // create new router peer
-        let peer: router::PeerHandle<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
-            self.router.new_peer(PeerInner {
+        let peer: router::PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer> =
+            self.router.new_peer(PeerState {
                 id: OsRng.r#gen(),
                 pk,
                 wg: self.clone(),
@@ -215,7 +215,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         n_cpus: usize,
     ) -> WireGuard<T, B> {
         // create router
-        let router: router::Device<B::Endpoint, PeerInner<T, B>, T::Writer, B::Writer> =
+        let router: router::Device<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer> =
             router::Device::new(n_cpus, writer);
 
         // create arc to state
