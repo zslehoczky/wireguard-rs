@@ -3,19 +3,19 @@ mod constants;
 mod crypto_state;
 mod device;
 mod ip;
-mod messages;
 mod parallel_queue;
 mod peer;
 mod receive;
 mod route;
 mod send;
 mod sequential_queue;
+mod transport;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
-use messages::TransportHeader;
+use transport::TransportHeader;
 
 use super::constants::REJECT_AFTER_MESSAGES;
 
@@ -30,6 +30,6 @@ pub const fn message_data_len(payload: usize) -> usize {
 }
 
 pub use device::Device;
-pub use messages::TYPE_TRANSPORT;
 pub use peer::PeerHandle;
+pub use transport::TYPE_TRANSPORT;
 pub use types::Callbacks;

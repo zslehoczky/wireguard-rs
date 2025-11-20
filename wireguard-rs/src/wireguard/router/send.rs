@@ -2,10 +2,10 @@ use wg_traits::{Endpoint, tun, udp};
 
 use crate::wireguard::peer::KeyPair;
 
-use super::messages::{TYPE_TRANSPORT, TransportHeader};
 use super::parallel_queue::ParallelJob;
 use super::peer::Peer;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
+use super::transport::{TYPE_TRANSPORT, TransportHeader};
 use super::types::Callbacks;
 use super::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 
