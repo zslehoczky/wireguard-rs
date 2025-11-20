@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -28,7 +29,7 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
 
     // routing
     recv: RwLock<ReceiverLookup<Peer<E, C, T, B>>>,
-    pub(super) table: RoutingTable<Peer<E, C, T, B>>,
+    table: RoutingTable<Peer<E, C, T, B>>,
 
     // work queue
     parallel_queue: ParallelQueue<E, C, T, B>,
@@ -228,6 +229,22 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         } else {
             Ok(())
         }
+    }
+
+    pub fn check_route(&self, peer: &Peer<E, C, T, B>, packet: &mut [u8]) -> bool {
+        self.table.check_route(peer, packet)
+    }
+
+    pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<E, C, T, B>) {
+        self.table.insert(ip, cidr, peer)
+    }
+
+    pub fn list_routes(&self, peer: &Peer<E, C, T, B>) -> Vec<(IpAddr, u32)> {
+        self.table.list(peer)
+    }
+
+    pub fn remove_route(&self, peer: &Peer<E, C, T, B>) {
+        self.table.remove(peer)
     }
 }
 

@@ -113,7 +113,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
         let peer = &self.peer;
 
         // remove from cryptkey router
-        self.peer.device.table.remove(peer);
+        self.peer.device.remove_route(peer);
 
         // release ids from the receiver map
         let released_ids = peer.keys.lock().reset();
@@ -410,8 +410,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     pub fn add_allowed_ip(&self, ip: IpAddr, masklen: u32) {
         self.peer
             .device
-            .table
-            .insert(ip, masklen, self.peer.clone())
+            .insert_route(ip, masklen, self.peer.clone())
     }
 
     /// List subnets mapped to the peer
@@ -420,7 +419,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     ///
     /// A vector of subnets, represented by as mask/size
     pub fn list_allowed_ips(&self) -> Vec<(IpAddr, u32)> {
-        self.peer.device.table.list(&self.peer)
+        self.peer.device.list_routes(&self.peer)
     }
 
     pub fn clear_src(&self) {
