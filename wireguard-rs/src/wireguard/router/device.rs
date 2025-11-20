@@ -13,8 +13,8 @@ use super::crypto_state::DecryptionState;
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{Peer, PeerHandle, new_peer};
 use super::receive::ReceiveJob;
-use super::route::RoutingTable;
 use super::router_error::RouterError;
+use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
