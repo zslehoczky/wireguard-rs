@@ -109,7 +109,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
                 }
 
                 // check crypto-key router
-                packet.len() == SIZE_TAG || peer.device.check_route(peer, packet)
+                packet.len() == SIZE_TAG || peer.check_route(peer, packet)
             })();
 
             // remove message in case of failure:
@@ -173,7 +173,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         if let Some(inner) = inner_length(packet)
             && inner + SIZE_TAG <= packet.len()
         {
-            peer.device.write_inbound(&packet[..inner]);
+            peer.write_inbound(&packet[..inner]);
         }
 
         // trigger callback

@@ -23,7 +23,7 @@ use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
-    pub(super) device: Device<E, C, T, B>,
+    device: Device<E, C, T, B>,
     pub(super) opaque: C::Opaque,
     pub(super) outbound: SequentialQueue<SendJob<E, C, T, B>>,
     pub(super) inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
@@ -272,6 +272,14 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 
         // start transmission of staged packets
         self.send_staged();
+    }
+
+    pub fn check_route(&self, peer: &Peer<E, C, T, B>, packet: &mut [u8]) -> bool {
+        self.device.check_route(peer, packet)
+    }
+
+    pub fn write_inbound(&self, data: &[u8]) {
+        self.device.write_inbound(data)
     }
 }
 
