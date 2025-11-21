@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::peer::DecryptionState;
 
 pub struct ReceiverLookup<P> {
-    lookup: HashMap<u32, Arc<DecryptionState<P>>>, /* receiver id -> decryption state */
+    lookup: HashMap<u32, Arc<DecryptionState<P>>>, // receiver id -> decryption state
 }
 
 impl<P> ReceiverLookup<P> {
