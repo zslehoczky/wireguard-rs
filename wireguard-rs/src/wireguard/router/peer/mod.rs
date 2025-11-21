@@ -1,3 +1,8 @@
+mod anti_replay;
+mod decryption_state;
+mod encryption_state;
+mod key_wheel;
+
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
@@ -13,14 +18,23 @@ use crate::wireguard::peer::KeyPair;
 
 use super::callbacks::Callbacks;
 use super::constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX};
-use super::crypto_state::{EncryptionState, crypto_state};
 use super::device::Device;
-use super::key_wheel::KeyWheel;
 use super::parallel_queue::ParallelJobUnion;
 use super::receive::ReceiveJob;
 use super::router_error::RouterError;
 use super::send::SendJob;
 use super::sequential_queue::SequentialQueue;
+
+pub use decryption_state::DecryptionState;
+use encryption_state::EncryptionState;
+use key_wheel::KeyWheel;
+
+pub fn crypto_state<P>(peer: P, keypair: Arc<KeyPair>) -> (EncryptionState, DecryptionState<P>) {
+    (
+        EncryptionState::new(keypair.clone()),
+        DecryptionState::new(peer, keypair),
+    )
+}
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     device: Device<E, C, T, B>,
