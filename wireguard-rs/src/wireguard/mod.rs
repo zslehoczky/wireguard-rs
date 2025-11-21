@@ -9,7 +9,7 @@
 mod constants;
 mod peer_callbacks;
 mod peer_state;
-mod router;
+pub mod router;
 mod timers;
 mod workers;
 

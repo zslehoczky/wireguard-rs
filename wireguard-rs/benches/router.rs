@@ -1,7 +1,6 @@
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use wg_platform::dummy;
-use wireguard_rs::wireguard::peer_state::KeyPair;
-use wireguard_rs::wireguard::router::{Callbacks, Device, SIZE_MESSAGE_PREFIX};
+use wireguard_rs::wireguard::router::{Callbacks, Device, KeyPair, SIZE_MESSAGE_PREFIX};
 
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
