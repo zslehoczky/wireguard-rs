@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Instant;
 
 use spin::Mutex;
@@ -22,10 +25,10 @@ pub struct EncryptionState {
 }
 
 pub struct DecryptionState<P> {
-    pub(super) keypair: Arc<KeyPair>,
-    pub(super) confirmed: AtomicBool,
-    pub(super) protector: Mutex<AntiReplay>,
-    pub(super) peer: P,
+    keypair: Arc<KeyPair>,
+    confirmed: AtomicBool,
+    protector: Mutex<AntiReplay>,
+    peer: P,
 }
 
 impl EncryptionState {
@@ -54,5 +57,21 @@ impl<P> DecryptionState<P> {
             protector: spin::Mutex::new(AntiReplay::new()),
             peer,
         }
+    }
+
+    pub fn get_keypair(&self) -> Arc<KeyPair> {
+        self.keypair.clone()
+    }
+
+    pub fn swap_confirmed(&self, other: bool, order: Ordering) -> bool {
+        self.confirmed.swap(other, order)
+    }
+
+    pub fn update_protector(&self, seq: u64) -> bool {
+        self.protector.lock().update(seq)
+    }
+
+    pub fn get_peer(&self) -> &P {
+        &self.peer
     }
 }

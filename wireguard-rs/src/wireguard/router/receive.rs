@@ -52,7 +52,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for ReceiveJob<E, C, T, B>
 {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
-        self.0.state.peer.get_inbound()
+        self.0.state.get_peer().get_inbound()
     }
 
     /* The parallel section of an incoming job:
@@ -74,7 +74,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
         {
             // closure for locking
             let job = &self.0;
-            let peer = &job.state.peer;
+            let peer = job.state.get_peer();
             let mut msg = job.buffer.lock();
 
             // process buffer
@@ -93,8 +93,11 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
                 let nonce = Nonce::assume_unique_for_key(nonce);
                 // do the weird ring AEAD dance
                 let key = LessSafeKey::new(
-                    UnboundKey::new(&CHACHA20_POLY1305, job.state.keypair.recv.key.as_ref())
-                        .unwrap(),
+                    UnboundKey::new(
+                        &CHACHA20_POLY1305,
+                        job.state.get_keypair().recv.key.as_ref(),
+                    )
+                    .unwrap(),
                 );
 
                 // attempt to open (and authenticate) the body
@@ -139,7 +142,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         log::trace!("processing sequential receive job");
 
         let job = &self.0;
-        let peer = &job.state.peer;
+        let peer = job.state.get_peer();
         let mut msg = job.buffer.lock();
         let endpoint = msg.0.take();
 
@@ -154,15 +157,15 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
             };
 
         // check for replay
-        if !job.state.protector.lock().update(header.f_counter.get()) {
+        if !job.state.update_protector(header.f_counter.get()) {
             log::debug!("inbound worker: replay detected");
             return;
         }
 
         // check for confirms key
-        if !job.state.confirmed.swap(true, Ordering::SeqCst) {
+        if !job.state.swap_confirmed(true, Ordering::SeqCst) {
             log::debug!("inbound worker: message confirms key");
-            peer.confirm_key(&job.state.keypair);
+            peer.confirm_key(&job.state.get_keypair());
         }
 
         // update endpoint
@@ -177,6 +180,11 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         }
 
         // trigger callback
-        C::recv(peer.get_opaque(), msg.1.len(), true, &job.state.keypair);
+        C::recv(
+            peer.get_opaque(),
+            msg.1.len(),
+            true,
+            &job.state.get_keypair(),
+        );
     }
 }
