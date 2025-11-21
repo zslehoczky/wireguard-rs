@@ -7,11 +7,8 @@ use wg_traits::{
     udp::UDP,
 };
 
-use crate::wireguard::{
-    WireGuard,
-    constants::MESSAGE_PADDING_MULTIPLE,
-    router::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX},
-};
+use crate::router::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX};
+use crate::wireguard::{WireGuard, constants::MESSAGE_PADDING_MULTIPLE};
 
 /// Returns the padded length of a message:
 ///

@@ -6,9 +6,8 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::wireguard::{
-    WireGuard, constants::*, peer_callbacks::PeerCallbacks, router::PeerHandle,
-};
+use crate::router::PeerHandle;
+use crate::wireguard::{WireGuard, constants::*, peer_callbacks::PeerCallbacks};
 
 use super::Timers;
 

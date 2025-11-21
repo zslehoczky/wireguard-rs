@@ -5,9 +5,10 @@ use std::time::Instant;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
+use crate::router::{Callbacks, KeyPair, message_data_len};
+
 use super::constants::*;
 use super::peer_state::PeerState;
-use super::router::{Callbacks, KeyPair, message_data_len};
 
 pub struct PeerCallbacks<T: Tun, B: UDP> {
     tun: PhantomData<T>,

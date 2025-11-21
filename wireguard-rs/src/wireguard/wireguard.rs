@@ -1,27 +1,27 @@
 use super::constants::*;
 use super::peer_callbacks::PeerCallbacks;
 use super::peer_state::PeerState;
-use super::router;
 use super::timers::Timers;
 use super::{HandshakeJob, udp_worker};
 
 use std::fmt;
-use std::thread;
-
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::thread;
 use std::time::Instant;
 
 use crossbeam_channel::Sender;
+use hjul::Runner;
 use rand::Rng;
 use rand::rngs::OsRng;
-
-use hjul::Runner;
 use spin::{Mutex, RwLock};
+use x25519_dalek::{PublicKey, StaticSecret};
+
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
-use x25519_dalek::{PublicKey, StaticSecret};
+
+use crate::router::{Device as RouterDevice, PeerHandle};
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     // identifier (for logging)
@@ -40,14 +40,14 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     #[allow(clippy::type_complexity)]
     pub peers: RwLock<
         crypto::Device<
-            router::PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
-            std::time::Instant,
+            PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+            Instant,
             StdTimestamp,
         >,
     >,
 
     // cryptokey router
-    pub router: router::Device<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+    pub router: RouterDevice<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
 
     // handshake related state
     pub last_under_load: Mutex<Instant>,
@@ -177,18 +177,17 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         let timers = Timers::new::<T, B>(self, &pk, *enabled);
 
         // create new router peer
-        let peer: router::PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer> =
-            self.router.new_peer(PeerState {
-                id: OsRng.r#gen(),
-                pk,
-                wg: self.clone(),
-                walltime_last_handshake: Mutex::new(None),
-                last_handshake_sent: Mutex::new(Instant::now() - TIME_HORIZON),
-                handshake_queued: AtomicBool::new(false),
-                rx_bytes: AtomicU64::new(0),
-                tx_bytes: AtomicU64::new(0),
-                timers: RwLock::new(timers),
-            });
+        let peer = self.router.new_peer(PeerState {
+            id: OsRng.r#gen(),
+            pk,
+            wg: self.clone(),
+            walltime_last_handshake: Mutex::new(None),
+            last_handshake_sent: Mutex::new(Instant::now() - TIME_HORIZON),
+            handshake_queued: AtomicBool::new(false),
+            rx_bytes: AtomicU64::new(0),
+            tx_bytes: AtomicU64::new(0),
+            timers: RwLock::new(timers),
+        });
 
         // finally, add the peer to the handshake device
         peers.add(pk, peer).is_ok()
@@ -216,8 +215,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         n_cpus: usize,
     ) -> WireGuard<T, B> {
         // create router
-        let router: router::Device<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer> =
-            router::Device::new(n_cpus, writer);
+        let router = RouterDevice::new(n_cpus, writer);
 
         // create arc to state
 

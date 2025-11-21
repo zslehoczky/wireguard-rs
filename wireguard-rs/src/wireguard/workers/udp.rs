@@ -9,7 +9,8 @@ use wg_traits::{
     udp::{Reader as UdpReader, UDP},
 };
 
-use crate::wireguard::{WireGuard, router::TYPE_TRANSPORT};
+use crate::router::TYPE_TRANSPORT;
+use crate::wireguard::WireGuard;
 
 use super::HandshakeJob;
 

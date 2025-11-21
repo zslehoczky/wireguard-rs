@@ -1,7 +1,7 @@
 use std::mem::swap;
 use std::sync::Arc;
 
-use crate::wireguard::router::KeyPair;
+use crate::router::KeyPair;
 
 pub struct KeyWheel {
     next: Option<Arc<KeyPair>>,     // next key state (unconfirmed)

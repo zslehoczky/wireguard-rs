@@ -8,11 +8,10 @@ use spin::Mutex;
 
 use wg_traits::{Endpoint, tun, udp};
 
-use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
-use crate::wireguard::router::{
+use crate::router::{
     KeyPair,
     callbacks::Callbacks,
-    constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX},
+    constants::{MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX},
     device::Device,
     parallel_queue::ParallelJobUnion,
     receive::ReceiveJob,

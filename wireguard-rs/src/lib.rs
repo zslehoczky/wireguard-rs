@@ -3,7 +3,7 @@ extern crate alloc;
 #[cfg(feature = "profiler")]
 extern crate cpuprofiler;
 
-pub mod run;
-
 mod configuration;
+pub mod router;
+pub mod run;
 pub mod wireguard;

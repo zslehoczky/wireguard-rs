@@ -6,15 +6,14 @@
 /// The code at this level serves to "glue" the handshake state-machine
 /// and the crypto-key router code together,
 /// e.g. every WireGuard peer consists of one handshake peer and one router peer.
-mod constants;
+pub mod constants;
 mod peer_callbacks;
 mod peer_state;
-pub mod router;
 mod timers;
 mod workers;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 #[allow(clippy::module_inception)]
 mod wireguard;
