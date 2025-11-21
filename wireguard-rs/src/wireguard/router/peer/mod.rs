@@ -6,7 +6,7 @@ mod peer_inner;
 
 use std::sync::Arc;
 
-use crate::wireguard::peer::KeyPair;
+use super::KeyPair;
 
 pub use decryption_state::DecryptionState;
 use encryption_state::EncryptionState;

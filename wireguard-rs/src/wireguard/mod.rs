@@ -7,8 +7,9 @@
 /// and the crypto-key router code together,
 /// e.g. every WireGuard peer consists of one handshake peer and one router peer.
 mod constants;
-pub mod peer;
-pub mod router;
+mod peer_callbacks;
+mod peer_state;
+mod router;
 mod timers;
 mod workers;
 

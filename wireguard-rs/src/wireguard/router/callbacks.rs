@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use crate::wireguard::peer::KeyPair;
+use super::KeyPair;
 
 pub trait Callbacks: Send + Sync + 'static {
     type Opaque: Send + Sync + 'static;

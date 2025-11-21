@@ -9,8 +9,8 @@ use spin::Mutex;
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
-use crate::wireguard::peer::KeyPair;
 use crate::wireguard::router::{
+    KeyPair,
     callbacks::Callbacks,
     constants::{MAX_QUEUED_PACKETS, SIZE_MESSAGE_PREFIX},
     device::Device,

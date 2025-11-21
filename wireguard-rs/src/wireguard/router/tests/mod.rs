@@ -3,11 +3,9 @@ mod router_tests;
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
 
-use crate::wireguard::peer::KeyPair;
-
 use super::super::tests::make_packet;
 use super::{
-    Callbacks, Device,
+    Callbacks, Device, KeyPair,
     constants::{SIZE_MESSAGE_PREFIX, message_data_len},
 };
 use wg_platform::dummy;

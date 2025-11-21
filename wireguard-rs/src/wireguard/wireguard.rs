@@ -1,5 +1,6 @@
 use super::constants::*;
-use super::peer::{PeerCallbacks, PeerState};
+use super::peer_callbacks::PeerCallbacks;
+use super::peer_state::PeerState;
 use super::router;
 use super::timers::Timers;
 use super::{HandshakeJob, udp_worker};
