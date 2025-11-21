@@ -2,7 +2,8 @@ pub mod error;
 
 mod config;
 pub mod profiler;
-mod runner;
+#[allow(clippy::module_inception)]
+mod run;
 mod util;
 
-pub use runner::create_config_and_run;
+pub use run::create_config_and_run;
