@@ -3,11 +3,11 @@ mod router_tests;
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
 
-use crate::wireguard::tests::make_packet;
 use super::{
     Callbacks, Device, KeyPair,
     constants::{SIZE_MESSAGE_PREFIX, message_data_len},
 };
+use crate::wireguard::tests::make_packet;
 use wg_platform::dummy;
 
 use std::time::Instant;
