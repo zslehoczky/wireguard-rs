@@ -191,7 +191,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
                 }
                 Some(state) => {
                     // avoid integer overflow in nonce
-                    if state.nonce >= REJECT_AFTER_MESSAGES - 1 {
+                    if state.get_nonce() >= REJECT_AFTER_MESSAGES - 1 {
                         log::debug!("encryption key expired");
                         *enc_key = None;
                         if stage {
@@ -199,11 +199,11 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
                         }
                         (None, true)
                     } else {
-                        log::debug!("encryption state available, nonce = {}", state.nonce);
+                        log::debug!("encryption state available, nonce = {}", state.get_nonce());
                         let job =
-                            SendJob::new(msg, state.nonce, state.keypair.clone(), self.clone());
+                            SendJob::new(msg, state.get_nonce(), state.get_keypair(), self.clone());
                         if self.outbound.push(job.clone()) {
-                            state.nonce += 1;
+                            state.increment_nonce();
                             (Some(job), false)
                         } else {
                             (None, false)
