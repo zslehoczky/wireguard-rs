@@ -10,12 +10,10 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{Endpoint, tun::Tun, udp::PlatformUDP, udp::UDP};
 
-use crate::wireguard::{
-    WireGuard,
-    constants::{DURATION_UNDER_LOAD, MAX_QUEUED_INCOMING_HANDSHAKES, THRESHOLD_UNDER_LOAD},
-};
+use crate::wireguard::WireGuard;
 
 use super::HandshakeJob;
+use super::constants::{DURATION_UNDER_LOAD, MAX_QUEUED_INCOMING_HANDSHAKES, THRESHOLD_UNDER_LOAD};
 
 pub fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,

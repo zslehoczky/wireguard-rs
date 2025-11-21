@@ -1,4 +1,7 @@
 mod callbacks;
+mod constants;
+pub mod peer_callbacks;
+pub mod peer_state;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -9,7 +12,8 @@ use x25519_dalek::PublicKey;
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::wireguard::WireGuard;
-use crate::wireguard::constants::*;
+
+use constants::{KEEPALIVE_TIMEOUT, REJECT_AFTER_TIME, REKEY_TIMEOUT};
 
 pub struct Timers {
     // only updated during configuration

@@ -1,12 +1,11 @@
 use std::mem::size_of;
 
-pub use crate::wireguard::constants::REJECT_AFTER_MESSAGES;
-
 use super::transport::TransportHeader;
 
 // WireGuard semantics
 
 pub const MAX_QUEUED_PACKETS: usize = 1024;
+pub const REJECT_AFTER_MESSAGES: u64 = u64::MAX - (1 << 4);
 
 // performance
 

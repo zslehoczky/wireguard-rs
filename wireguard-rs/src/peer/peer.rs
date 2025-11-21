@@ -9,15 +9,9 @@ use spin::Mutex;
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::router::{
-    KeyPair,
-    callbacks::Callbacks,
-    constants::{MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX},
-    device::Device,
-    parallel_queue::ParallelJobUnion,
-    receive::ReceiveJob,
-    router_error::RouterError,
-    send::SendJob,
-    sequential_queue::SequentialQueue,
+    KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, callbacks::Callbacks,
+    device::Device, parallel_queue::ParallelJobUnion, receive::ReceiveJob,
+    router_error::RouterError, send::SendJob, sequential_queue::SequentialQueue,
 };
 
 use super::crypto_state;

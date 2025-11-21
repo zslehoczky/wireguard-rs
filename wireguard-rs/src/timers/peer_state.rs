@@ -6,11 +6,11 @@ use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
+use crate::timers::Timers;
+use crate::wireguard::WireGuard;
 use crate::workers::HandshakeJob;
 
-use super::constants::*;
-use super::timers::Timers;
-use super::wireguard::WireGuard;
+use super::constants::REKEY_TIMEOUT;
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)

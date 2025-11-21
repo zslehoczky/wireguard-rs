@@ -7,9 +7,11 @@ use x25519_dalek::PublicKey;
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::peer::PeerHandle;
-use crate::wireguard::{WireGuard, constants::*, peer_callbacks::PeerCallbacks};
+use crate::wireguard::WireGuard;
 
 use super::Timers;
+use super::constants::{KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_TIMEOUT};
+use super::peer_callbacks::PeerCallbacks;
 
 type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerCallbacks<T, B>, Tw, Bw>;
 

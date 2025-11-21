@@ -11,8 +11,9 @@ use wg_traits::{
 
 use crate::router::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX};
 use crate::run::{error::ExitCode, profiler::profiler_stop};
-use crate::wireguard::{WireGuard, constants::MESSAGE_PADDING_MULTIPLE};
+use crate::wireguard::WireGuard;
 
+use super::constants::MESSAGE_PADDING_MULTIPLE;
 use super::uapi::ConfigMessage;
 
 pub fn spawn_tun_workers<'scope, 'env, T: Tun, B: PlatformUDP>(

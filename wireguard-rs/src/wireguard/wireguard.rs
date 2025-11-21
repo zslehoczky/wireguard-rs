@@ -1,8 +1,3 @@
-use super::constants::*;
-use super::peer_callbacks::PeerCallbacks;
-use super::peer_state::PeerState;
-use super::timers::Timers;
-
 use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -22,7 +17,10 @@ use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::peer::PeerHandle;
 use crate::router::Device as RouterDevice;
+use crate::timers::{Timers, peer_callbacks::PeerCallbacks, peer_state::PeerState};
 use crate::workers::{HandshakeJob, udp_worker};
+
+use super::constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK};
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     // identifier (for logging)

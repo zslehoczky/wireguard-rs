@@ -1,5 +1,5 @@
 pub mod callbacks;
-pub mod constants;
+mod constants;
 pub mod device;
 mod ip;
 pub mod parallel_queue;
@@ -15,7 +15,10 @@ mod transport;
 mod tests;
 
 pub use callbacks::Callbacks;
-pub use constants::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX, message_data_len};
+pub use constants::{
+    CAPACITY_MESSAGE_POSTFIX, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX,
+    message_data_len,
+};
 pub use device::Device;
 pub use transport::TYPE_TRANSPORT;
 

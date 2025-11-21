@@ -6,10 +6,7 @@
 /// The code at this level serves to "glue" the handshake state-machine
 /// and the crypto-key router code together,
 /// e.g. every WireGuard peer consists of one handshake peer and one router peer.
-pub mod constants;
-mod peer_callbacks;
-mod peer_state;
-mod timers;
+mod constants;
 
 #[cfg(test)]
 pub mod tests;
