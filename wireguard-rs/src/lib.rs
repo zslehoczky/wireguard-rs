@@ -8,3 +8,4 @@ pub mod peer;
 pub mod router;
 pub mod run;
 pub mod wireguard;
+pub mod workers;

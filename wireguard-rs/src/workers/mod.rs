@@ -2,9 +2,12 @@ pub mod handshake;
 mod line_reader;
 pub mod tun;
 pub mod uapi;
+pub mod udp;
 
 use std::num::NonZeroUsize;
 use std::thread;
+
+use x25519_dalek::PublicKey;
 
 use wg_platform as plt;
 use wg_traits::{
@@ -13,11 +16,20 @@ use wg_traits::{
     udp::PlatformUDP,
 };
 
-use crate::wireguard::{HandshakeJob, WireGuard};
+use crate::wireguard::WireGuard;
 
 use handshake::spawn_handshake_workers;
 use tun::{spawn_tun_workers, tun_event_loop_worker};
 use uapi::{config_worker, uapi_server_worker};
+
+pub use handshake::handshake_worker;
+pub use tun::tun_worker;
+pub use udp::udp_worker;
+
+pub enum HandshakeJob<E> {
+    Message(Vec<u8>, E),
+    New(PublicKey),
+}
 
 pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
     uapi_socket: <plt::UAPI as PlatformUAPI>::Bind,

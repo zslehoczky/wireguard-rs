@@ -14,7 +14,10 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 
 #[cfg(test)]
-use super::{WireGuard, handshake_worker, tun_worker};
+use super::WireGuard;
+
+#[cfg(test)]
+use crate::workers::{handshake_worker, tun_worker};
 
 #[cfg(test)]
 use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};

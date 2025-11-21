@@ -6,12 +6,12 @@ use wg_platform as plt;
 use wg_traits::uapi::PlatformUAPI;
 
 use crate::wireguard::WireGuard;
+use crate::workers::run_workers;
 
 use super::config::Config;
 use super::error::ErrorReason;
 use super::profiler::{profiler_start, profiler_stop};
 use super::util;
-use super::workers::run_workers;
 
 pub fn create_config_and_run() -> Result<(), ErrorReason> {
     // parse command line arguments

@@ -10,7 +10,6 @@ pub mod constants;
 mod peer_callbacks;
 mod peer_state;
 mod timers;
-mod workers;
 
 #[cfg(test)]
 pub mod tests;
@@ -20,4 +19,3 @@ mod wireguard;
 
 // represents a WireGuard interface
 pub use wireguard::WireGuard;
-pub use workers::{HandshakeJob, handshake_worker, tun_worker, udp_worker};

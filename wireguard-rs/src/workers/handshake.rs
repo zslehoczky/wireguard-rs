@@ -1,4 +1,6 @@
+use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
+use std::thread::{self, ScopedJoinHandle};
 use std::time::Instant;
 
 use crossbeam_channel::Receiver;
@@ -6,7 +8,7 @@ use log::debug;
 use rand::rngs::OsRng;
 use x25519_dalek::PublicKey;
 
-use wg_traits::{Endpoint, tun::Tun, udp::UDP};
+use wg_traits::{Endpoint, tun::Tun, udp::PlatformUDP, udp::UDP};
 
 use crate::wireguard::{
     WireGuard,
@@ -14,6 +16,20 @@ use crate::wireguard::{
 };
 
 use super::HandshakeJob;
+
+pub fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
+    thread_scope: &'scope thread::Scope<'scope, 'env>,
+    wireguard_device: &'env WireGuard<T, B>,
+    handshake_receiver: crossbeam_channel::Receiver<HandshakeJob<B::Endpoint>>,
+    n_workers: NonZeroUsize,
+) -> Vec<ScopedJoinHandle<'scope, ()>> {
+    (0..n_workers.get())
+        .map(|_| {
+            let handshake_receiver = handshake_receiver.clone();
+            thread_scope.spawn(|| handshake_worker(wireguard_device, handshake_receiver))
+        })
+        .collect()
+}
 
 pub fn handshake_worker<T: Tun, B: UDP>(
     wireguard_device: &WireGuard<T, B>,
