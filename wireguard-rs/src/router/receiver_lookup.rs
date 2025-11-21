@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::peer::DecryptionState;
+use super::peer::DecryptionState;
 
 pub struct ReceiverLookup<P> {
     lookup: HashMap<u32, Arc<DecryptionState<P>>>, // receiver id -> decryption state

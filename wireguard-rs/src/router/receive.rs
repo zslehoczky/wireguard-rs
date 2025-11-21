@@ -6,12 +6,11 @@ use zerocopy::{AsBytes, LayoutVerified};
 
 use wg_traits::{Endpoint, tun, udp};
 
-use crate::peer::{DecryptionState, Peer};
-
 use super::callbacks::Callbacks;
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::ip::inner_length;
 use super::parallel_queue::ParallelJob;
+use super::peer::{DecryptionState, Peer};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::TransportHeader;
 

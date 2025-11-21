@@ -15,8 +15,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::peer::PeerHandle;
-use crate::router::Device as RouterDevice;
+use crate::router::{Device as RouterDevice, PeerHandle};
 use crate::timers::{Timers, peer_callbacks::PeerCallbacks, peer_state::PeerState};
 use crate::workers::{HandshakeJob, udp_worker};
 

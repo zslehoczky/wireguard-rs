@@ -1,14 +1,15 @@
-pub mod callbacks;
+mod callbacks;
 mod constants;
-pub mod device;
+mod device;
 mod ip;
-pub mod parallel_queue;
-pub mod receive;
+mod parallel_queue;
+mod peer;
+mod receive;
 mod receiver_lookup;
-pub mod router_error;
+mod router_error;
 mod routing_table;
-pub mod send;
-pub mod sequential_queue;
+mod send;
+mod sequential_queue;
 mod transport;
 
 #[cfg(test)]
@@ -20,6 +21,7 @@ pub use constants::{
     message_data_len,
 };
 pub use device::Device;
+pub use peer::PeerHandle;
 pub use transport::TYPE_TRANSPORT;
 
 pub type KeyPair = wg_crypto::KeyPair<std::time::Instant>;

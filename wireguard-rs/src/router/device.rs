@@ -7,11 +7,10 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint, tun, udp};
 
-use crate::peer::{DecryptionState, Peer, PeerHandle, new_peer};
-
 use super::callbacks::Callbacks;
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
+use super::peer::{DecryptionState, Peer, PeerHandle, new_peer};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
