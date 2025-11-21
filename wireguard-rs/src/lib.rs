@@ -4,6 +4,7 @@ extern crate alloc;
 extern crate cpuprofiler;
 
 mod configuration;
+pub mod peer;
 pub mod router;
 pub mod run;
 pub mod wireguard;

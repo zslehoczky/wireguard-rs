@@ -7,7 +7,7 @@ mod peer;
 
 use std::sync::Arc;
 
-use super::KeyPair;
+use crate::router::KeyPair;
 
 pub use decryption_state::DecryptionState;
 use encryption_state::EncryptionState;

@@ -21,7 +21,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::router::{Device as RouterDevice, PeerHandle};
+use crate::peer::PeerHandle;
+use crate::router::Device as RouterDevice;
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     // identifier (for logging)

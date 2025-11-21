@@ -1,19 +1,22 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
+use spin::Mutex;
+use zerocopy::{AsBytes, LayoutVerified};
+
 use wg_traits::{Endpoint, tun, udp};
+
+use crate::peer::Peer;
 
 use super::KeyPair;
 use super::callbacks::Callbacks;
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::parallel_queue::ParallelJob;
-use super::peer::Peer;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
-
-use alloc::sync::Arc;
-use core::sync::atomic::{AtomicBool, Ordering};
-
-use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
-use spin::Mutex;
-use zerocopy::{AsBytes, LayoutVerified};
 
 struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     ready: AtomicBool,

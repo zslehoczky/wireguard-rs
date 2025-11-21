@@ -1,11 +1,3 @@
-use super::callbacks::Callbacks;
-use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
-use super::ip::inner_length;
-use super::parallel_queue::ParallelJob;
-use super::peer::DecryptionState;
-use super::sequential_queue::{SequentialJob, SequentialQueue};
-use super::transport::TransportHeader;
-
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
@@ -14,7 +6,14 @@ use zerocopy::{AsBytes, LayoutVerified};
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::peer::Peer;
+use crate::peer::{DecryptionState, Peer};
+
+use super::callbacks::Callbacks;
+use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
+use super::ip::inner_length;
+use super::parallel_queue::ParallelJob;
+use super::sequential_queue::{SequentialJob, SequentialQueue};
+use super::transport::TransportHeader;
 
 struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     ready: AtomicBool,                             // job status

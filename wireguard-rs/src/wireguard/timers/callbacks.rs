@@ -6,7 +6,7 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::router::PeerHandle;
+use crate::peer::PeerHandle;
 use crate::wireguard::{WireGuard, constants::*, peer_callbacks::PeerCallbacks};
 
 use super::Timers;
