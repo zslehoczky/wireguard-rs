@@ -5,6 +5,7 @@ mod ip;
 mod parallel_queue;
 mod peer;
 mod receive;
+mod receiver_lookup;
 mod router_error;
 mod routing_table;
 mod send;

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -13,11 +12,10 @@ use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{DecryptionState, Peer, PeerHandle, new_peer};
 use super::receive::ReceiveJob;
+use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
-
-type ReceiverLookup<P> = HashMap<u32, Arc<DecryptionState<P>>>; /* receiver id -> decryption state */
 
 pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
@@ -50,7 +48,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
                 parallel_queue,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
-                recv: RwLock::new(HashMap::new()),
+                recv: RwLock::new(ReceiverLookup::new()),
                 table: RoutingTable::new(),
             }),
         }
@@ -154,10 +152,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         );
 
         // lookup peer based on receiver id
-        let dec = self.recv.read();
-        let dec = dec
+        let dec = self
+            .recv
+            .read()
             .get(&header.f_receiver.get())
-            .ok_or(RouterError::UnknownReceiverId)?;
+            .ok_or(RouterError::UnknownReceiverId)?
+            .clone();
 
         // create inbound job
         let job = ReceiveJob::new(msg, dec.clone(), src);
@@ -186,29 +186,14 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
         new_id: u32,
         decryption_state: DecryptionState<Peer<E, C, T, B>>,
     ) -> Option<u32> {
-        let mut release = None;
-
-        log::trace!("peer.add_keypair: updating inbound id map");
-        let mut recv = self.inner.recv.write();
-
-        // purge recv map of previous id
-        if let Some(prev_id) = prev_id {
-            recv.remove(&prev_id);
-            release = Some(prev_id);
-        }
-
-        // map new id to decryption state
-        debug_assert!(!recv.contains_key(&new_id));
-        recv.insert(new_id, Arc::new(decryption_state));
-
-        release
+        self.inner
+            .recv
+            .write()
+            .add_receiver(prev_id, new_id, decryption_state)
     }
 
     pub fn remove_receivers(&self, release: &[u32]) {
-        let mut recv = self.inner.recv.write();
-        for id in release {
-            recv.remove(id);
-        }
+        self.inner.recv.write().remove_receivers(release)
     }
 
     pub fn write_inbound(&self, data: &[u8]) {

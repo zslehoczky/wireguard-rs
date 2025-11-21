@@ -390,6 +390,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
                 *self.peer.enc_key.lock() = Some(encryption_state);
             }
 
+            log::trace!("peer.add_keypair: updating inbound id map");
+
             // update incoming packet id map
             self.peer
                 .device
