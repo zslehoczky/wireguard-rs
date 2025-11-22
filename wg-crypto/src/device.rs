@@ -1,21 +1,18 @@
 use core::marker::PhantomData;
-use std::collections::HashMap;
 
 use core::net::SocketAddr;
 
 use byteorder::{ByteOrder, LittleEndian};
-use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use zerocopy::AsBytes;
 
 use rand::Rng;
 use rand_core::{CryptoRng, RngCore};
 
-use zeroize::Zeroize;
-
-use x25519_dalek::PublicKey;
-use x25519_dalek::StaticSecret;
-
+use crate::Instance;
+use crate::PublicKey;
+use crate::SecretKey;
+use crate::peer::State;
 use crate::time::Instant;
 use crate::timestamp::Timestamp;
 
@@ -27,74 +24,55 @@ use super::peer::Peer;
 use super::ratelimiter::RateLimiter;
 use super::types::*;
 
+// TODO: instance specific
 const MAX_PEER_PER_DEVICE: usize = 1 << 20;
 
 pub struct KeyState<I: Instant> {
-    pub(super) sk: StaticSecret, // static secret key
-    pub(super) pk: PublicKey,    // static public key
-    macs: macs::Validator<I>,    // validator for the mac fields
+    pub(super) sk: SecretKey, // static secret key
+    pub(super) pk: PublicKey, // static public key
+    macs: macs::Validator<I>, // validator for the mac fields
+}
+
+impl<I: Instant> KeyState<I> {
+    pub fn new<R: RngCore>(sk: SecretKey) -> Self {
+        let pk = sk.pk();
+        let macs = macs::Validator::new(pk);
+        Self { sk, pk, macs }
+    }
 }
 
 /// The device is generic over an "opaque" type
 /// which can be used to associate the public key with this value.
 /// (the instance is a Peer object in the parent module)
-pub struct Device<O, I: Instant, T: Timestamp> {
-    key_st: Option<KeyState<I>>,
-    id_map: DashMap<u32, [u8; 32]>, // concurrent map
-    pk_map: HashMap<[u8; 32], Peer<O, I, T>>,
+pub struct Device<I: Instance> {
+    key_st: Option<KeyState<I::Instant>>,
     limiter: RateLimiter,
-    _ph: PhantomData<(I, T)>,
+    _ph: PhantomData<I>,
 }
 
-/* These methods enable the Device to act as a map
- * from public keys to the set of contained opaque values.
- *
- * It also abstracts away the problem of PublicKey not being hashable.
- */
-impl<O, I: Instant, T: Timestamp> Device<O, I, T> {
-    pub fn _clear(&mut self) {
-        self.id_map.clear();
-        self.pk_map.clear();
-    }
-
-    /// Enables enumeration of (public key, opaque) pairs
-    /// without exposing internal peer type.
-    pub fn iter(&'_ self) -> impl Iterator<Item = (PublicKey, &O)> {
-        self.pk_map
-            .iter()
-            .map(|(pk, peer)| (PublicKey::from(*pk), &peer.opaque))
-    }
-
-    /// Enables lookup by public key without exposing internal peer type.
-    pub fn get(&self, pk: &PublicKey) -> Option<&O> {
-        self.pk_map.get(pk.as_bytes()).map(|peer| &peer.opaque)
-    }
-
-    pub fn contains_key(&self, pk: &PublicKey) -> bool {
-        self.pk_map.contains_key(pk.as_bytes())
-    }
-}
-
-/* A mutable reference to the device needs to be held during configuration.
- * Wrapping the device in a RwLock enables peer config after "configuration time"
- */
-impl<O, I: Instant, T: Timestamp> Default for Device<O, I, T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<O, I: Instant, T: Timestamp> Device<O, I, T> {
+impl<I: Instance> Device<I> {
     pub fn new() -> Self {
         Self {
             key_st: None,
-            id_map: DashMap::new(),
-            pk_map: HashMap::new(),
             limiter: RateLimiter::new(),
             _ph: PhantomData,
         }
     }
 
+    pub fn peer(&self, pk: PublicKey, psk: Option<PSK>) -> Peer<I> {
+        let ss = self.key_st.as_ref().and_then(|key| key.sk.dh(&pk).ok());
+        Peer {
+            macs: macs::Generator::new(pk),
+            state: State::Reset,
+            timestamp: None,
+            last_initiation_consumption: None,
+            ss,
+            psk,
+            _ph: PhantomData,
+        }
+    }
+
+    /*
     fn update_ss(&mut self) -> Option<PublicKey> {
         let mut same = None;
         for (pk, peer) in self.pk_map.iter_mut() {
@@ -116,114 +94,15 @@ impl<O, I: Instant, T: Timestamp> Device<O, I, T> {
         }
         same
     }
-
-    /// Update the secret key of the device
-    ///
-    /// # Arguments
-    ///
-    /// * `sk` - x25519 scalar representing the local private key
-    ///
-    /// TODO: Get rid of this method
-    pub fn set_sk(&mut self, sk: Option<StaticSecret>) -> Option<PublicKey> {
-        // update secret and public key
-        self.key_st = sk.map(|sk| {
-            let pk = PublicKey::from(&sk);
-            let macs = macs::Validator::new(pk);
-            KeyState { pk, sk, macs }
-        });
-
-        // recalculate / erase the shared secrets for every peer
-        let same = self.update_ss();
-
-        // if we found a peer matching the device public key
-        // remove it and return its value to the caller
-        same.inspect(|pk| {
-            self.pk_map.remove(pk.as_bytes());
-        })
-    }
+    */
 
     /// Return the secret key of the device
     ///
     /// # Returns
     ///
     /// A secret key (x25519 scalar)
-    pub fn get_sk(&self) -> Option<&StaticSecret> {
+    pub fn get_sk(&self) -> Option<&SecretKey> {
         self.key_st.as_ref().map(|key| &key.sk)
-    }
-
-    /// Add a new public key to the state machine
-    /// To remove public keys, you must create a new machine instance
-    ///
-    /// # Arguments
-    ///
-    /// * `pk` - The public key to add
-    /// * `identifier` - Associated identifier which can be used to distinguish the peers
-    pub fn add(&mut self, pk: PublicKey, opaque: O) -> Result<(), ConfigError> {
-        // ensure less than 2^20 peers
-        if self.pk_map.len() > MAX_PEER_PER_DEVICE {
-            return Err(ConfigError::TooManyPeers);
-        }
-
-        // error if public key matches device
-        if let Some(key) = self.key_st.as_ref()
-            && pk == key.pk
-        {
-            return Err(ConfigError::PeerMatchesDevice);
-        }
-
-        // pre-compute shared secret and add to pk_map
-        self.pk_map.insert(
-            *pk.as_bytes(),
-            Peer::new(
-                pk,
-                self.key_st.as_ref().map(|key| key.sk.diffie_hellman(&pk)),
-                opaque,
-            ),
-        );
-
-        Ok(())
-    }
-
-    /// Remove a peer by public key
-    /// To remove public keys, you must create a new machine instance
-    ///
-    /// # Arguments
-    ///
-    /// * `pk` - The public key of the peer to remove
-    ///
-    /// # Returns
-    ///
-    /// The call might fail if the public key is not found
-    pub fn remove(&mut self, pk: &PublicKey) -> Result<(), ConfigError> {
-        // remove the peer
-        self.pk_map
-            .remove(pk.as_bytes())
-            .ok_or(ConfigError::NoSuchPublicKey)?;
-
-        // remove every id entry for the peer in the public key map
-        // O(n) operations, however it is rare: only when removing peers.
-        self.id_map.retain(|_, v| v != pk.as_bytes());
-        Ok(())
-    }
-
-    /// Add a psk to the peer
-    ///
-    /// # Arguments
-    ///
-    /// * `pk` - The public key of the peer
-    /// * `psk` - The psk to set / unset
-    ///
-    /// # Returns
-    ///
-    /// The call might fail if the public key is not found
-    pub fn set_psk(&mut self, pk: PublicKey, psk: PSK) -> Result<(), ConfigError> {
-        match self.pk_map.get_mut(pk.as_bytes()) {
-            Some(peer) => {
-                peer.psk = psk;
-                Ok(())
-            }
-            _ => Err(ConfigError::NoSuchPublicKey),
-        }
     }
 
     /// Return the psk for the peer
@@ -437,30 +316,6 @@ impl<O, I: Instant, T: Timestamp> Device<O, I, T> {
 
     // Internal function
     //
-    // Return the peer associated with the public key
-    pub(super) fn lookup_pk(&self, pk: &[u8; 32]) -> Result<&Peer<O, I, T>, HandshakeError> {
-        self.pk_map.get(pk).ok_or(HandshakeError::UnknownPublicKey)
-    }
-
-    // Internal function
-    //
-    // Return the peer currently associated with the receiver identifier
-    pub(super) fn lookup_id(&self, id: u32) -> Result<(&Peer<O, I, T>, PublicKey), HandshakeError> {
-        // obtain a read reference to entry in the id_map
-        let pk = self
-            .id_map
-            .get(&id)
-            .ok_or(HandshakeError::UnknownReceiverId)?;
-
-        // lookup the public key from the pk map
-        match self.pk_map.get(&*pk) {
-            Some(peer) => Ok((peer, PublicKey::from(*pk))),
-            _ => unreachable!(),
-        }
-    }
-
-    // Internal function
-    //
     // Allocated a new receiver identifier for the peer.
     // Implemented via rejection sampling.
     fn allocate<R: RngCore + CryptoRng>(&self, rng: &mut R, pk: &PublicKey) -> u32 {
@@ -499,7 +354,7 @@ mod tests {
             assert_eq!(pk1.as_bytes(), &pk1_bs);
             assert_eq!(pk2.as_bytes(), &pk2_bs);
 
-            let mut dev : Device<u32, std::time::Instant, StdTimestamp> = Device::new();
+            let mut dev : Device<std::time::Instant, StdTimestamp> = Device::new();
             dev.set_sk(Some(sk));
 
             dev.add(pk1, 1).unwrap();

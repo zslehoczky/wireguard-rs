@@ -1,12 +1,12 @@
 use core::fmt;
 use zeroize::Zeroize;
 
-use crate::{aead::SymKey, time::Instant};
+use crate::{aead::SymKey, time::Instant, types::Identifier};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Key {
     pub key: SymKey,
-    pub id: u32,
+    pub id: Identifier,
 }
 
 // zero key on drop
@@ -45,7 +45,7 @@ impl<I: Instant> fmt::Debug for KeyPair<I> {
 }
 
 impl<I: Instant> KeyPair<I> {
-    pub fn local_id(&self) -> u32 {
+    pub fn local_id(&self) -> Identifier {
         self.recv.id
     }
 }

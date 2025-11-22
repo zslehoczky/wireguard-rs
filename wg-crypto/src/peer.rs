@@ -1,18 +1,14 @@
-use spin::Mutex;
-use subtle::ConstantTimeEq;
-
 use core::marker::PhantomData;
 use std::mem;
 use std::time::Duration;
 
-use x25519_dalek::StaticSecret;
-use x25519_dalek::{PublicKey, SharedSecret};
-
+use crate::Instance;
+use crate::SecretKey;
+use crate::SharedSecret;
 use crate::noise::{ChainKey, Hash};
 use crate::time::Instant;
-use crate::timestamp::{TAI64N, Timestamp};
+use crate::timestamp::TAI64N;
 
-use super::device::Device;
 use super::macs;
 use super::timestamp;
 use super::types::*;
@@ -22,36 +18,27 @@ const TIME_BETWEEN_INITIATIONS: Duration = Duration::from_millis(20);
 // Represents the state of a peer.
 //
 // This type is only for internal use and not exposed.
-pub(crate) struct Peer<O, I: Instant, T: Timestamp> {
-    // opaque type which identifies a peer
-    pub opaque: O,
-
+pub(crate) struct Peer<I: Instance> {
     // mutable state
-    pub state: Mutex<State>,
-    pub timestamp: Mutex<Option<TAI64N>>,
-    pub last_initiation_consumption: Mutex<Option<I>>,
+    pub state: State,
+    pub timestamp: Option<TAI64N>,
+    pub last_initiation_consumption: Option<I::Instant>,
 
     // state related to DoS mitigation fields
-    pub macs: Mutex<macs::Generator<I>>,
+    pub macs: macs::Generator<I::Instant>,
 
     // constant state
     pub ss: Option<SharedSecret>, // precomputed DH(static, static)
-    pub psk: PSK,                 // psk of peer
-    _ph: PhantomData<T>,
+    pub psk: Option<PSK>,         // psk of peer
+    pub _ph: PhantomData<I>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct StInit {
-    pub(crate) local: u32, // local id assigned
-    pub(crate) eph_sk: StaticSecret,
+    pub(crate) local: Identifier,
+    pub(crate) ep: SecretKey,
     pub(crate) hs: Hash,
     pub(crate) ck: ChainKey,
-}
-
-impl PartialEq for StInit {
-    fn eq(&self, other: &Self) -> bool {
-        self.eph_sk.as_bytes().ct_eq(other.eph_sk.as_bytes()).into()
-    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -60,22 +47,10 @@ pub enum State {
     InitiationSent(StInit),
 }
 
-impl<O, I: Instant, T: Timestamp> Peer<O, I, T> {
-    pub fn new(pk: PublicKey, ss: Option<SharedSecret>, opaque: O) -> Self {
-        Self {
-            opaque,
-            macs: Mutex::new(macs::Generator::new(pk)),
-            state: Mutex::new(State::Reset),
-            timestamp: Mutex::new(None),
-            last_initiation_consumption: Mutex::new(None),
-            ss,
-            psk: Default::default(),
-            _ph: PhantomData,
-        }
-    }
-
-    pub fn reset_state(&self) -> Option<u32> {
-        match mem::replace(&mut *self.state.lock(), State::Reset) {
+impl<I: Instance> Peer<I> {
+    #[must_use]
+    pub fn reset_state(&mut self) -> Option<Identifier> {
+        match mem::replace(&mut self.state, State::Reset) {
             State::InitiationSent(StInit { local, .. }) => Some(local),
             _ => None,
         }
@@ -88,17 +63,12 @@ impl<O, I: Instant, T: Timestamp> Peer<O, I, T> {
     /// * st_new - The updated state of the peer
     /// * ts_new - The associated timestamp
     pub fn check_replay_flood(
-        &self,
-        now: I,
-        device: &Device<O, I, T>,
+        &mut self,
+        now: I::Instant,
         ts_new: timestamp::TAI64N,
-    ) -> Result<(), HandshakeError> {
-        let mut state = self.state.lock();
-        let mut timestamp = self.timestamp.lock();
-        let mut last_initiation_consumption = self.last_initiation_consumption.lock();
-
+    ) -> Result<Option<Identifier>, HandshakeError> {
         // check replay attack
-        match *timestamp {
+        match self.timestamp {
             Some(ts_old) if ts_old >= ts_new => {
                 return Err(HandshakeError::OldTimestamp);
             }
@@ -106,21 +76,23 @@ impl<O, I: Instant, T: Timestamp> Peer<O, I, T> {
         }
 
         // check flood attack
-        if let Some(last) = *last_initiation_consumption
+        if let Some(last) = self.last_initiation_consumption
             && now.since(&last) < TIME_BETWEEN_INITIATIONS
         {
             return Err(HandshakeError::InitiationFlood);
         }
 
         // reset state
-        if let State::InitiationSent(StInit { local, .. }) = *state {
-            device.release(local)
-        }
+        let local = if let State::InitiationSent(StInit { local, .. }) = self.state {
+            Some(local)
+        } else {
+            None
+        };
 
         // update replay & flood protection
-        *state = State::Reset;
-        *timestamp = Some(ts_new);
-        *last_initiation_consumption = Some(now);
-        Ok(())
+        self.state = State::Reset;
+        self.timestamp = Some(ts_new);
+        self.last_initiation_consumption = Some(now);
+        Ok(local)
     }
 }

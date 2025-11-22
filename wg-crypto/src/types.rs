@@ -1,4 +1,5 @@
-use zerocopy::AsBytes;
+use byteorder::LittleEndian;
+use zerocopy::{AsBytes, FromBytes, U32};
 
 use crate::messages::{self};
 use crate::noise::SecretBytes;
@@ -8,6 +9,22 @@ use super::keypair::KeyPair;
 
 use core::error::Error;
 use core::fmt;
+
+#[derive(Clone, Copy, AsBytes, FromBytes, PartialEq, Eq, Hash)]
+#[repr(C, packed)]
+pub struct Identifier(U32<LittleEndian>);
+
+impl core::fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id(0x{:08x})", self.0.get())
+    }
+}
+
+impl From<u32> for Identifier {
+    fn from(id: u32) -> Self {
+        Identifier(U32::new(id))
+    }
+}
 
 #[derive(Debug)]
 pub enum Message {
@@ -46,8 +63,6 @@ impl AsRef<[u8]> for Message {
 
 /* Internal types for the noise IKpsk2 implementation */
 
-// config error
-
 #[derive(Debug)]
 pub enum ConfigError {
     TooManyPeers,
@@ -75,10 +90,9 @@ impl Error for ConfigError {
     }
 }
 
-// handshake error
-
 #[derive(Debug)]
 pub enum HandshakeError {
+    EncryptionFailure,
     DecryptionFailure,
     UnknownPublicKey,
     UnknownReceiverId,
@@ -94,8 +108,9 @@ pub enum HandshakeError {
 impl fmt::Display for HandshakeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HandshakeError::InvalidSharedSecret => write!(f, "Zero shared secret"),
+            HandshakeError::EncryptionFailure => write!(f, "Failed to AEAD:SEAL"),
             HandshakeError::DecryptionFailure => write!(f, "Failed to AEAD:OPEN"),
+            HandshakeError::InvalidSharedSecret => write!(f, "Zero shared secret"),
             HandshakeError::UnknownPublicKey => write!(f, "Unknown public key"),
             HandshakeError::UnknownReceiverId => {
                 write!(f, "Receiver id not allocated to any handshake")
@@ -122,8 +137,7 @@ impl Error for HandshakeError {
     }
 }
 
-pub struct Output<'a, O, I: Instant> {
-    pub id: Option<&'a O>,
+pub struct Output<I: Instant> {
     pub msg: Option<Message>,
     pub key_pair: Option<KeyPair<I>>,
 }

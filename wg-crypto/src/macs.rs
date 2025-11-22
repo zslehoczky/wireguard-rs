@@ -9,14 +9,14 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 // types to coalesce into bytes
 use core::{marker::PhantomData, net::SocketAddr, time::Duration};
 use subtle::ConstantTimeEq;
-use x25519_dalek::PublicKey;
 
 use crate::{
+    PublicKey,
     aead::{SymKey, XNonce},
     messages::{CookieReply, MACFooter, SIZE_COOKIE, TYPE_COOKIE_REPLY},
     noise::Hash,
     time::Instant,
-    types::HandshakeError,
+    types::{HandshakeError, Identifier},
 };
 
 const LABEL_MAC1: &[u8] = b"mac1----";
@@ -261,13 +261,13 @@ impl<I: Instant> Validator<I> {
         &self,
         rng: &mut R,
         now: I,
-        receiver: u32,    // receiver id of incoming message
-        src: &SocketAddr, // source address of incoming message
-        macs: &MACFooter, // footer of incoming message
+        receiver: Identifier, // receiver id of incoming message
+        src: &SocketAddr,     // source address of incoming message
+        macs: &MACFooter,     // footer of incoming message
     ) -> CookieReply {
         let mut msg = CookieReply {
             f_type: U32::new(TYPE_COOKIE_REPLY),
-            f_receiver: U32::new(receiver),
+            f_receiver: receiver,
             f_nonce: XNonce(rng.r#gen()),
             f_cookie: Default::default(),
             f_cookie_tag: Default::default(),
@@ -314,14 +314,15 @@ impl<I: Instant> Validator<I> {
 
 #[cfg(test)]
 mod tests {
+    use crate::SecretKey;
+
     use super::*;
     use proptest::prelude::*;
     use rand::rngs::OsRng;
-    use x25519_dalek::StaticSecret;
 
     fn new_validator_generator() -> (Validator<std::time::Instant>, Generator<std::time::Instant>) {
-        let sk = StaticSecret::random_from_rng(OsRng);
-        let pk = PublicKey::from(&sk);
+        let sk = SecretKey::random(&mut OsRng);
+        let pk = sk.pk();
         (Validator::new(pk), Generator::new(pk))
     }
 
@@ -340,7 +341,7 @@ mod tests {
             // check validity of mac1
             validator.check_mac1(&inner1[..], &macs).expect("mac1 of inner1 did not validate");
             assert!(!validator.check_mac2(time, &inner1[..], &src, &macs), "mac2 of inner2 did not validate");
-            let msg = validator.create_cookie_reply(&mut OsRng, time, receiver, &src, &macs);
+            let msg = validator.create_cookie_reply(&mut OsRng, time, receiver.into(), &src, &macs);
 
             // consume cookie reply
             generator.process(time, &msg).expect("failed to process CookieReply");

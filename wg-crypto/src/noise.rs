@@ -5,19 +5,19 @@ use blake2::{Blake2s256, Digest};
 use hmac::{Mac, SimpleHmac};
 
 // DH
-use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
+use x25519_dalek;
 
 use rand_core::{CryptoRng, RngCore};
 
-use zerocopy::U32;
+use zerocopy::{AsBytes, U32};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use subtle::ConstantTimeEq;
 
 use crate::aead::SymKey;
 use crate::peer::StInit;
-use crate::time::Instant;
 use crate::timestamp::Timestamp;
+use crate::{Instance, PublicKey, SecretKey};
 
 use super::device::{Device, KeyState};
 use super::messages::{NoiseInitiation, NoiseResponse};
@@ -29,8 +29,7 @@ use super::types::*;
 use super::keypair::{Key, KeyPair};
 
 // Type aliases to reduce complexity
-type InitiationResult<'a, O, I, T> =
-    Result<(&'a Peer<O, I, T>, PublicKey, TemporaryState), HandshakeError>;
+type InitiationResult<'a, I> = Result<(&'a Peer<I>, PublicKey, TemporaryState), HandshakeError>;
 
 pub type ChainKey = SecretBytes<32>;
 
@@ -38,7 +37,7 @@ type HmacBlake2s256 = SimpleHmac<Blake2s256>;
 
 // convenient alias to pass state temporarily into device.rs and back
 
-type TemporaryState = (u32, PublicKey, Hash, ChainKey);
+type TemporaryState = (Identifier, PublicKey, Hash, ChainKey);
 
 // C := Hash(Construction)
 const INITIAL_CK: Hash = Hash([
@@ -157,7 +156,10 @@ fn kdf3<
 // This is not recommended by the Noise specification,
 // but implemented in the kernel with which we strive for equivalent behavior.
 #[inline(always)]
-fn shared_secret(sk: &StaticSecret, pk: &PublicKey) -> Result<SharedSecret, HandshakeError> {
+fn shared_secret(
+    sk: &x25519_dalek::StaticSecret,
+    pk: &x25519_dalek::PublicKey,
+) -> Result<x25519_dalek::SharedSecret, HandshakeError> {
     let ss = sk.diffie_hellman(pk);
     if ss.as_bytes().ct_eq(&[0u8; 32]).into() {
         Err(HandshakeError::InvalidSharedSecret)
@@ -166,18 +168,18 @@ fn shared_secret(sk: &StaticSecret, pk: &PublicKey) -> Result<SharedSecret, Hand
     }
 }
 
-pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng, O>(
+pub(super) fn create_initiation<I: Instance, R: RngCore + CryptoRng>(
     rng: &mut R,
-    keyst: &KeyState<I>,
-    peer: &Peer<O, I, T>,
+    keyst: &KeyState<I::Instant>,
+    peer: &mut Peer<I>,
     pk: &PublicKey,
-    local: u32,
+    local: Identifier,
 ) -> Result<NoiseInitiation, HandshakeError> {
     log::debug!("create initiation");
 
     let mut msg = NoiseInitiation {
         f_type: U32::new(TYPE_INITIATION),
-        f_sender: U32::new(local),
+        f_sender: local,
         f_ephemeral: Default::default(),
         f_static: Default::default(),
         f_static_tag: Default::default(),
@@ -201,16 +203,15 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
 
     // (E_priv, E_pub) := DH-Generate()
 
-    let eph_sk = StaticSecret::random_from_rng(rng);
-    let eph_pk = PublicKey::from(&eph_sk);
-
-    // C := Kdf(C, E_pub)
-
-    let ck: ChainKey = kdf1(ck, eph_pk.as_bytes());
+    let ep = SecretKey::random(rng);
 
     // msg.ephemeral := E_pub
 
-    msg.f_ephemeral = *eph_pk.as_bytes();
+    msg.f_ephemeral = ep.pk();
+
+    // C := Kdf(C, E_pub)
+
+    let ck: ChainKey = kdf1(ck, msg.f_ephemeral.as_bytes());
 
     // H := HASH(H, msg.ephemeral)
 
@@ -221,8 +222,10 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
 
     // (C, k) := Kdf2(C, DH(E_priv, S_pub))
 
-    let ss = shared_secret(&eph_sk, pk)?;
-    let (ck, key): (ChainKey, SymKey) = kdf2(&ck, ss.as_bytes());
+    let (ck, key): (ChainKey, SymKey) = kdf2(
+        &ck, //
+        ep.dh(pk)?.as_bytes(),
+    );
 
     // msg.static := Aead(k, 0, S_pub, H)
 
@@ -249,7 +252,7 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
     // msg.timestamp := Aead(k, 0, Timestamp(), H)
 
     key.seal(
-        T::generate(),            // pt (timestamp)
+        I::Timestamp::generate(), // pt (timestamp)
         hs,                       // ad
         &Default::default(),      // nonce
         &mut msg.f_timestamp,     // ct
@@ -266,22 +269,17 @@ pub(super) fn create_initiation<I: Instant, T: Timestamp, R: RngCore + CryptoRng
 
     // update state of peer
 
-    *peer.state.lock() = State::InitiationSent(StInit {
-        hs,
-        ck,
-        eph_sk,
-        local,
-    });
+    peer.state = State::InitiationSent(StInit { hs, ck, ep, local });
 
     Ok(msg)
 }
 
-pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
-    now: I,
-    device: &'a Device<O, I, T>,
-    keyst: &KeyState<I>,
+pub(super) fn consume_initiation<'a, I: Instance>(
+    now: I::Instant,
+    state: &'a mut I,
+    keyst: &KeyState<I::Instant>,
     msg: &NoiseInitiation,
-) -> InitiationResult<'a, O, I, T> {
+) -> InitiationResult<'a, I> {
     log::debug!("consume initiation");
 
     // initialize new state
@@ -294,13 +292,13 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
 
     // C := Kdf(C, E_pub)
 
-    let ck: ChainKey = kdf1(ck, msg.f_ephemeral);
+    let ck: ChainKey = kdf1(ck, msg.f_ephemeral.as_bytes());
 
     // H := HASH(H, msg.ephemeral)
 
     let hs = Hash::new([
         hs.as_ref(), //
-        &msg.f_ephemeral,
+        &msg.f_ephemeral.as_bytes(),
     ]);
 
     // (C, k) := Kdf2(C, DH(E_priv, S_pub))
@@ -308,13 +306,12 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
     let eph_r_pk = PublicKey::from(msg.f_ephemeral);
     let (ck, key): (ChainKey, SymKey) = kdf2(
         &ck, //
-        shared_secret(&keyst.sk, &eph_r_pk)?.as_bytes(),
+        keyst.sk.dh(&msg.f_ephemeral)?.as_bytes(),
     );
 
     // msg.static := Aead(k, 0, S_pub, H)
 
-    let mut pk = [0u8; 32];
-
+    let mut pk = PublicKey::default();
     key.open(
         &mut pk,             // pt
         hs,                  // ad
@@ -323,7 +320,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
         &msg.f_static_tag,   // tag
     )?;
 
-    let peer = device.lookup_pk(&pk)?;
+    let peer = state.get_mut(&pk).ok_or(HandshakeError::UnknownPublicKey)?;
 
     // reset initiation state
 
@@ -332,7 +329,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
         .as_ref()
         .ok_or(HandshakeError::InvalidSharedSecret)?;
 
-    *peer.state.lock() = State::Reset;
+    peer.state = State::Reset;
 
     // H := Hash(H || msg.static)
 
@@ -360,7 +357,7 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
 
     // check and update timestamp
 
-    peer.check_replay_flood(now, device, ts)?;
+    peer.check_replay_flood(now, ts)?;
 
     // H := Hash(H || msg.timestamp)
 
@@ -372,21 +369,17 @@ pub(super) fn consume_initiation<'a, O, I: Instant, T: Timestamp>(
 
     // return state (to create response)
 
-    Ok((
-        peer,
-        PublicKey::from(pk),
-        (msg.f_sender.get(), eph_r_pk, hs, ck),
-    ))
+    Ok((peer, PublicKey::from(pk), (msg.f_sender, eph_r_pk, hs, ck)))
 }
 
-pub(super) fn create_response<R: RngCore + CryptoRng, O, I: Instant, T: Timestamp>(
+pub(super) fn create_response<R: RngCore + CryptoRng, I: Instance>(
     rng: &mut R,
-    now: I,
-    peer: &Peer<O, I, T>,
+    now: I::Instant,
+    peer: &Peer<I>,
     pk: &PublicKey,
-    local: u32,            // sending identifier
+    local: Identifier,     // sending identifier
     state: TemporaryState, // state from "consume_initiation"
-) -> Result<(NoiseResponse, KeyPair<I>), HandshakeError> {
+) -> Result<(NoiseResponse, KeyPair<I::Instant>), HandshakeError> {
     log::debug!("create response");
 
     // unpack state
@@ -394,48 +387,46 @@ pub(super) fn create_response<R: RngCore + CryptoRng, O, I: Instant, T: Timestam
 
     let mut msg = NoiseResponse {
         f_type: U32::new(TYPE_RESPONSE),
-        f_sender: U32::new(local),
-        f_receiver: U32::new(receiver),
+        f_sender: local,
+        f_receiver: receiver,
         f_ephemeral: Default::default(),
         f_empty_tag: Default::default(),
     };
 
-    msg.f_type.set(TYPE_RESPONSE);
-    msg.f_sender.set(local); // from us
-    msg.f_receiver.set(receiver); // to the sender of the initiation
-
     // (E_priv, E_pub) := DH-Generate()
 
-    let eph_sk = StaticSecret::random_from_rng(rng);
-    let eph_pk = PublicKey::from(&eph_sk);
-
-    // C := Kdf1(C, E_pub)
-
-    let ck: ChainKey = kdf1(&ck, eph_pk.as_bytes());
+    let eph_sk = SecretKey::random(rng);
 
     // msg.ephemeral := E_pub
 
-    msg.f_ephemeral = *eph_pk.as_bytes();
+    msg.f_ephemeral = eph_sk.pk();
+
+    // C := Kdf1(C, E_pub)
+
+    let ck: ChainKey = kdf1(
+        &ck, //
+        msg.f_ephemeral.as_bytes(),
+    );
 
     // H := Hash(H || msg.ephemeral)
 
     let hs = Hash::new([
         hs.as_ref(), //
-        &msg.f_ephemeral,
+        &msg.f_ephemeral.as_bytes(),
     ]);
 
     // C := Kdf1(C, DH(E_priv, E_pub))
 
     let ck: ChainKey = kdf1(
         &ck, //
-        shared_secret(&eph_sk, &eph_r_pk)?.as_bytes(),
+        eph_sk.dh(&eph_r_pk)?.as_bytes(),
     );
 
     // C := Kdf1(C, DH(E_priv, S_pub))
 
     let ck: ChainKey = kdf1(
         &ck, //
-        shared_secret(&eph_sk, pk)?.as_bytes(),
+        eph_sk.dh(pk)?.as_bytes(),
     );
 
     // (C, tau, k) := Kdf3(C, Q)
@@ -488,16 +479,15 @@ pub(super) fn create_response<R: RngCore + CryptoRng, O, I: Instant, T: Timestam
     ))
 }
 
-/* The state lock is released while processing the message to
- * allow concurrent processing of potential responses to the initiation,
- * in order to better mitigate DoS from malformed response messages.
- */
-pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
-    now: I,
-    device: &'a Device<O, I, T>,
-    keyst: &KeyState<I>,
+/// The state lock is released while processing the message to
+/// allow concurrent processing of potential responses to the initiation,
+/// in order to better mitigate DoS from malformed response messages.
+pub(super) fn consume_response<'a, I: Instance>(
+    now: I::Instant,
+    device: &'a Device<I>,
+    keyst: &KeyState<I::Instant>,
     msg: &NoiseResponse,
-) -> Result<Output<'a, O, I>, HandshakeError> {
+) -> Result<Output<I::Instant>, HandshakeError> {
     log::debug!("consume response");
 
     // retrieve peer and copy initiation state
@@ -509,13 +499,16 @@ pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
 
     // C := Kdf1(C, E_pub)
 
-    let ck: ChainKey = kdf1(&st.ck, msg.f_ephemeral);
+    let ck: ChainKey = kdf1(
+        &st.ck, //
+        msg.f_ephemeral,
+    );
 
     // H := Hash(H || msg.ephemeral)
 
     let hs = Hash::new([
         st.hs.as_ref(), //
-        &msg.f_ephemeral,
+        msg.f_ephemeral.as_bytes(),
     ]);
 
     // C := Kdf1(C, DH(E_priv, E_pub))
@@ -523,14 +516,14 @@ pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
     let eph_r_pk = PublicKey::from(msg.f_ephemeral);
     let ck: ChainKey = kdf1(
         &ck, //
-        shared_secret(&st.eph_sk, &eph_r_pk)?.as_bytes(),
+        st.ep.dh(&eph_r_pk)?.as_bytes(),
     );
 
     // C := Kdf1(C, DH(E_priv, S_pub))
 
     let ck: ChainKey = kdf1(
         &ck, //
-        shared_secret(&keyst.sk, &eph_r_pk)?.as_bytes(),
+        keyst.sk.dh(&eph_r_pk)?.as_bytes(),
     );
 
     // (C, tau, k) := Kdf3(C, Q)
@@ -565,22 +558,20 @@ pub(super) fn consume_response<'a, O, I: Instant, T: Timestamp>(
 
     let mut st_new = peer.state.lock();
     if let State::InitiationSent(st_init) = &*st_new
-        && st_init == &st
+        && st_init == st
     {
         // null the initiation state
         // (to avoid replay of this response message)
         *st_new = State::Reset;
-        let remote = msg.f_sender.get();
 
         // return confirmed key-pair
         Ok(Output {
-            id: Some(&peer.opaque),
             msg: None,
             key_pair: Some(KeyPair {
                 birth: now,
                 initiator: true,
                 send: Key {
-                    id: remote,
+                    id: msg.f_sender,
                     key: key_send,
                 },
                 recv: Key {
