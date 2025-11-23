@@ -29,6 +29,21 @@ pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E
     endpoint: Mutex<Option<E>>,
 }
 
+impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, C, T, B> {
+    fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+        Self {
+            opaque,
+            device,
+            inbound: SequentialQueue::new(),
+            outbound: SequentialQueue::new(),
+            enc_key: spin::Mutex::new(None),
+            endpoint: spin::Mutex::new(None),
+            keys: spin::Mutex::new(KeyWheel::new()),
+            staged_packets: spin::Mutex::new(ArrayDeque::new()),
+        }
+    }
+}
+
 /// A Peer dereferences to its opaque type:
 /// This allows the router code to take ownership of the opaque type
 /// used for callback events, while still enabling the rest of the code to access the opaque type
@@ -124,29 +139,6 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop for Peer
     }
 }
 
-pub fn new_peer<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
-    device: Device<E, C, T, B>,
-    opaque: C::Opaque,
-) -> PeerHandle<E, C, T, B> {
-    // allocate peer object
-    let peer = {
-        Peer {
-            inner: Arc::new(PeerInner {
-                opaque,
-                device,
-                inbound: SequentialQueue::new(),
-                outbound: SequentialQueue::new(),
-                enc_key: spin::Mutex::new(None),
-                endpoint: spin::Mutex::new(None),
-                keys: spin::Mutex::new(KeyWheel::new()),
-                staged_packets: spin::Mutex::new(ArrayDeque::new()),
-            }),
-        }
-    };
-
-    PeerHandle { peer }
-}
-
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, C, T, B> {
     /// Send a raw message to the peer (used for handshake messages)
     ///
@@ -167,6 +159,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, 
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T, B> {
+    fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+        Self {
+            inner: Arc::new(PeerInner::new(device, opaque)),
+        }
+    }
+
     /// Encrypt and send a message to the peer
     ///
     /// Arguments:
@@ -270,7 +268,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
         self.send_staged();
     }
 
-    pub fn check_route(&self, peer: &Peer<E, C, T, B>, packet: &mut [u8]) -> bool {
+    pub fn check_route(&self, peer: &Self, packet: &mut [u8]) -> bool {
         self.device.check_route(peer, packet)
     }
 
@@ -296,6 +294,12 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E, C, T, B> {
+    pub fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+        Self {
+            peer: Peer::new(device, opaque),
+        }
+    }
+
     /// Set the endpoint of the peer
     ///
     /// # Arguments

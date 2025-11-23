@@ -11,7 +11,7 @@ use crate::router::KeyPair;
 
 pub use decryption_state::DecryptionState;
 use encryption_state::EncryptionState;
-pub use peer::{Peer, PeerHandle, new_peer};
+pub use peer::{Peer, PeerHandle};
 
 fn crypto_state<P>(peer: P, keypair: Arc<KeyPair>) -> (EncryptionState, DecryptionState<P>) {
     (

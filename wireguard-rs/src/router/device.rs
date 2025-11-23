@@ -10,7 +10,7 @@ use wg_traits::{Endpoint, tun, udp};
 use super::callbacks::Callbacks;
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerHandle, new_peer};
+use super::peer::{DecryptionState, Peer, PeerHandle};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
@@ -90,7 +90,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
     pub fn new_peer(&self, opaque: C::Opaque) -> PeerHandle<E, C, T, B> {
-        new_peer(self.clone(), opaque)
+        PeerHandle::new(self.clone(), opaque)
     }
 
     /// Cryptkey routes and sends a plaintext message (IP packet)

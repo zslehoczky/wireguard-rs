@@ -53,6 +53,25 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
 }
 
+impl<T: Tun, B: UDP> WireguardInner<T, B> {
+    fn new(
+        router: RouterDevice<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+        sender: Sender<HandshakeJob<B::Endpoint>>,
+    ) -> Self {
+        Self {
+            enabled: RwLock::new(false),
+            id: OsRng.r#gen(),
+            mtu: AtomicUsize::new(0),
+            last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
+            router,
+            pending: AtomicUsize::new(0),
+            peers: RwLock::new(crypto::Device::new()),
+            runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
+            handshake_sender: Mutex::new(Some(sender)),
+        }
+    }
+}
+
 pub struct WireGuard<T: Tun, B: UDP> {
     inner: Arc<WireguardInner<T, B>>,
 }
@@ -211,24 +230,11 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         writer: T::Writer,
         sender: Sender<HandshakeJob<B::Endpoint>>,
         n_cpus: usize,
-    ) -> WireGuard<T, B> {
-        // create router
+    ) -> Self {
         let router = RouterDevice::new(n_cpus, writer);
 
-        // create arc to state
-
-        WireGuard {
-            inner: Arc::new(WireguardInner {
-                enabled: RwLock::new(false),
-                id: OsRng.r#gen(),
-                mtu: AtomicUsize::new(0),
-                last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
-                router,
-                pending: AtomicUsize::new(0),
-                peers: RwLock::new(crypto::Device::new()),
-                runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
-                handshake_sender: Mutex::new(Some(sender)),
-            }),
+        Self {
+            inner: Arc::new(WireguardInner::new(router, sender)),
         }
     }
 
