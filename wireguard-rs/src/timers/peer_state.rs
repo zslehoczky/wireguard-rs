@@ -10,7 +10,7 @@ use crate::timers::Timers;
 use crate::wireguard::WireGuard;
 use crate::workers::HandshakeJob;
 
-use super::constants::REKEY_TIMEOUT;
+use super::constants::{REKEY_TIMEOUT, TIME_HORIZON};
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -36,6 +36,22 @@ pub struct PeerState<T: Tun, B: UDP> {
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
+    pub fn new(id: u64, wg: WireGuard<T, B>, pk: PublicKey, timers_enabled: bool) -> Self {
+        let timers = Timers::new::<T, B>(&wg, &pk, timers_enabled);
+
+        Self {
+            id,
+            wg,
+            pk,
+            walltime_last_handshake: Mutex::new(None),
+            last_handshake_sent: Mutex::new(Instant::now() - TIME_HORIZON),
+            handshake_queued: AtomicBool::new(false),
+            rx_bytes: AtomicU64::new(0),
+            tx_bytes: AtomicU64::new(0),
+            timers: RwLock::new(timers),
+        }
+    }
+
     /* Queue a handshake request for the parallel workers
      * (if one does not already exist)
      *

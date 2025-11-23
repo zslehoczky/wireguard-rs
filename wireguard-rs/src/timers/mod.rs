@@ -1,5 +1,5 @@
 mod callbacks;
-mod constants;
+pub mod constants;
 pub mod peer_callbacks;
 pub mod peer_state;
 

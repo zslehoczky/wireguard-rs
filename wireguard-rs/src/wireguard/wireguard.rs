@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -16,10 +16,12 @@ use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::router::{Device as RouterDevice, PeerHandle};
-use crate::timers::{Timers, peer_callbacks::PeerCallbacks, peer_state::PeerState};
+use crate::timers::{
+    constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK},
+    peer_callbacks::PeerCallbacks,
+    peer_state::PeerState,
+};
 use crate::workers::{HandshakeJob, udp_worker};
-
-use super::constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK};
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     // identifier (for logging)
@@ -190,21 +192,10 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // prevent up/down while inserting
         let enabled = self.enabled.read();
 
-        // create timers (lookup by public key)
-        let timers = Timers::new::<T, B>(self, &pk, *enabled);
-
         // create new router peer
-        let peer = self.router.new_peer(PeerState {
-            id: OsRng.r#gen(),
-            pk,
-            wg: self.clone(),
-            walltime_last_handshake: Mutex::new(None),
-            last_handshake_sent: Mutex::new(Instant::now() - TIME_HORIZON),
-            handshake_queued: AtomicBool::new(false),
-            rx_bytes: AtomicU64::new(0),
-            tx_bytes: AtomicU64::new(0),
-            timers: RwLock::new(timers),
-        });
+        let peer = self
+            .router
+            .new_peer(PeerState::new(OsRng.r#gen(), self.clone(), pk, *enabled));
 
         // finally, add the peer to the handshake device
         peers.add(pk, peer).is_ok()
