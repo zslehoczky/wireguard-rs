@@ -10,14 +10,13 @@ use zerocopy::{AsBytes, LayoutVerified};
 use wg_traits::{Endpoint, tun, udp};
 
 use super::KeyPair;
-use super::callbacks::Callbacks;
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::parallel_queue::ParallelJob;
-use super::peer::Peer;
+use super::peer::{Peer, TimerState};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+struct Inner<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     ready: AtomicBool,
     buffer: Mutex<Vec<u8>>,
     counter: u64,
@@ -25,17 +24,17 @@ struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     peer: Peer<E, C, T, B>,
 }
 
-pub struct SendJob<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
+pub struct SendJob<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>>(
     Arc<Inner<E, C, T, B>>,
 );
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for SendJob<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Clone for SendJob<E, C, T, B> {
     fn clone(&self) -> SendJob<E, C, T, B> {
         SendJob(self.0.clone())
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SendJob<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> SendJob<E, C, T, B> {
     pub fn new(
         buffer: Vec<u8>,
         counter: u64,
@@ -52,7 +51,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SendJob<E, C,
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for SendJob<E, C, T, B>
 {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
@@ -108,7 +107,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> SequentialJob
     for SendJob<E, C, T, B>
 {
     fn is_ready(&self) -> bool {

@@ -94,7 +94,7 @@ macro_rules! no_events {
     };
 }
 
-impl Callbacks for TestCallbacks {
+impl TimerState for TestCallbacks {
     fn send(
         &self,
         size: usize,

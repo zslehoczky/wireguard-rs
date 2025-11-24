@@ -10,7 +10,7 @@ use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
-use crate::router::{Callbacks, KeyPair, message_data_len};
+use crate::router::{KeyPair, TimerState, message_data_len};
 use crate::wireguard::WireGuard;
 use crate::workers::HandshakeJob;
 
@@ -206,7 +206,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
     }
 }
 
-impl<T: Tun, B: UDP> Callbacks for PeerState<T, B> {
+impl<T: Tun, B: UDP> TimerState for PeerState<T, B> {
     /* Called after the router encrypts a transport message destined for the peer.
      * This method is called, even if the encrypted payload is empty (keepalive)
      */

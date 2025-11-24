@@ -5,7 +5,7 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::callbacks::Callbacks;
+use super::peer::TimerState;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
@@ -16,12 +16,12 @@ pub trait ParallelJob: Sized + SequentialJob {
     fn parallel_work(&self);
 }
 
-pub enum ParallelJobUnion<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+pub enum ParallelJobUnion<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     Outbound(SendJob<E, C, T, B>),
     Inbound(ReceiveJob<E, C, T, B>),
 }
 
-fn parallel_worker<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
+fn parallel_worker<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>>(
     receiver: Receiver<ParallelJobUnion<E, C, T, B>>,
 ) {
     loop {
@@ -43,12 +43,12 @@ fn parallel_worker<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>
     }
 }
 
-pub struct ParallelQueue<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+pub struct ParallelQueue<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     sender: Option<Sender<ParallelJobUnion<E, C, T, B>>>,
     handles: Vec<JoinHandle<()>>,
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, C, T, B> {
     /// Create a new ParallelQueue instance
     ///
     /// # Arguments
@@ -80,7 +80,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelQueue
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Drop
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Drop
     for ParallelQueue<E, C, T, B>
 {
     fn drop(&mut self) {

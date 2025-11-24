@@ -6,25 +6,24 @@ use zerocopy::{AsBytes, LayoutVerified};
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::callbacks::Callbacks;
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::ip::inner_length;
 use super::parallel_queue::ParallelJob;
-use super::peer::{DecryptionState, Peer};
+use super::peer::{DecryptionState, Peer, TimerState};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::TransportHeader;
 
-struct Inner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+struct Inner<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     ready: AtomicBool,                             // job status
     buffer: Mutex<(Option<E>, Vec<u8>)>,           // endpoint & ciphertext buffer
     state: Arc<DecryptionState<Peer<E, C, T, B>>>, // decryption state (keys and replay protector)
 }
 
-pub struct ReceiveJob<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>>(
+pub struct ReceiveJob<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>>(
     Arc<Inner<E, C, T, B>>,
 );
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Clone
     for ReceiveJob<E, C, T, B>
 {
     fn clone(&self) -> ReceiveJob<E, C, T, B> {
@@ -32,7 +31,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E, C, T, B> {
     pub fn new(
         buffer: Vec<u8>,
         state: Arc<DecryptionState<Peer<E, C, T, B>>>,
@@ -46,7 +45,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E,
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     for ReceiveJob<E, C, T, B>
 {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
@@ -125,7 +124,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> ParallelJob
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> SequentialJob
     for ReceiveJob<E, C, T, B>
 {
     fn is_ready(&self) -> bool {

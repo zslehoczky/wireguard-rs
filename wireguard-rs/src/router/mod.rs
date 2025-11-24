@@ -1,4 +1,3 @@
-mod callbacks;
 mod constants;
 mod device;
 mod ip;
@@ -15,13 +14,12 @@ mod transport;
 #[cfg(test)]
 mod tests;
 
-pub use callbacks::Callbacks;
 pub use constants::{
     CAPACITY_MESSAGE_POSTFIX, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX,
     message_data_len,
 };
 pub use device::Device;
-pub use peer::PeerHandle;
+pub use peer::{PeerHandle, TimerState};
 pub use transport::TYPE_TRANSPORT;
 
 pub type KeyPair = wg_crypto::KeyPair<std::time::Instant>;

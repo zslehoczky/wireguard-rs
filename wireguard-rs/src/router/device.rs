@@ -7,17 +7,16 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::callbacks::Callbacks;
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerHandle};
+use super::peer::{DecryptionState, Peer, PeerHandle, TimerState};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+pub struct DeviceInner<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
     inbound: T,
 
@@ -32,11 +31,11 @@ pub struct DeviceInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer
     parallel_queue: ParallelQueue<E, C, T, B>,
 }
 
-pub struct Device<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
+pub struct Device<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
     inner: Arc<DeviceInner<E, C, T, B>>,
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C, T, B> {
     pub fn new(num_workers: usize, tun: T) -> Self {
         let parallel_queue = ParallelQueue::new(
             NonZeroUsize::new(num_workers).expect("should not be zero"),
@@ -232,7 +231,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
     fn clone(&self) -> Self {
         Device {
             inner: self.inner.clone(),
@@ -240,7 +239,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Clone for Dev
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PartialEq
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> PartialEq
     for Device<E, C, T, B>
 {
     fn eq(&self, other: &Self) -> bool {
@@ -248,9 +247,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PartialEq
     }
 }
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, C, T, B> {}
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, C, T, B> {}
 
-impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, C, T, B> {
+impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, C, T, B> {
     type Target = DeviceInner<E, C, T, B>;
     fn deref(&self) -> &Self::Target {
         &self.inner

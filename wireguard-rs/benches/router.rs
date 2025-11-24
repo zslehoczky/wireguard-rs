@@ -1,6 +1,6 @@
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use wg_platform::dummy;
-use wireguard_rs::router::{Callbacks, Device, KeyPair, SIZE_MESSAGE_PREFIX};
+use wireguard_rs::router::{Device, KeyPair, SIZE_MESSAGE_PREFIX, TimerState};
 
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
@@ -113,7 +113,7 @@ impl BencherCallbacks {
     }
 }
 
-impl Callbacks for BencherCallbacks {
+impl TimerState for BencherCallbacks {
     fn send(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         self.sent.fetch_add(size, Ordering::SeqCst);
     }
