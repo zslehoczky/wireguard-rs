@@ -90,14 +90,14 @@ fn dummy_keypair(initiator: bool) -> KeyPair {
     }
 }
 
-struct TransmissionCounter {
+struct BencherCallbacks {
     sent: AtomicUsize,
     recv: AtomicUsize,
 }
 
-impl TransmissionCounter {
-    fn new() -> TransmissionCounter {
-        TransmissionCounter {
+impl BencherCallbacks {
+    fn new() -> BencherCallbacks {
+        BencherCallbacks {
             sent: AtomicUsize::new(0),
             recv: AtomicUsize::new(0),
         }
@@ -113,18 +113,15 @@ impl TransmissionCounter {
     }
 }
 
-struct BencherCallbacks {}
-
 impl Callbacks for BencherCallbacks {
-    type Opaque = Arc<TransmissionCounter>;
-    fn send(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
-        t.sent.fetch_add(size, Ordering::SeqCst);
+    fn send(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
+        self.sent.fetch_add(size, Ordering::SeqCst);
     }
-    fn recv(t: &Self::Opaque, size: usize, _sent: bool, _keypair: &Arc<KeyPair>) {
-        t.recv.fetch_add(size, Ordering::SeqCst);
+    fn recv(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>) {
+        self.recv.fetch_add(size, Ordering::SeqCst);
     }
-    fn need_key(_t: &Self::Opaque) {}
-    fn key_confirmed(_t: &Self::Opaque) {}
+    fn need_key(&self) {}
+    fn key_confirmed(&self) {}
 }
 
 fn bench_router_outbound(b: &mut Bencher) {
@@ -144,8 +141,8 @@ fn bench_router_outbound(b: &mut Bencher) {
     );
 
     // add peer to router
-    let opaque = Arc::new(TransmissionCounter::new());
-    let peer = router.new_peer(opaque.clone());
+    let opaque = BencherCallbacks::new();
+    let peer = router.new_peer(opaque);
     peer.add_keypair(dummy_keypair(true));
 
     // add subnet to peer
@@ -166,6 +163,7 @@ fn bench_router_outbound(b: &mut Bencher) {
     let mut msg = pad(&packet);
     msg.reserve(16);
 
+    let opaque = peer.get_timer_state();
     // repeatedly transmit 10 GB
     b.iter(|| {
         opaque.reset();

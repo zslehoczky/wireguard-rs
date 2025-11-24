@@ -178,11 +178,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         }
 
         // trigger callback
-        C::recv(
-            peer.get_opaque(),
-            msg.1.len(),
-            true,
-            &job.state.get_keypair(),
-        );
+        peer.get_timer_state()
+            .recv(msg.1.len(), true, &job.state.get_keypair());
     }
 }

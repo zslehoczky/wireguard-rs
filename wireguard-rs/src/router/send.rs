@@ -129,12 +129,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> SequentialJob
         let xmit = job.peer.send_raw(&msg[..]).is_ok();
 
         // trigger callback (for timers)
-        C::send(
-            job.peer.get_opaque(),
-            msg.len(),
-            xmit,
-            &job.keypair,
-            job.counter,
-        );
+        job.peer
+            .get_timer_state()
+            .send(msg.len(), xmit, &job.keypair, job.counter);
     }
 }

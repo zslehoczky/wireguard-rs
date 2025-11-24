@@ -89,7 +89,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
     /// # Returns
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
-    pub fn new_peer(&self, opaque: C::Opaque) -> PeerHandle<E, C, T, B> {
+    pub fn new_peer(&self, opaque: C) -> PeerHandle<E, C, T, B> {
         PeerHandle::new(self.clone(), opaque)
     }
 

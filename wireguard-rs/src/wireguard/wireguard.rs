@@ -17,7 +17,7 @@ use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::router::{Device as RouterDevice, PeerHandle};
 use crate::timers::{
-    PeerCallbacks, PeerState,
+    PeerState,
     constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK},
 };
 use crate::workers::{HandshakeJob, udp_worker};
@@ -39,14 +39,14 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     #[allow(clippy::type_complexity)]
     pub peers: RwLock<
         crypto::Device<
-            PeerHandle<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+            PeerHandle<B::Endpoint, PeerState<T, B>, T::Writer, B::Writer>,
             Instant,
             StdTimestamp,
         >,
     >,
 
     // cryptokey router
-    pub router: RouterDevice<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+    pub router: RouterDevice<B::Endpoint, PeerState<T, B>, T::Writer, B::Writer>,
 
     // handshake related state
     pub last_under_load: Mutex<Instant>,
@@ -56,7 +56,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
 
 impl<T: Tun, B: UDP> WireguardInner<T, B> {
     fn new(
-        router: RouterDevice<B::Endpoint, PeerCallbacks<T, B>, T::Writer, B::Writer>,
+        router: RouterDevice<B::Endpoint, PeerState<T, B>, T::Writer, B::Writer>,
         sender: Sender<HandshakeJob<B::Endpoint>>,
     ) -> Self {
         Self {

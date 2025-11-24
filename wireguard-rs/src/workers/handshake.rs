@@ -115,8 +115,10 @@ fn handle_message<T: Tun, B: UDP>(
 
                 // add to rx_bytes and tx_bytes
                 let req_len = msg.len() as u64;
-                peer.opaque().rx_bytes.fetch_add(req_len, Ordering::Relaxed);
-                peer.opaque()
+                peer.get_timer_state()
+                    .rx_bytes
+                    .fetch_add(req_len, Ordering::Relaxed);
+                peer.get_timer_state()
                     .tx_bytes
                     .fetch_add(resp_len, Ordering::Relaxed);
 
@@ -129,14 +131,14 @@ fn handle_message<T: Tun, B: UDP>(
                         "{} : handshake worker, handshake response sent",
                         wireguard_device
                     );
-                    peer.opaque().sent_handshake_response();
+                    peer.get_timer_state().sent_handshake_response();
                 } else {
                     // update timers after receiving handshake response
                     debug!(
                         "{} : handshake worker, handshake response was received",
                         wireguard_device
                     );
-                    peer.opaque().timers_handshake_complete();
+                    peer.get_timer_state().timers_handshake_complete();
                 }
 
                 // add any new keypair to peer
@@ -147,7 +149,7 @@ fn handle_message<T: Tun, B: UDP>(
                     );
 
                     // this means that a handshake response was processed or sent
-                    peer.opaque().timers_session_derived();
+                    peer.get_timer_state().timers_session_derived();
 
                     // free any unused ids
                     for id in peer.add_keypair(kp) {
@@ -176,9 +178,9 @@ fn handle_new<T: Tun, B: UDP>(wireguard_device: &WireGuard<T, B>, public_key: Pu
                         wireguard_device, e
                     )
                 });
-                peer.opaque().sent_handshake_initiation();
+                peer.get_timer_state().sent_handshake_initiation();
             });
-        peer.opaque()
+        peer.get_timer_state()
             .handshake_queued
             .store(false, Ordering::SeqCst);
     }

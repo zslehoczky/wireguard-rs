@@ -10,10 +10,10 @@ use wg_traits::{tun::Tun, udp::UDP};
 use crate::router::PeerHandle;
 use crate::wireguard::WireGuard;
 
+use super::PeerState;
 use super::constants::{KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_TIMEOUT};
-use super::peer_callbacks::PeerCallbacks;
 
-type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerCallbacks<T, B>, Tw, Bw>;
+type Peer<T, B, E, Tw, Bw> = PeerHandle<E, PeerState<T, B>, Tw, Bw>;
 
 fn call_with_peer<F, T: Tun, B: UDP>(
     wireguard_device: &WireGuard<T, B>,

@@ -1,4 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::fmt;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
 use std::time::{Instant, SystemTime};
 
 use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -6,10 +10,14 @@ use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
+use crate::router::{Callbacks, KeyPair, message_data_len};
 use crate::wireguard::WireGuard;
 use crate::workers::HandshakeJob;
 
-use super::constants::{REKEY_TIMEOUT, TIME_HORIZON};
+use super::constants::{
+    KEEPALIVE_TIMEOUT, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES, REKEY_AFTER_TIME, REKEY_TIMEOUT,
+    TIME_HORIZON,
+};
 use super::timers::Timers;
 
 pub struct PeerState<T: Tun, B: UDP> {
@@ -195,5 +203,91 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             self.timers().reset_handshake_attempts();
         }
         self.packet_send_handshake_initiation();
+    }
+}
+
+impl<T: Tun, B: UDP> Callbacks for PeerState<T, B> {
+    /* Called after the router encrypts a transport message destined for the peer.
+     * This method is called, even if the encrypted payload is empty (keepalive)
+     */
+    #[inline(always)]
+    fn send(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
+        log::trace!("{} : EVENT(send)", self);
+
+        // update timers and stats
+
+        self.timers_any_authenticated_packet_traversal();
+        self.timers_any_authenticated_packet_sent();
+        self.tx_bytes.fetch_add(size as u64, Ordering::Relaxed);
+        if size > message_data_len(0) && sent {
+            self.timers_data_sent();
+        }
+
+        // keep_key_fresh
+
+        fn keep_key_fresh(keypair: &Arc<KeyPair>, counter: u64) -> bool {
+            counter > REKEY_AFTER_MESSAGES
+                || (keypair.initiator && Instant::now() - keypair.birth > REKEY_AFTER_TIME)
+        }
+
+        if keep_key_fresh(keypair, counter) {
+            self.packet_send_queued_handshake_initiation(false);
+        }
+    }
+
+    /* Called after the router successfully decrypts a transport message from a peer.
+     * This method is called, even if the decrypted packet is:
+     *
+     * - A keepalive
+     * - A malformed IP packet
+     * - Fails to cryptkey route
+     */
+    #[inline(always)]
+    fn recv(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>) {
+        log::trace!("{} : EVENT(recv)", self);
+
+        // update timers and stats
+
+        self.timers_any_authenticated_packet_traversal();
+        self.timers_any_authenticated_packet_received();
+        self.rx_bytes.fetch_add(size as u64, Ordering::Relaxed);
+        if size > 0 && sent {
+            self.timers_data_received();
+        }
+
+        // keep_key_fresh
+
+        #[inline(always)]
+        fn keep_key_fresh(keypair: &Arc<KeyPair>) -> bool {
+            Instant::now() - keypair.birth > REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
+        }
+
+        if keep_key_fresh(keypair) && self.timers().register_lastminute_handshake_sent() {
+            self.packet_send_queued_handshake_initiation(false);
+        }
+    }
+
+    /* Called every time the router detects that a key is required,
+     * but no valid key-material is available for the particular peer.
+     *
+     * The message is called continuously
+     * (e.g. for every packet that must be encrypted, until a key becomes available)
+     */
+    #[inline(always)]
+    fn need_key(&self) {
+        log::trace!("{} : EVENT(need_key)", self);
+        self.packet_send_queued_handshake_initiation(false);
+    }
+
+    #[inline(always)]
+    fn key_confirmed(&self) {
+        log::trace!("{} : EVENT(key_confirmed)", self);
+        self.timers_handshake_complete();
+    }
+}
+
+impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PeerState").field("id", &self.id).finish()
     }
 }

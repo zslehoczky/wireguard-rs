@@ -56,11 +56,11 @@ struct Inner {
 }
 
 #[derive(Clone)]
-struct Opaque {
+struct TestCallbacks {
     inner: Arc<Inner>,
 }
 
-impl Deref for Opaque {
+impl Deref for TestCallbacks {
     type Target = Inner;
 
     fn deref(&self) -> &Self::Target {
@@ -68,11 +68,9 @@ impl Deref for Opaque {
     }
 }
 
-struct TestCallbacks();
-
-impl Opaque {
-    fn new() -> Opaque {
-        Opaque {
+impl TestCallbacks {
+    fn new() -> TestCallbacks {
+        TestCallbacks {
             inner: Arc::new(Inner {
                 send: EventTracker::new(),
                 recv: EventTracker::new(),
@@ -97,28 +95,26 @@ macro_rules! no_events {
 }
 
 impl Callbacks for TestCallbacks {
-    type Opaque = Opaque;
-
     fn send(
-        t: &Self::Opaque,
+        &self,
         size: usize,
         sent: bool,
         _keypair: &Arc<crypto::KeyPair<Instant>>,
         _counter: u64,
     ) {
-        t.send.log((size, sent))
+        self.send.log((size, sent))
     }
 
-    fn recv(t: &Self::Opaque, size: usize, sent: bool, _keypair: &Arc<KeyPair>) {
-        t.recv.log((size, sent))
+    fn recv(&self, size: usize, sent: bool, _keypair: &Arc<KeyPair>) {
+        self.recv.log((size, sent))
     }
 
-    fn need_key(t: &Self::Opaque) {
-        t.need_key.log(());
+    fn need_key(&self) {
+        self.need_key.log(());
     }
 
-    fn key_confirmed(t: &Self::Opaque) {
-        t.key_confirmed.log(());
+    fn key_confirmed(&self) {
+        self.key_confirmed.log(());
     }
 }
 
@@ -179,7 +175,7 @@ fn test_outbound() {
                 );
 
                 // add new peer
-                let opaque = Opaque::new();
+                let opaque = TestCallbacks::new();
                 let peer = router.new_peer(opaque.clone());
                 let mask: IpAddr = mask.parse().unwrap();
 
@@ -317,8 +313,8 @@ fn test_bidirectional() {
 
             // prepare opaque values for tracing callbacks
 
-            let opaque1 = Opaque::new();
-            let opaque2 = Opaque::new();
+            let opaque1 = TestCallbacks::new();
+            let opaque2 = TestCallbacks::new();
 
             // create peers with matching keypairs and assign subnets
 

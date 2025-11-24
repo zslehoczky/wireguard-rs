@@ -20,7 +20,7 @@ use super::key_wheel::KeyWheel;
 
 pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> {
     device: Device<E, C, T, B>,
-    opaque: C::Opaque,
+    timer_state: C,
     outbound: SequentialQueue<SendJob<E, C, T, B>>,
     inbound: SequentialQueue<ReceiveJob<E, C, T, B>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
@@ -30,9 +30,9 @@ pub struct PeerInner<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, C, T, B> {
-    fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+    fn new(device: Device<E, C, T, B>, timer_state: C) -> Self {
         Self {
-            opaque,
+            timer_state,
             device,
             inbound: SequentialQueue::new(),
             outbound: SequentialQueue::new(),
@@ -51,10 +51,10 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, 
 ///
 /// e.g. it can take ownership of the timer state of a peer.
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Deref for PeerInner<E, C, T, B> {
-    type Target = C::Opaque;
+    type Target = C;
 
     fn deref(&self) -> &Self::Target {
-        &self.opaque
+        &self.timer_state
     }
 }
 
@@ -159,9 +159,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, 
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T, B> {
-    fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+    fn new(device: Device<E, C, T, B>, timer_state: C) -> Self {
         Self {
-            inner: Arc::new(PeerInner::new(device, opaque)),
+            inner: Arc::new(PeerInner::new(device, timer_state)),
         }
     }
 
@@ -210,7 +210,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
         if need_key {
             log::debug!("request new key");
             debug_assert!(job.is_none());
-            C::need_key(&self.opaque);
+            self.timer_state.need_key();
         };
 
         if let Some(job) = job {
@@ -258,7 +258,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
             keys.rotate();
 
             // tell the world outside the router that a key was confirmed
-            C::key_confirmed(&self.opaque);
+            self.timer_state.key_confirmed();
 
             // set new key for encryption
             *self.enc_key.lock() = ekey;
@@ -276,8 +276,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
         self.device.write_inbound(data)
     }
 
-    pub fn get_opaque(&self) -> &C::Opaque {
-        &self.opaque
+    pub fn get_timer_state(&self) -> &C {
+        &self.timer_state
     }
 
     pub fn get_outbound(&self) -> &SequentialQueue<SendJob<E, C, T, B>> {
@@ -294,9 +294,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Peer<E, C, T,
 }
 
 impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E, C, T, B> {
-    pub fn new(device: Device<E, C, T, B>, opaque: C::Opaque) -> Self {
+    pub fn new(device: Device<E, C, T, B>, timer_state: C) -> Self {
         Self {
-            peer: Peer::new(device, opaque),
+            peer: Peer::new(device, timer_state),
         }
     }
 
@@ -315,8 +315,8 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
         *self.peer.endpoint.lock() = Some(endpoint);
     }
 
-    pub fn opaque(&self) -> &C::Opaque {
-        &self.opaque
+    pub fn get_timer_state(&self) -> &C {
+        self.peer.get_timer_state()
     }
 
     /// Returns the current endpoint of the peer (for configuration)

@@ -164,7 +164,8 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
 
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64) {
         if let Some(peer) = self.wireguard.peers.read().get(peer) {
-            peer.opaque().set_persistent_keepalive_interval(secs);
+            peer.get_timer_state()
+                .set_persistent_keepalive_interval(secs);
         }
     }
 
