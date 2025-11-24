@@ -17,9 +17,8 @@ use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::router::{Device as RouterDevice, PeerHandle};
 use crate::timers::{
+    PeerCallbacks, PeerState,
     constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK},
-    peer_callbacks::PeerCallbacks,
-    peer_state::PeerState,
 };
 use crate::workers::{HandshakeJob, udp_worker};
 
