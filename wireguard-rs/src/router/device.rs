@@ -3,40 +3,34 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use spin::RwLock;
+use wg_traits::udp;
 use zerocopy::LayoutVerified;
 
-use wg_traits::{Endpoint, tun, udp};
+use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerHandle, PeerState};
+use super::peer::{DecryptionState, Peer, PeerDependencies, PeerHandle, PeerState};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-pub struct DeviceInner<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    // inbound writer (TUN)
-    inbound: T,
-
-    // outbound writer (Bind)
-    outbound: RwLock<(bool, Option<B>)>,
-
-    // routing
-    recv: RwLock<ReceiverLookup<Peer<E, T, B>>>,
-    table: RoutingTable<Peer<E, T, B>>,
-
-    // work queue
-    parallel_queue: ParallelQueue<E, T, B>,
+pub struct DeviceInner<P: PeerDependencies> {
+    inbound: P::TunWriter,
+    outbound: RwLock<(bool, Option<P::UdpWriter>)>,
+    recv: RwLock<ReceiverLookup<Peer<P>>>,
+    table: RoutingTable<Peer<P>>,
+    parallel_queue: ParallelQueue<P>,
 }
 
-pub struct Device<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    inner: Arc<DeviceInner<E, T, B>>,
+pub struct Device<P: PeerDependencies> {
+    inner: Arc<DeviceInner<P>>,
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
-    pub fn new(num_workers: usize, tun: T) -> Self {
+impl<P: PeerDependencies> Device<P> {
+    pub fn new(num_workers: usize, tun: P::TunWriter) -> Self {
         let parallel_queue = ParallelQueue::new(
             NonZeroUsize::new(num_workers).expect("should not be zero"),
             PARALLEL_QUEUE_SIZE,
@@ -53,7 +47,11 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
         }
     }
 
-    pub fn send_raw(&self, msg: &[u8], dst: &mut E) -> Result<(), B::Error> {
+    pub fn send_raw(
+        &self,
+        msg: &[u8],
+        dst: &mut P::UdpEndpoint,
+    ) -> Result<(), <P::UdpWriter as udp::Writer<P::UdpEndpoint>>::Error> {
         let bind = self.outbound.read();
         if bind.0
             && let Some(bind) = bind.1.as_ref()
@@ -88,7 +86,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
     /// # Returns
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
-    pub fn new_peer(&self, peer_state: Arc<dyn PeerState>) -> PeerHandle<E, T, B> {
+    pub fn new_peer(&self, peer_state: Arc<dyn PeerState>) -> PeerHandle<P> {
         PeerHandle::new(self.clone(), peer_state)
     }
 
@@ -126,7 +124,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
     /// - msg: Encrypted transport message
     ///
     /// # Returns
-    pub fn recv(&self, src: E, msg: Vec<u8>) -> Result<(), RouterError> {
+    pub fn recv(&self, src: P::UdpEndpoint, msg: Vec<u8>) -> Result<(), RouterError> {
         log::trace!("receive, src: {}", src.to_address());
 
         // parse / cast
@@ -171,11 +169,11 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
     }
 
     /// Set outbound writer
-    pub fn set_outbound_writer(&self, new: B) {
+    pub fn set_outbound_writer(&self, new: P::UdpWriter) {
         self.outbound.write().1 = Some(new);
     }
 
-    pub fn queue_job(&self, job: ParallelJobUnion<E, T, B>) {
+    pub fn queue_job(&self, job: ParallelJobUnion<P>) {
         self.parallel_queue.queue_job(job);
     }
 
@@ -183,7 +181,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
         &self,
         prev_id: Option<u32>,
         new_id: u32,
-        decryption_state: DecryptionState<Peer<E, T, B>>,
+        decryption_state: DecryptionState<Peer<P>>,
     ) -> Option<u32> {
         self.inner
             .recv
@@ -201,7 +199,11 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
         })
     }
 
-    pub fn read_outbound(&self, msg: &[u8], endpoint: &mut E) -> Result<(), RouterError> {
+    pub fn read_outbound(
+        &self,
+        msg: &[u8],
+        endpoint: &mut P::UdpEndpoint,
+    ) -> Result<(), RouterError> {
         let outbound = self.outbound.read();
         let (open, outbound) = outbound.deref();
         if *open {
@@ -214,41 +216,41 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
         }
     }
 
-    pub fn check_route(&self, peer: &Peer<E, T, B>, packet: &mut [u8]) -> bool {
+    pub fn check_route(&self, peer: &Peer<P>, packet: &mut [u8]) -> bool {
         self.table.check_route(peer, packet)
     }
 
-    pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<E, T, B>) {
+    pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<P>) {
         self.table.insert(ip, cidr, peer)
     }
 
-    pub fn list_routes(&self, peer: &Peer<E, T, B>) -> Vec<(IpAddr, u32)> {
+    pub fn list_routes(&self, peer: &Peer<P>) -> Vec<(IpAddr, u32)> {
         self.table.list(peer)
     }
 
-    pub fn remove_route(&self, peer: &Peer<E, T, B>) {
+    pub fn remove_route(&self, peer: &Peer<P>) {
         self.table.remove(peer)
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, T, B> {
+impl<P: PeerDependencies> Clone for Device<P> {
     fn clone(&self) -> Self {
-        Device {
+        Self {
             inner: self.inner.clone(),
         }
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PartialEq for Device<E, T, B> {
+impl<P: PeerDependencies> PartialEq for Device<P> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, T, B> {}
+impl<P: PeerDependencies> Eq for Device<P> {}
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, T, B> {
-    type Target = DeviceInner<E, T, B>;
+impl<P: PeerDependencies> Deref for Device<P> {
+    type Target = DeviceInner<P>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }

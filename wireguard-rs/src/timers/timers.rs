@@ -8,7 +8,7 @@ use x25519_dalek::PublicKey;
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::router::PeerHandle;
-use crate::wireguard::WireGuard;
+use crate::wireguard::{PeerDeps, WireGuard};
 
 use super::PeerState;
 use super::constants::{KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_TIMEOUT};
@@ -18,7 +18,7 @@ fn call_with_peer<F, T: Tun, B: UDP>(
     public_key_of_peer: &PublicKey,
     callback: F,
 ) where
-    F: Fn(&PeerHandle<B::Endpoint, T::Writer, B::Writer>, &PeerState<T, B>),
+    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
 {
     wireguard_device.visit_peer(public_key_of_peer, |peer_handle, peer_state| {
         callback(peer_handle, peer_state)
@@ -30,7 +30,7 @@ fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
     public_key_of_peer: &PublicKey,
     callback: F,
 ) where
-    F: Fn(&PeerHandle<B::Endpoint, T::Writer, B::Writer>, &PeerState<T, B>, &Timers),
+    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>, &Timers),
 {
     call_with_peer(
         wireguard_device,

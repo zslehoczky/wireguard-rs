@@ -4,31 +4,33 @@ use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use spin::Mutex;
 use zerocopy::{AsBytes, LayoutVerified};
 
-use wg_traits::{Endpoint, tun, udp};
-
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::ip::inner_length;
 use super::parallel_queue::ParallelJob;
-use super::peer::{DecryptionState, Peer};
+use super::peer::{DecryptionState, Peer, PeerDependencies};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::TransportHeader;
 
-struct Inner<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    ready: AtomicBool,                          // job status
-    buffer: Mutex<(Option<E>, Vec<u8>)>,        // endpoint & ciphertext buffer
-    state: Arc<DecryptionState<Peer<E, T, B>>>, // decryption state (keys and replay protector)
+struct Inner<P: PeerDependencies> {
+    ready: AtomicBool,                                // job status
+    buffer: Mutex<(Option<P::UdpEndpoint>, Vec<u8>)>, // endpoint & ciphertext buffer
+    state: Arc<DecryptionState<Peer<P>>>, // decryption state (keys and replay protector)
 }
 
-pub struct ReceiveJob<E: Endpoint, T: tun::Writer, B: udp::Writer<E>>(Arc<Inner<E, T, B>>);
+pub struct ReceiveJob<P: PeerDependencies>(Arc<Inner<P>>);
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for ReceiveJob<E, T, B> {
+impl<P: PeerDependencies> Clone for ReceiveJob<P> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E, T, B> {
-    pub fn new(buffer: Vec<u8>, state: Arc<DecryptionState<Peer<E, T, B>>>, endpoint: E) -> Self {
+impl<P: PeerDependencies> ReceiveJob<P> {
+    pub fn new(
+        buffer: Vec<u8>,
+        state: Arc<DecryptionState<Peer<P>>>,
+        endpoint: P::UdpEndpoint,
+    ) -> Self {
         Self(Arc::new(Inner {
             ready: AtomicBool::new(false),
             buffer: Mutex::new((Some(endpoint), buffer)),
@@ -37,7 +39,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ReceiveJob<E, T, B> {
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelJob for ReceiveJob<E, T, B> {
+impl<P: PeerDependencies> ParallelJob for ReceiveJob<P> {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
         self.0.state.get_peer().get_inbound()
     }
@@ -114,7 +116,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelJob for ReceiveJob<
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> SequentialJob for ReceiveJob<E, T, B> {
+impl<P: PeerDependencies> SequentialJob for ReceiveJob<P> {
     fn is_ready(&self) -> bool {
         self.0.ready.load(Ordering::Acquire)
     }

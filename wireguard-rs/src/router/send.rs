@@ -7,33 +7,31 @@ use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use spin::Mutex;
 use zerocopy::{AsBytes, LayoutVerified};
 
-use wg_traits::{Endpoint, tun, udp};
-
 use super::KeyPair;
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::parallel_queue::ParallelJob;
-use super::peer::Peer;
+use super::peer::{Peer, PeerDependencies};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-struct Inner<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
+struct Inner<P: PeerDependencies> {
     ready: AtomicBool,
     buffer: Mutex<Vec<u8>>,
     counter: u64,
     keypair: Arc<KeyPair>,
-    peer: Peer<E, T, B>,
+    peer: Peer<P>,
 }
 
-pub struct SendJob<E: Endpoint, T: tun::Writer, B: udp::Writer<E>>(Arc<Inner<E, T, B>>);
+pub struct SendJob<P: PeerDependencies>(Arc<Inner<P>>);
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for SendJob<E, T, B> {
+impl<P: PeerDependencies> Clone for SendJob<P> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> SendJob<E, T, B> {
-    pub fn new(buffer: Vec<u8>, counter: u64, keypair: Arc<KeyPair>, peer: Peer<E, T, B>) -> Self {
+impl<P: PeerDependencies> SendJob<P> {
+    pub fn new(buffer: Vec<u8>, counter: u64, keypair: Arc<KeyPair>, peer: Peer<P>) -> Self {
         Self(Arc::new(Inner {
             buffer: Mutex::new(buffer),
             counter,
@@ -44,7 +42,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> SendJob<E, T, B> {
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelJob for SendJob<E, T, B> {
+impl<P: PeerDependencies> ParallelJob for SendJob<P> {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
         self.0.peer.get_outbound()
     }
@@ -98,7 +96,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelJob for SendJob<E, 
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> SequentialJob for SendJob<E, T, B> {
+impl<P: PeerDependencies> SequentialJob for SendJob<P> {
     fn is_ready(&self) -> bool {
         self.0.ready.load(Ordering::Acquire)
     }

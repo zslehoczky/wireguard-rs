@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arraydeque::{ArrayDeque, Wrapping};
 use spin::Mutex;
 
-use wg_traits::{Endpoint, tun, udp};
+use wg_traits::Endpoint as _;
 
 use crate::router::{
     KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
@@ -14,24 +14,23 @@ use crate::router::{
     send::SendJob, sequential_queue::SequentialQueue,
 };
 
-use super::PeerState;
-use super::crypto_state;
 use super::encryption_state::EncryptionState;
 use super::key_wheel::KeyWheel;
+use super::{PeerDependencies, PeerState, crypto_state};
 
-pub struct PeerInner<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    device: Device<E, T, B>,
+pub struct PeerInner<P: PeerDependencies> {
+    device: Device<P>,
     peer_state: Arc<dyn PeerState>,
-    outbound: SequentialQueue<SendJob<E, T, B>>,
-    inbound: SequentialQueue<ReceiveJob<E, T, B>>,
+    outbound: SequentialQueue<SendJob<P>>,
+    inbound: SequentialQueue<ReceiveJob<P>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     keys: Mutex<KeyWheel>,
     enc_key: Mutex<Option<EncryptionState>>,
-    endpoint: Mutex<Option<E>>,
+    endpoint: Mutex<Option<P::UdpEndpoint>>,
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, T, B> {
-    fn new(device: Device<E, T, B>, peer_state: Arc<dyn PeerState>) -> Self {
+impl<P: PeerDependencies> PeerInner<P> {
+    fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
         Self {
             peer_state,
             device,
@@ -51,7 +50,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, T, B> {
 /// (which might expose other functionality in their scope) from a Peer pointer.
 ///
 /// e.g. it can take ownership of the timer state of a peer.
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for PeerInner<E, T, B> {
+impl<P: PeerDependencies> Deref for PeerInner<P> {
     type Target = dyn PeerState;
 
     fn deref(&self) -> &Self::Target {
@@ -60,8 +59,8 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for PeerInner<E, T, B
 }
 
 /// A Peer represents a reference to the router state associated with a peer
-pub struct Peer<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    inner: Arc<PeerInner<E, T, B>>,
+pub struct Peer<P: PeerDependencies> {
+    inner: Arc<PeerInner<P>>,
 }
 
 /// A PeerHandle is a specially designated reference to the peer
@@ -69,13 +68,13 @@ pub struct Peer<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
 ///
 /// A PeerHandle cannot be cloned (unlike the wrapped type).
 /// A PeerHandle dereferences to a Peer (meaning you can use it like a Peer struct)
-pub struct PeerHandle<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    peer: Peer<E, T, B>,
+pub struct PeerHandle<P: PeerDependencies> {
+    peer: Peer<P>,
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for Peer<E, T, B> {
+impl<P: PeerDependencies> Clone for Peer<P> {
     fn clone(&self) -> Self {
-        Peer {
+        Self {
             inner: self.inner.clone(),
         }
     }
@@ -83,36 +82,36 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for Peer<E, T, B> {
 
 // Equality of peers is defined as pointer equality of
 // the atomic reference counted pointer.
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PartialEq for Peer<E, T, B> {
+impl<P: PeerDependencies> PartialEq for Peer<P> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Eq for Peer<E, T, B> {}
+impl<P: PeerDependencies> Eq for Peer<P> {}
 
 // A peer is transparently dereferenced to the inner type
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for Peer<E, T, B> {
-    type Target = PeerInner<E, T, B>;
+impl<P: PeerDependencies> Deref for Peer<P> {
+    type Target = PeerInner<P>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for PeerHandle<E, T, B> {
-    type Target = PeerInner<E, T, B>;
+impl<P: PeerDependencies> Deref for PeerHandle<P> {
+    type Target = PeerInner<P>;
     fn deref(&self) -> &Self::Target {
         &self.peer
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> fmt::Display for PeerHandle<E, T, B> {
+impl<P: PeerDependencies> fmt::Display for PeerHandle<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PeerHandle(format: TODO)")
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Drop for PeerHandle<E, T, B> {
+impl<P: PeerDependencies> Drop for PeerHandle<P> {
     fn drop(&mut self) {
         let peer = &self.peer;
 
@@ -132,7 +131,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Drop for PeerHandle<E, T, B
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, T, B> {
+impl<P: PeerDependencies> PeerInner<P> {
     /// Send a raw message to the peer (used for handshake messages)
     ///
     /// # Arguments
@@ -151,8 +150,8 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerInner<E, T, B> {
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Peer<E, T, B> {
-    fn new(device: Device<E, T, B>, peer_state: Arc<dyn PeerState>) -> Self {
+impl<P: PeerDependencies> Peer<P> {
+    fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
         Self {
             inner: Arc::new(PeerInner::new(device, peer_state)),
         }
@@ -273,21 +272,21 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Peer<E, T, B> {
         self.peer_state.as_ref()
     }
 
-    pub fn get_outbound(&self) -> &SequentialQueue<SendJob<E, T, B>> {
+    pub fn get_outbound(&self) -> &SequentialQueue<SendJob<P>> {
         &self.outbound
     }
 
-    pub fn get_inbound(&self) -> &SequentialQueue<ReceiveJob<E, T, B>> {
+    pub fn get_inbound(&self) -> &SequentialQueue<ReceiveJob<P>> {
         &self.inbound
     }
 
-    pub fn update_endpoint(&self, new_endpoint: Option<E>) {
+    pub fn update_endpoint(&self, new_endpoint: Option<P::UdpEndpoint>) {
         *self.endpoint.lock() = new_endpoint;
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E, T, B> {
-    pub fn new(device: Device<E, T, B>, peer_state: Arc<dyn PeerState>) -> Self {
+impl<P: PeerDependencies> PeerHandle<P> {
+    pub fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
         Self {
             peer: Peer::new(device, peer_state),
         }
@@ -303,7 +302,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E, T, B> {
     ///
     /// This API still permits support for the "sticky socket" behavior,
     /// as sockets should be "unsticked" when manually updating the endpoint
-    pub fn set_endpoint(&self, endpoint: E) {
+    pub fn set_endpoint(&self, endpoint: P::UdpEndpoint) {
         log::trace!("peer.set_endpoint");
         *self.peer.endpoint.lock() = Some(endpoint);
     }

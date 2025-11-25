@@ -1,14 +1,17 @@
 use wg_crypto as crypto;
-use wg_traits::udp::Reader;
+use wg_traits::{udp::Reader, udp::Writer};
 
 use std::net::IpAddr;
 use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::{
+    Arc, Mutex,
+    mpsc::{Receiver, RecvTimeoutError, Sender, channel},
+};
 use std::time::Duration;
 
 use rand::Rng;
+
+use crate::router::PeerDependencies;
 
 use super::*;
 
@@ -45,6 +48,17 @@ impl<E> EventTracker<E> {
     fn now(&self) -> Option<E> {
         self.wait(Duration::from_millis(0))
     }
+}
+
+pub struct TestPeerDeps<W: Writer<dummy::UnitEndpoint>> {
+    w: std::marker::PhantomData<W>,
+}
+
+impl<W: Writer<dummy::UnitEndpoint>> PeerDependencies for TestPeerDeps<W> {
+    type UdpEndpoint = dummy::UnitEndpoint;
+
+    type TunWriter = dummy::TunWriter;
+    type UdpWriter = W;
 }
 
 // type for tracking events inside the router module
@@ -134,7 +148,7 @@ fn test_outbound() {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<_, _, _> = Device::new(1, tun_writer);
+    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(1, tun_writer);
     router.set_outbound_writer(dummy::VoidBind);
 
     let tests = [
@@ -315,10 +329,12 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer1, _) = dummy::TunTest::create(false);
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
-            let router1: Device<_, _, _> = Device::new(1, tun_writer1);
+            let router1: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
+                Device::new(1, tun_writer1);
             router1.set_outbound_writer(bind_writer1);
 
-            let router2: Device<_, _, _> = Device::new(1, tun_writer2);
+            let router2: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
+                Device::new(1, tun_writer2);
             router2.set_outbound_writer(bind_writer2);
 
             // prepare opaque values for tracing callbacks

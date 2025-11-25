@@ -1,7 +1,9 @@
 use std::fmt;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{
+    Arc, Weak,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::thread;
 use std::time::Instant;
 
@@ -23,6 +25,10 @@ use crate::timers::{
 };
 use crate::workers::{HandshakeJob, udp_worker};
 
+use super::PeerDeps;
+
+type CryptoDevice<T, B> = crypto::Device<PeerHandle<PeerDeps<T, B>>, Instant, StdTimestamp>;
+
 pub struct WireguardInner<T: Tun, B: UDP> {
     // identifier (for logging)
     pub id: u32,
@@ -36,14 +42,12 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     // current MTU
     pub mtu: AtomicUsize,
 
-    crypto_device: RwLock<
-        crypto::Device<PeerHandle<B::Endpoint, T::Writer, B::Writer>, Instant, StdTimestamp>,
-    >,
+    crypto_device: RwLock<CryptoDevice<T, B>>,
 
     peer_state_lookup: DashMap<PublicKey, Weak<PeerState<T, B>>>,
 
     // cryptokey router
-    pub router: RouterDevice<B::Endpoint, T::Writer, B::Writer>,
+    pub router: RouterDevice<PeerDeps<T, B>>,
 
     // handshake related state
     pub last_under_load: Mutex<Instant>,
@@ -53,7 +57,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
 
 impl<T: Tun, B: UDP> WireguardInner<T, B> {
     fn new(
-        router: RouterDevice<B::Endpoint, T::Writer, B::Writer>,
+        router: RouterDevice<PeerDeps<T, B>>,
         sender: Sender<HandshakeJob<B::Endpoint>>,
     ) -> Self {
         Self {
@@ -262,7 +266,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn visit_peer<F>(&self, public_key: &PublicKey, mut f: F)
     where
-        F: FnMut(&PeerHandle<B::Endpoint, T::Writer, B::Writer>, &PeerState<T, B>),
+        F: FnMut(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
     {
         let peers = self.crypto_device.read();
 
@@ -277,7 +281,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn visit_peers<F>(&self, mut f: F)
     where
-        F: FnMut(&PublicKey, &PeerHandle<B::Endpoint, T::Writer, B::Writer>, &PeerState<T, B>),
+        F: FnMut(&PublicKey, &PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
     {
         for (public_key, peer_handle) in self.crypto_device.read().iter() {
             let peer_state = self
@@ -288,12 +292,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         }
     }
 
-    pub fn get_crypto_device(
-        &self,
-    ) -> RwLockReadGuard<
-        '_,
-        crypto::Device<PeerHandle<B::Endpoint, T::Writer, B::Writer>, Instant, StdTimestamp>,
-    > {
+    pub fn get_crypto_device(&self) -> RwLockReadGuard<'_, CryptoDevice<T, B>> {
         self.crypto_device.read()
     }
 }

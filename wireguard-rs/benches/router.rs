@@ -1,6 +1,7 @@
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use wg_platform::dummy;
-use wireguard_rs::router::{Device, KeyPair, PeerState, SIZE_MESSAGE_PREFIX};
+use wg_traits::udp::Writer;
+use wireguard_rs::router::{Device, KeyPair, PeerDependencies, PeerState, SIZE_MESSAGE_PREFIX};
 
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
@@ -113,6 +114,17 @@ impl BencherCallbacks {
     }
 }
 
+pub struct TestPeerDeps<W: Writer<dummy::UnitEndpoint>> {
+    w: std::marker::PhantomData<W>,
+}
+
+impl<W: Writer<dummy::UnitEndpoint>> PeerDependencies for TestPeerDeps<W> {
+    type UdpEndpoint = dummy::UnitEndpoint;
+
+    type TunWriter = dummy::TunWriter;
+    type UdpWriter = W;
+}
+
 impl PeerState for BencherCallbacks {
     fn send(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         self.sent.fetch_add(size, Ordering::SeqCst);
@@ -143,7 +155,7 @@ fn bench_router_outbound(b: &mut Bencher) {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<_, dummy::TunWriter, dummy::VoidBind> = Device::new(
+    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(
         available_parallelism()
             .expect("parallelism info should be available")
             .get(),

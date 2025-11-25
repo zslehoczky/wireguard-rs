@@ -3,8 +3,7 @@ use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 
-use wg_traits::{Endpoint, tun, udp};
-
+use super::peer::PeerDependencies;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
@@ -15,14 +14,12 @@ pub trait ParallelJob: Sized + SequentialJob {
     fn parallel_work(&self);
 }
 
-pub enum ParallelJobUnion<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    Outbound(SendJob<E, T, B>),
-    Inbound(ReceiveJob<E, T, B>),
+pub enum ParallelJobUnion<P: PeerDependencies> {
+    Outbound(SendJob<P>),
+    Inbound(ReceiveJob<P>),
 }
 
-fn parallel_worker<E: Endpoint, T: tun::Writer, B: udp::Writer<E>>(
-    receiver: Receiver<ParallelJobUnion<E, T, B>>,
-) {
+fn parallel_worker<P: PeerDependencies>(receiver: Receiver<ParallelJobUnion<P>>) {
     loop {
         log::trace!("pool worker awaiting job");
         match receiver.recv() {
@@ -42,12 +39,12 @@ fn parallel_worker<E: Endpoint, T: tun::Writer, B: udp::Writer<E>>(
     }
 }
 
-pub struct ParallelQueue<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
-    sender: Option<Sender<ParallelJobUnion<E, T, B>>>,
+pub struct ParallelQueue<P: PeerDependencies> {
+    sender: Option<Sender<ParallelJobUnion<P>>>,
     handles: Vec<JoinHandle<()>>,
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, T, B> {
+impl<P: PeerDependencies> ParallelQueue<P> {
     /// Create a new ParallelQueue instance
     ///
     /// # Arguments
@@ -70,7 +67,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, T, B> {
         }
     }
 
-    pub fn queue_job(&self, job: ParallelJobUnion<E, T, B>) {
+    pub fn queue_job(&self, job: ParallelJobUnion<P>) {
         self.sender
             .as_ref()
             .expect("sender should exist until drop is called")
@@ -79,7 +76,7 @@ impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, T, B> {
     }
 }
 
-impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Drop for ParallelQueue<E, T, B> {
+impl<P: PeerDependencies> Drop for ParallelQueue<P> {
     fn drop(&mut self) {
         log::trace!("parallel queue: begin drop");
 
