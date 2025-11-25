@@ -4,7 +4,7 @@ mod encryption_state;
 mod key_wheel;
 #[allow(clippy::module_inception)]
 mod peer;
-mod timer_state;
+mod peer_state;
 
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use crate::router::KeyPair;
 pub use decryption_state::DecryptionState;
 use encryption_state::EncryptionState;
 pub use peer::{Peer, PeerHandle};
-pub use timer_state::TimerState;
+pub use peer_state::PeerState;
 
 fn crypto_state<P>(peer: P, keypair: Arc<KeyPair>) -> (EncryptionState, DecryptionState<P>) {
     (

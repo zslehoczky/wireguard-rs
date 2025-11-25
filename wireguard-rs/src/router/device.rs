@@ -9,14 +9,14 @@ use wg_traits::{Endpoint, tun, udp};
 
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerHandle, TimerState};
+use super::peer::{DecryptionState, Peer, PeerHandle, PeerState};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-pub struct DeviceInner<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
+pub struct DeviceInner<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
     // inbound writer (TUN)
     inbound: T,
 
@@ -24,18 +24,18 @@ pub struct DeviceInner<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Write
     outbound: RwLock<(bool, Option<B>)>,
 
     // routing
-    recv: RwLock<ReceiverLookup<Peer<E, C, T, B>>>,
-    table: RoutingTable<Peer<E, C, T, B>>,
+    recv: RwLock<ReceiverLookup<Peer<E, T, B>>>,
+    table: RoutingTable<Peer<E, T, B>>,
 
     // work queue
-    parallel_queue: ParallelQueue<E, C, T, B>,
+    parallel_queue: ParallelQueue<E, T, B>,
 }
 
-pub struct Device<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
-    inner: Arc<DeviceInner<E, C, T, B>>,
+pub struct Device<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
+    inner: Arc<DeviceInner<E, T, B>>,
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C, T, B> {
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Device<E, T, B> {
     pub fn new(num_workers: usize, tun: T) -> Self {
         let parallel_queue = ParallelQueue::new(
             NonZeroUsize::new(num_workers).expect("should not be zero"),
@@ -88,8 +88,8 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C,
     /// # Returns
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
-    pub fn new_peer(&self, opaque: C) -> PeerHandle<E, C, T, B> {
-        PeerHandle::new(self.clone(), opaque)
+    pub fn new_peer(&self, peer_state: Arc<dyn PeerState>) -> PeerHandle<E, T, B> {
+        PeerHandle::new(self.clone(), peer_state)
     }
 
     /// Cryptkey routes and sends a plaintext message (IP packet)
@@ -175,7 +175,7 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C,
         self.outbound.write().1 = Some(new);
     }
 
-    pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
+    pub fn queue_job(&self, job: ParallelJobUnion<E, T, B>) {
         self.parallel_queue.queue_job(job);
     }
 
@@ -183,7 +183,7 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C,
         &self,
         prev_id: Option<u32>,
         new_id: u32,
-        decryption_state: DecryptionState<Peer<E, C, T, B>>,
+        decryption_state: DecryptionState<Peer<E, T, B>>,
     ) -> Option<u32> {
         self.inner
             .recv
@@ -214,24 +214,24 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Device<E, C,
         }
     }
 
-    pub fn check_route(&self, peer: &Peer<E, C, T, B>, packet: &mut [u8]) -> bool {
+    pub fn check_route(&self, peer: &Peer<E, T, B>, packet: &mut [u8]) -> bool {
         self.table.check_route(peer, packet)
     }
 
-    pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<E, C, T, B>) {
+    pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<E, T, B>) {
         self.table.insert(ip, cidr, peer)
     }
 
-    pub fn list_routes(&self, peer: &Peer<E, C, T, B>) -> Vec<(IpAddr, u32)> {
+    pub fn list_routes(&self, peer: &Peer<E, T, B>) -> Vec<(IpAddr, u32)> {
         self.table.list(peer)
     }
 
-    pub fn remove_route(&self, peer: &Peer<E, C, T, B>) {
+    pub fn remove_route(&self, peer: &Peer<E, T, B>) {
         self.table.remove(peer)
     }
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, C, T, B> {
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Clone for Device<E, T, B> {
     fn clone(&self) -> Self {
         Device {
             inner: self.inner.clone(),
@@ -239,18 +239,16 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Clone for De
     }
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> PartialEq
-    for Device<E, C, T, B>
-{
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> PartialEq for Device<E, T, B> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, C, T, B> {}
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Eq for Device<E, T, B> {}
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, C, T, B> {
-    type Target = DeviceInner<E, C, T, B>;
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Deref for Device<E, T, B> {
+    type Target = DeviceInner<E, T, B>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }

@@ -94,7 +94,7 @@ macro_rules! no_events {
     };
 }
 
-impl TimerState for TestCallbacks {
+impl PeerState for TestCallbacks {
     fn send(
         &self,
         size: usize,
@@ -116,6 +116,16 @@ impl TimerState for TestCallbacks {
     fn key_confirmed(&self) {
         self.key_confirmed.log(());
     }
+
+    fn increment_rx_bytes(&self, _: u64) -> u64 {
+        0
+    }
+
+    fn increment_tx_bytes(&self, _: u64) -> u64 {
+        0
+    }
+
+    fn reset_queued_handshake(&self) {}
 }
 
 #[test]
@@ -124,7 +134,7 @@ fn test_outbound() {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer);
+    let router: Device<_, _, _> = Device::new(1, tun_writer);
     router.set_outbound_writer(dummy::VoidBind);
 
     let tests = [
@@ -175,7 +185,7 @@ fn test_outbound() {
                 );
 
                 // add new peer
-                let opaque = TestCallbacks::new();
+                let opaque = Arc::new(TestCallbacks::new());
                 let peer = router.new_peer(opaque.clone());
                 let mask: IpAddr = mask.parse().unwrap();
 
@@ -305,16 +315,16 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer1, _) = dummy::TunTest::create(false);
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
-            let router1: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer1);
+            let router1: Device<_, _, _> = Device::new(1, tun_writer1);
             router1.set_outbound_writer(bind_writer1);
 
-            let router2: Device<_, TestCallbacks, _, _> = Device::new(1, tun_writer2);
+            let router2: Device<_, _, _> = Device::new(1, tun_writer2);
             router2.set_outbound_writer(bind_writer2);
 
             // prepare opaque values for tracing callbacks
 
-            let opaque1 = TestCallbacks::new();
-            let opaque2 = TestCallbacks::new();
+            let opaque1 = Arc::new(TestCallbacks::new());
+            let opaque2 = Arc::new(TestCallbacks::new());
 
             // create peers with matching keypairs and assign subnets
 

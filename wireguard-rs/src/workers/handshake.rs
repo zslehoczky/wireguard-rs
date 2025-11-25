@@ -81,7 +81,7 @@ fn handle_message<T: Tun, B: UDP>(
     mut src: <B as UDP>::Endpoint,
     under_load: bool,
 ) {
-    let device = wireguard_device.peers.read();
+    let device = wireguard_device.get_crypto_device();
     match device.process(
         Instant::now(),
         &mut OsRng,
@@ -115,12 +115,8 @@ fn handle_message<T: Tun, B: UDP>(
 
                 // add to rx_bytes and tx_bytes
                 let req_len = msg.len() as u64;
-                peer.get_timer_state()
-                    .rx_bytes
-                    .fetch_add(req_len, Ordering::Relaxed);
-                peer.get_timer_state()
-                    .tx_bytes
-                    .fetch_add(resp_len, Ordering::Relaxed);
+                peer.get_peer_state().increment_rx_bytes(req_len);
+                peer.get_peer_state().increment_tx_bytes(resp_len);
 
                 // update endpoint
                 peer.set_endpoint(src);
@@ -131,14 +127,14 @@ fn handle_message<T: Tun, B: UDP>(
                         "{} : handshake worker, handshake response sent",
                         wireguard_device
                     );
-                    peer.get_timer_state().sent_handshake_response();
+                    peer.get_peer_state().handshake_response_sent();
                 } else {
                     // update timers after receiving handshake response
                     debug!(
                         "{} : handshake worker, handshake response was received",
                         wireguard_device
                     );
-                    peer.get_timer_state().timers_handshake_complete();
+                    peer.get_peer_state().timers_handshake_complete();
                 }
 
                 // add any new keypair to peer
@@ -149,7 +145,7 @@ fn handle_message<T: Tun, B: UDP>(
                     );
 
                     // this means that a handshake response was processed or sent
-                    peer.get_timer_state().timers_session_derived();
+                    peer.get_peer_state().timers_session_derived();
 
                     // free any unused ids
                     for id in peer.add_keypair(kp) {
@@ -163,12 +159,12 @@ fn handle_message<T: Tun, B: UDP>(
 }
 
 fn handle_new<T: Tun, B: UDP>(wireguard_device: &WireGuard<T, B>, public_key: PublicKey) {
-    if let Some(peer) = wireguard_device.peers.read().get(&public_key) {
+    let device = wireguard_device.get_crypto_device();
+    if let Some(peer) = device.get(&public_key) {
         debug!(
             "{} : handshake worker, new handshake requested for {}",
             wireguard_device, peer
         );
-        let device = wireguard_device.peers.read();
         let _ = device
             .begin(Instant::now(), &mut OsRng, &public_key)
             .map(|msg| {
@@ -178,10 +174,8 @@ fn handle_new<T: Tun, B: UDP>(wireguard_device: &WireGuard<T, B>, public_key: Pu
                         wireguard_device, e
                     )
                 });
-                peer.get_timer_state().sent_handshake_initiation();
+                peer.get_peer_state().handshake_initiation_sent();
             });
-        peer.get_timer_state()
-            .handshake_queued
-            .store(false, Ordering::SeqCst);
+        peer.get_peer_state().reset_queued_handshake();
     }
 }

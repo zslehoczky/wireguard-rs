@@ -164,8 +164,8 @@ fn test_pure_wireguard() {
     // configure crypto-key router
 
     {
-        let peers1 = wg1.peers.read();
-        let peers2 = wg2.peers.read();
+        let peers1 = wg1.get_crypto_device();
+        let peers2 = wg2.get_crypto_device();
 
         let peer2 = peers1.get(&pk2).unwrap();
         let peer1 = peers2.get(&pk1).unwrap();

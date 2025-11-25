@@ -5,7 +5,6 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 
 use wg_traits::{Endpoint, tun, udp};
 
-use super::peer::TimerState;
 use super::receive::ReceiveJob;
 use super::send::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
@@ -16,13 +15,13 @@ pub trait ParallelJob: Sized + SequentialJob {
     fn parallel_work(&self);
 }
 
-pub enum ParallelJobUnion<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
-    Outbound(SendJob<E, C, T, B>),
-    Inbound(ReceiveJob<E, C, T, B>),
+pub enum ParallelJobUnion<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
+    Outbound(SendJob<E, T, B>),
+    Inbound(ReceiveJob<E, T, B>),
 }
 
-fn parallel_worker<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>>(
-    receiver: Receiver<ParallelJobUnion<E, C, T, B>>,
+fn parallel_worker<E: Endpoint, T: tun::Writer, B: udp::Writer<E>>(
+    receiver: Receiver<ParallelJobUnion<E, T, B>>,
 ) {
     loop {
         log::trace!("pool worker awaiting job");
@@ -43,12 +42,12 @@ fn parallel_worker<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>
     }
 }
 
-pub struct ParallelQueue<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> {
-    sender: Option<Sender<ParallelJobUnion<E, C, T, B>>>,
+pub struct ParallelQueue<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> {
+    sender: Option<Sender<ParallelJobUnion<E, T, B>>>,
     handles: Vec<JoinHandle<()>>,
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, C, T, B> {
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> ParallelQueue<E, T, B> {
     /// Create a new ParallelQueue instance
     ///
     /// # Arguments
@@ -71,7 +70,7 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelQueu
         }
     }
 
-    pub fn queue_job(&self, job: ParallelJobUnion<E, C, T, B>) {
+    pub fn queue_job(&self, job: ParallelJobUnion<E, T, B>) {
         self.sender
             .as_ref()
             .expect("sender should exist until drop is called")
@@ -80,9 +79,7 @@ impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> ParallelQueu
     }
 }
 
-impl<E: Endpoint, C: TimerState, T: tun::Writer, B: udp::Writer<E>> Drop
-    for ParallelQueue<E, C, T, B>
-{
+impl<E: Endpoint, T: tun::Writer, B: udp::Writer<E>> Drop for ParallelQueue<E, T, B> {
     fn drop(&mut self) {
         log::trace!("parallel queue: begin drop");
 

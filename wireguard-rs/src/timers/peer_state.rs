@@ -10,7 +10,7 @@ use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
-use crate::router::{KeyPair, TimerState, message_data_len};
+use crate::router::{self, KeyPair, message_data_len};
 use crate::wireguard::WireGuard;
 use crate::workers::HandshakeJob;
 
@@ -206,7 +206,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
     }
 }
 
-impl<T: Tun, B: UDP> TimerState for PeerState<T, B> {
+impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
     /* Called after the router encrypts a transport message destined for the peer.
      * This method is called, even if the encrypted payload is empty (keepalive)
      */
@@ -283,6 +283,34 @@ impl<T: Tun, B: UDP> TimerState for PeerState<T, B> {
     fn key_confirmed(&self) {
         log::trace!("{} : EVENT(key_confirmed)", self);
         self.timers_handshake_complete();
+    }
+
+    fn increment_rx_bytes(&self, req_len: u64) -> u64 {
+        self.rx_bytes.fetch_add(req_len, Ordering::Relaxed)
+    }
+
+    fn increment_tx_bytes(&self, resp_len: u64) -> u64 {
+        self.tx_bytes.fetch_add(resp_len, Ordering::Relaxed)
+    }
+
+    fn handshake_initiation_sent(&self) {
+        self.sent_handshake_initiation()
+    }
+
+    fn handshake_response_sent(&self) {
+        self.sent_handshake_response()
+    }
+
+    fn timers_handshake_complete(&self) {
+        self.timers_handshake_complete()
+    }
+
+    fn timers_session_derived(&self) {
+        self.timers_session_derived()
+    }
+
+    fn reset_queued_handshake(&self) {
+        self.handshake_queued.store(false, Ordering::SeqCst)
     }
 }
 

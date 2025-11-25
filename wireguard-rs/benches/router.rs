@@ -1,6 +1,6 @@
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use wg_platform::dummy;
-use wireguard_rs::router::{Device, KeyPair, SIZE_MESSAGE_PREFIX, TimerState};
+use wireguard_rs::router::{Device, KeyPair, PeerState, SIZE_MESSAGE_PREFIX};
 
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
@@ -113,7 +113,7 @@ impl BencherCallbacks {
     }
 }
 
-impl TimerState for BencherCallbacks {
+impl PeerState for BencherCallbacks {
     fn send(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         self.sent.fetch_add(size, Ordering::SeqCst);
     }
@@ -122,6 +122,16 @@ impl TimerState for BencherCallbacks {
     }
     fn need_key(&self) {}
     fn key_confirmed(&self) {}
+
+    fn increment_rx_bytes(&self, _: u64) -> u64 {
+        0
+    }
+
+    fn increment_tx_bytes(&self, _: u64) -> u64 {
+        0
+    }
+
+    fn reset_queued_handshake(&self) {}
 }
 
 fn bench_router_outbound(b: &mut Bencher) {
@@ -133,7 +143,7 @@ fn bench_router_outbound(b: &mut Bencher) {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<_, BencherCallbacks, dummy::TunWriter, dummy::VoidBind> = Device::new(
+    let router: Device<_, dummy::TunWriter, dummy::VoidBind> = Device::new(
         available_parallelism()
             .expect("parallelism info should be available")
             .get(),
@@ -141,8 +151,8 @@ fn bench_router_outbound(b: &mut Bencher) {
     );
 
     // add peer to router
-    let opaque = BencherCallbacks::new();
-    let peer = router.new_peer(opaque);
+    let opaque = Arc::new(BencherCallbacks::new());
+    let peer = router.new_peer(opaque.clone());
     peer.add_keypair(dummy_keypair(true));
 
     // add subnet to peer
@@ -163,8 +173,6 @@ fn bench_router_outbound(b: &mut Bencher) {
     let mut msg = pad(&packet);
     msg.reserve(16);
 
-    let opaque = peer.get_timer_state();
-    // repeatedly transmit 10 GB
     b.iter(|| {
         opaque.reset();
         while opaque.sent() < BYTES_PER_ITER / packet.len() {

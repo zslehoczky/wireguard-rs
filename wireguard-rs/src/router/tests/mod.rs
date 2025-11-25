@@ -4,7 +4,7 @@ use wg_crypto as crypto;
 use wg_crypto::SymKey;
 
 use super::{
-    Device, KeyPair, TimerState,
+    Device, KeyPair, PeerState,
     constants::{SIZE_MESSAGE_PREFIX, message_data_len},
 };
 use crate::wireguard::tests::make_packet;

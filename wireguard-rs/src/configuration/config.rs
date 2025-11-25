@@ -157,51 +157,51 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     }
 
     fn set_endpoint(&self, peer: &PublicKey, addr: SocketAddr) {
-        if let Some(peer) = self.wireguard.peers.read().get(peer) {
-            peer.set_endpoint(<B::Endpoint as Endpoint>::from_address(addr));
-        }
+        self.wireguard.visit_peer(peer, |peer_handle, _| {
+            peer_handle.set_endpoint(<B::Endpoint as Endpoint>::from_address(addr));
+        });
     }
 
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64) {
-        if let Some(peer) = self.wireguard.peers.read().get(peer) {
-            peer.get_timer_state()
-                .set_persistent_keepalive_interval(secs);
-        }
+        self.wireguard.visit_peer(peer, |_, peer_state| {
+            peer_state.set_persistent_keepalive_interval(secs);
+        });
     }
 
     fn add_allowed_ip(&self, peer: &PublicKey, ip: IpAddr, masklen: u32) {
-        if let Some(peer) = self.wireguard.peers.read().get(peer) {
-            peer.add_allowed_ip(ip, masklen);
-        }
+        self.wireguard.visit_peer(peer, |peer_handle, _| {
+            peer_handle.add_allowed_ip(ip, masklen);
+        });
     }
 
     fn get_peers(&self) -> Vec<PeerState> {
-        let peers = self.wireguard.peers.read();
         let mut state = vec![];
 
-        for (pk, p) in peers.iter() {
-            // convert the system time to (secs, nano) since epoch
-            let last_handshake_time = (*p.walltime_last_handshake.lock()).map(|t| {
-                let duration = t
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_else(|_| Duration::from_secs(0));
-                (duration.as_secs(), duration.subsec_nanos() as u64)
+        self.wireguard
+            .visit_peers(|&public_key, peer_handle, peer_state| {
+                // convert the system time to (secs, nano) since epoch
+                let last_handshake_time = peer_state.walltime_last_handshake.lock().map(|t| {
+                    let duration = t
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_else(|_| Duration::from_secs(0));
+                    (duration.as_secs(), duration.subsec_nanos() as u64)
+                });
+
+                if let Some(psk) = self.wireguard.get_psk(&public_key) {
+                    // extract state into PeerState
+                    state.push(PeerState {
+                        preshared_key: psk,
+                        endpoint: peer_handle.get_endpoint(),
+                        rx_bytes: peer_state.rx_bytes.load(Ordering::Relaxed),
+                        tx_bytes: peer_state.tx_bytes.load(Ordering::Relaxed),
+                        persistent_keepalive_interval: peer_state.get_keepalive_interval(),
+                        allowed_ips: peer_handle.list_allowed_ips(),
+                        last_handshake_time,
+                        public_key,
+                    })
+                }
             });
 
-            if let Some(psk) = self.wireguard.get_psk(&pk) {
-                // extract state into PeerState
-                state.push(PeerState {
-                    preshared_key: psk,
-                    endpoint: p.get_endpoint(),
-                    rx_bytes: p.rx_bytes.load(Ordering::Relaxed),
-                    tx_bytes: p.tx_bytes.load(Ordering::Relaxed),
-                    persistent_keepalive_interval: p.get_keepalive_interval(),
-                    allowed_ips: p.list_allowed_ips(),
-                    last_handshake_time,
-                    public_key: pk,
-                })
-            }
-        }
         state
     }
 }
