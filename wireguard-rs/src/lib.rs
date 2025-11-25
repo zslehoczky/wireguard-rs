@@ -3,9 +3,9 @@ extern crate alloc;
 #[cfg(feature = "profiler")]
 extern crate cpuprofiler;
 
+pub mod peer;
 pub mod router;
 pub mod run;
-pub mod timers;
 
 /// The wireguard sub-module represents a full, pure, WireGuard implementation:
 ///

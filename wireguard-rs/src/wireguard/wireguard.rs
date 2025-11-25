@@ -18,11 +18,11 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::router::{Device as RouterDevice, PeerHandle};
-use crate::timers::{
+use crate::peer::{
     PeerState,
     constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK},
 };
+use crate::router::{Device as RouterDevice, PeerHandle};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
