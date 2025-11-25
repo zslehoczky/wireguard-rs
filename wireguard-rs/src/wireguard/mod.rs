@@ -1,16 +1,17 @@
-use std::marker::PhantomData;
+mod config;
+#[allow(clippy::module_inception)]
+mod wireguard;
 
 #[cfg(test)]
 pub mod tests;
 
-#[allow(clippy::module_inception)]
-mod wireguard;
+use std::marker::PhantomData;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
 use crate::router::PeerDependencies;
 
-// represents a WireGuard interface
+pub use config::WireGuardConfig;
 pub use wireguard::WireGuard;
 
 pub struct PeerDeps<T: Tun, U: UDP> {

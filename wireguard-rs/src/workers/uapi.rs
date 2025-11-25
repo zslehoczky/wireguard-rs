@@ -14,9 +14,8 @@ use wg_uapi::uapi::{
     write_config_response,
 };
 
-use crate::configuration::WireGuardConfig;
 use crate::run::{error::ExitCode, profiler::profiler_stop};
-use crate::wireguard::WireGuard;
+use crate::wireguard::{WireGuard, WireGuardConfig};
 
 use super::line_reader::{ReadOutcome, read_line_block};
 
