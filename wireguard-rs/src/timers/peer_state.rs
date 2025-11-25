@@ -207,10 +207,6 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
 }
 
 impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
-    /* Called after the router encrypts a transport message destined for the peer.
-     * This method is called, even if the encrypted payload is empty (keepalive)
-     */
-    #[inline(always)]
     fn send(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
         log::trace!("{} : EVENT(send)", self);
 
@@ -235,14 +231,6 @@ impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
         }
     }
 
-    /* Called after the router successfully decrypts a transport message from a peer.
-     * This method is called, even if the decrypted packet is:
-     *
-     * - A keepalive
-     * - A malformed IP packet
-     * - Fails to cryptkey route
-     */
-    #[inline(always)]
     fn recv(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>) {
         log::trace!("{} : EVENT(recv)", self);
 
@@ -267,19 +255,11 @@ impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
         }
     }
 
-    /* Called every time the router detects that a key is required,
-     * but no valid key-material is available for the particular peer.
-     *
-     * The message is called continuously
-     * (e.g. for every packet that must be encrypted, until a key becomes available)
-     */
-    #[inline(always)]
     fn need_key(&self) {
         log::trace!("{} : EVENT(need_key)", self);
         self.packet_send_queued_handshake_initiation(false);
     }
 
-    #[inline(always)]
     fn key_confirmed(&self) {
         log::trace!("{} : EVENT(key_confirmed)", self);
         self.timers_handshake_complete();
