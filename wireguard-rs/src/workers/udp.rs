@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use byteorder::{ByteOrder, LittleEndian};
 use log::debug;
 
@@ -17,7 +15,7 @@ use super::HandshakeJob;
 pub fn udp_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: B::Reader) {
     loop {
         // create vector big enough for any message given current MTU
-        let mtu = wg.mtu.load(Ordering::Relaxed);
+        let mtu = wg.get_mtu();
         let size = mtu + MAX_HANDSHAKE_MSG_SIZE;
         let mut msg: Vec<u8> = vec![0; size];
 
@@ -51,7 +49,7 @@ pub fn udp_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: B::Reader) {
             }
             _ => {
                 debug!("{} : reader, received (possible) handshake message", wg);
-                wg.pending.fetch_add(1, Ordering::SeqCst);
+                wg.increment_pending();
                 wg.send_to_handshake_queue(HandshakeJob::Message(msg, src));
             }
         }

@@ -1,5 +1,4 @@
 use std::process::exit;
-use std::sync::atomic::Ordering;
 use std::thread::{self, ScopedJoinHandle};
 
 use log::{debug, error, trace};
@@ -80,7 +79,7 @@ const fn padding(size: usize, mtu: usize) -> usize {
 pub fn tun_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: T::Reader) {
     loop {
         // create vector big enough for any transport message (based on MTU)
-        let mtu = wg.mtu.load(Ordering::Relaxed);
+        let mtu = wg.get_mtu();
         let size = mtu + SIZE_MESSAGE_PREFIX + 1;
         let mut msg: Vec<u8> = vec![0; size + CAPACITY_MESSAGE_POSTFIX];
 

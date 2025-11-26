@@ -1,5 +1,4 @@
 use std::num::NonZeroUsize;
-use std::sync::atomic::Ordering;
 use std::thread::{self, ScopedJoinHandle};
 use std::time::Instant;
 
@@ -40,7 +39,7 @@ pub fn handshake_worker<T: Tun, B: UDP>(
         // check if under load
         let mut under_load = false;
         let job: HandshakeJob<B::Endpoint> = job;
-        let pending = wireguard_device.pending.fetch_sub(1, Ordering::SeqCst);
+        let pending = wireguard_device.decrement_pending();
         debug_assert!(pending < MAX_QUEUED_INCOMING_HANDSHAKES + (1 << 16));
 
         // immediate go under load if too many handshakes pending
@@ -49,20 +48,19 @@ pub fn handshake_worker<T: Tun, B: UDP>(
                 "{} : handshake worker, under load (above threshold)",
                 wireguard_device
             );
-            *wireguard_device.last_under_load.lock() = Instant::now();
+            wireguard_device.set_last_under_load(Instant::now());
             under_load = true;
         }
 
         // remain under load for DURATION_UNDER_LOAD
-        if !under_load {
-            let elapsed = wireguard_device.last_under_load.lock().elapsed();
-            if DURATION_UNDER_LOAD >= elapsed {
-                log::trace!(
-                    "{} : handshake worker, under load (recent)",
-                    wireguard_device
-                );
-                under_load = true;
-            }
+        if !under_load
+            && DURATION_UNDER_LOAD >= wireguard_device.get_elapsed_since_last_under_load()
+        {
+            log::trace!(
+                "{} : handshake worker, under load (recent)",
+                wireguard_device
+            );
+            under_load = true;
         }
 
         // de-multiplex staged handshake jobs and handshake messages

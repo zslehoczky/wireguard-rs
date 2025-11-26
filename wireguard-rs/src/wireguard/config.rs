@@ -114,12 +114,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
         // TODO: Investigate why RTM_IFINFO events are not reliably delivered on macOS
         #[cfg(target_os = "macos")]
         {
-            if self
-                .wireguard
-                .mtu
-                .load(std::sync::atomic::Ordering::Relaxed)
-                == 0
-            {
+            if self.wireguard.get_mtu() == 0 {
                 // Try to bring up with a default MTU
                 // The TUN event handler should update this if the real MTU changes
                 self.up(1420)?; // Standard WireGuard MTU

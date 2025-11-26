@@ -91,7 +91,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
 
         // create a new handshake job for the peer
         if !self.handshake_queued.swap(true, Ordering::SeqCst) {
-            self.wg.pending.fetch_add(1, Ordering::SeqCst);
+            self.wg.increment_pending();
             self.wg.send_to_handshake_queue(HandshakeJob::New(self.pk));
             log::trace!(
                 "{} : packet_send_handshake_initiation, handshake queued",

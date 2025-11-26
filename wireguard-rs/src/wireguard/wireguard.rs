@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
@@ -28,20 +28,14 @@ use super::timers::Timers;
 type CryptoDevice<T, B> = crypto::Device<PeerHandle<PeerDeps<T, B>>, Instant, StdTimestamp>;
 
 pub struct WireguardInner<T: Tun, B: UDP> {
-    // internal id (for logging)
-    pub id: u32,
-
-    pub enabled: RwLock<bool>,
-    pub mtu: AtomicUsize,
-
+    id: u32, // internal id (for logging)
+    enabled: RwLock<bool>,
+    mtu: AtomicUsize,
     crypto_device: RwLock<CryptoDevice<T, B>>,
     peer_state_lookup: DashMap<PublicKey, Weak<PeerState<T, B>>>,
-
     pub router: RouterDevice<PeerDeps<T, B>>,
-
-    pub last_under_load: Mutex<Instant>,
-    pub pending: AtomicUsize, // number of pending handshake packets in queue
-
+    last_under_load: Mutex<Instant>,
+    pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
     timers: Timers,
 }
@@ -288,5 +282,25 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn get_crypto_device(&self) -> RwLockReadGuard<'_, CryptoDevice<T, B>> {
         self.crypto_device.read()
+    }
+
+    pub fn get_mtu(&self) -> usize {
+        self.mtu.load(Ordering::SeqCst)
+    }
+
+    pub fn increment_pending(&self) -> usize {
+        self.pending.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn decrement_pending(&self) -> usize {
+        self.pending.fetch_sub(1, Ordering::SeqCst)
+    }
+
+    pub fn get_elapsed_since_last_under_load(&self) -> Duration {
+        self.last_under_load.lock().elapsed()
+    }
+
+    pub fn set_last_under_load(&self, value: Instant) {
+        *self.last_under_load.lock() = value;
     }
 }
