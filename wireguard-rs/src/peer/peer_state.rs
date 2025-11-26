@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant, SystemTime};
 
@@ -19,174 +19,7 @@ use super::constants::{
     KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
     REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
-
-// only updated during configuration
-struct TimerState {
-    timers: Box<dyn PeerTimers>,
-
-    enabled: AtomicBool,
-
-    keepalive_interval: AtomicU64,
-    need_another_keepalive: AtomicBool,
-
-    handshake_attempts: AtomicUsize,
-    sent_lastminute_handshake: AtomicBool,
-}
-
-impl TimerState {
-    fn new(timers: Box<dyn PeerTimers>, enabled: bool) -> TimerState {
-        // create a timer instance for the provided peer
-        TimerState {
-            timers,
-
-            enabled: AtomicBool::new(enabled),
-
-            keepalive_interval: AtomicU64::new(0), // disabled
-            need_another_keepalive: AtomicBool::new(false),
-
-            handshake_attempts: AtomicUsize::new(0),
-            sent_lastminute_handshake: AtomicBool::new(false),
-        }
-    }
-
-    fn needs_another_keepalive(&self) -> bool {
-        self.need_another_keepalive.swap(false, Ordering::SeqCst)
-    }
-
-    fn get_keepalive_interval(&self) -> u64 {
-        self.keepalive_interval.load(Ordering::SeqCst)
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.enabled.load(Ordering::SeqCst)
-    }
-
-    fn set_enabled(&self, value: bool) {
-        self.enabled.store(value, Ordering::SeqCst)
-    }
-
-    fn enable(&self) {
-        // set flag to reenable timer events
-        if self.is_enabled() {
-            return;
-        }
-
-        self.set_enabled(true);
-
-        // start send_persistent_keepalive
-        if self.get_keepalive_interval() > 0 {
-            self.timers
-                .send_persistent_keepalive()
-                .start(Duration::from_secs(0));
-        }
-    }
-
-    fn disable(&self) {
-        // set flag to prevent future timer events
-        if !self.is_enabled() {
-            return;
-        }
-        self.set_enabled(false);
-
-        // stop all pending timers
-        self.timers.all().stop();
-
-        // reset all timer state
-        self.handshake_attempts.store(0, Ordering::SeqCst);
-        self.sent_lastminute_handshake
-            .store(false, Ordering::SeqCst);
-        self.need_another_keepalive.store(false, Ordering::SeqCst);
-    }
-
-    fn start_new_handshake_timer(&self) {
-        if self.is_enabled() {
-            self.timers
-                .new_handshake()
-                .start(KEEPALIVE_TIMEOUT + REKEY_TIMEOUT);
-        }
-    }
-
-    fn queue_another_keepalive(&self) {
-        if self.is_enabled() && !self.timers.send_keepalive().start(KEEPALIVE_TIMEOUT) {
-            self.need_another_keepalive.store(true, Ordering::SeqCst)
-        }
-    }
-
-    fn stop_send_keepalive_timer(&self) {
-        if self.is_enabled() {
-            self.timers.send_keepalive().stop()
-        }
-    }
-
-    fn stop_new_handshake_timer(&self) {
-        if self.is_enabled() {
-            self.timers.new_handshake().stop();
-        }
-    }
-
-    fn restart_retransmit_handshake_timer(&self) {
-        if self.is_enabled() {
-            self.timers.send_keepalive().stop();
-            self.timers.retransmit_handshake().reset(REKEY_TIMEOUT);
-        }
-    }
-
-    /// Return Some(()) if timers are enabled, None otherwise
-    fn stop_retransmit_handshake_timer(&self) -> Option<()> {
-        if self.is_enabled() {
-            self.timers.retransmit_handshake().stop();
-            self.handshake_attempts.store(0, Ordering::SeqCst);
-            self.sent_lastminute_handshake
-                .store(false, Ordering::SeqCst);
-
-            return Some(());
-        }
-
-        None
-    }
-
-    fn restart_zero_key_material_timer(&self) {
-        if self.is_enabled() {
-            self.timers.zero_key_material().reset(REJECT_AFTER_TIME * 3);
-        }
-    }
-
-    fn push_persistent_keepalive_into_future(&self) {
-        if self.is_enabled() && self.get_keepalive_interval() > 0 {
-            self.timers
-                .send_persistent_keepalive()
-                .reset(Duration::from_secs(self.get_keepalive_interval()));
-        }
-    }
-
-    fn set_persistent_keepalive_interval(&self, secs: u64) {
-        // update the stored keepalive_interval
-        self.keepalive_interval.store(secs, Ordering::SeqCst);
-
-        // stop the keepalive timer with the old interval
-        self.timers.send_persistent_keepalive().stop();
-
-        // cause immediate expiry of persistent_keepalive timer
-        if secs > 0 && self.is_enabled() {
-            self.timers
-                .send_persistent_keepalive()
-                .reset(Duration::from_secs(0));
-        }
-    }
-
-    fn reset_handshake_attempts(&self) {
-        self.handshake_attempts.store(0, Ordering::SeqCst);
-    }
-
-    /// Return true if the event hasn't been registered before this call, otherwise false
-    fn register_lastminute_handshake_sent(&self) -> bool {
-        !self.sent_lastminute_handshake.swap(true, Ordering::Acquire)
-    }
-
-    fn get_timers(&self) -> &dyn PeerTimers {
-        self.timers.as_ref()
-    }
-}
+use super::timer_state::TimerState;
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -233,10 +66,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             timer_state,
         });
 
-        result
-            .timer_state
-            .timers
-            .set_timer_callbacks(result.clone());
+        result.timer_state.set_timer_callbacks(result.clone());
 
         result
     }
@@ -521,9 +351,7 @@ impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
             &self.pk,
             |peer_handle, peer_state, timer_state| {
                 // check if handshake attempts remaining
-                let attempts = timer_state
-                    .handshake_attempts
-                    .fetch_add(1, Ordering::SeqCst);
+                let attempts = timer_state.increment_handshake_attempts();
                 if attempts > MAX_TIMER_HANDSHAKES {
                     debug!(
                         "Handshake for peer {} did not complete after {} attempts, giving up",
