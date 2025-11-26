@@ -1,5 +1,4 @@
 pub mod constants;
 mod peer_state;
-mod timers;
 
-pub use peer_state::PeerState;
+pub use peer_state::{PeerState, PeerTimers, TimerControls, TimerStopControl};

@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
-use hjul::Runner;
 use rand::Rng;
 use rand::rngs::OsRng;
 use spin::{Mutex, RwLock, RwLockReadGuard};
@@ -18,41 +17,33 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::peer::{
-    PeerState,
-    constants::{TIME_HORIZON, TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK},
-};
+use crate::peer::PeerState;
 use crate::router::{Device as RouterDevice, PeerHandle};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
+use super::constants::TIME_HORIZON;
+use super::timers::Timers;
 
 type CryptoDevice<T, B> = crypto::Device<PeerHandle<PeerDeps<T, B>>, Instant, StdTimestamp>;
 
 pub struct WireguardInner<T: Tun, B: UDP> {
-    // identifier (for logging)
+    // internal id (for logging)
     pub id: u32,
 
-    // timer wheel
-    pub runner: Mutex<Runner>,
-
-    // device enabled
     pub enabled: RwLock<bool>,
-
-    // current MTU
     pub mtu: AtomicUsize,
 
     crypto_device: RwLock<CryptoDevice<T, B>>,
-
     peer_state_lookup: DashMap<PublicKey, Weak<PeerState<T, B>>>,
 
-    // cryptokey router
     pub router: RouterDevice<PeerDeps<T, B>>,
 
-    // handshake related state
     pub last_under_load: Mutex<Instant>,
     pub pending: AtomicUsize, // number of pending handshake packets in queue
+
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
+    timers: Timers,
 }
 
 impl<T: Tun, B: UDP> WireguardInner<T, B> {
@@ -69,8 +60,8 @@ impl<T: Tun, B: UDP> WireguardInner<T, B> {
             pending: AtomicUsize::new(0),
             crypto_device: RwLock::new(crypto::Device::new()),
             peer_state_lookup: DashMap::default(),
-            runner: Mutex::new(Runner::new(TIMERS_TICK, TIMERS_SLOTS, TIMERS_CAPACITY)),
             handshake_sender: Mutex::new(Some(sender)),
+            timers: Timers::new(),
         }
     }
 }
@@ -193,13 +184,16 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // prevent up/down while inserting
         let enabled = self.enabled.read();
 
-        let peer_state = Arc::new(PeerState::new(OsRng.r#gen(), self.clone(), pk, *enabled));
+        let peer_timers = Box::new(self.timers.create_peer_timers());
+
+        let peer_state =
+            PeerState::new_as_arc(OsRng.r#gen(), self.clone(), pk, peer_timers, *enabled);
 
         self.peer_state_lookup
             .insert(pk, Arc::downgrade(&peer_state));
 
         // create new router peer
-        let peer = self.router.new_peer(peer_state);
+        let peer = self.router.new_peer(peer_state.clone());
 
         // finally, add the peer to the handshake device
         peers.add(pk, peer).is_ok()

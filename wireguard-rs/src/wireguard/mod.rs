@@ -1,4 +1,6 @@
 mod config;
+mod constants;
+mod timers;
 #[allow(clippy::module_inception)]
 mod wireguard;
 
@@ -12,6 +14,8 @@ use wg_traits::{tun::Tun, udp::UDP};
 use crate::router::PeerDependencies;
 
 pub use config::WireGuardConfig;
+pub use constants::TIME_HORIZON;
+pub use timers::TimerCallbacks;
 pub use wireguard::WireGuard;
 
 pub struct PeerDeps<T: Tun, U: UDP> {

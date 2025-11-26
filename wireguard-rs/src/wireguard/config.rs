@@ -1,5 +1,4 @@
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 
 use wg_crypto::PSK;
@@ -180,7 +179,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
         self.wireguard
             .visit_peers(|&public_key, peer_handle, peer_state| {
                 // convert the system time to (secs, nano) since epoch
-                let last_handshake_time = peer_state.walltime_last_handshake.lock().map(|t| {
+                let last_handshake_time = peer_state.get_walltime_last_handshake().map(|t| {
                     let duration = t
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap_or_else(|_| Duration::from_secs(0));
@@ -192,8 +191,8 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
                     state.push(PeerState {
                         preshared_key: psk,
                         endpoint: peer_handle.get_endpoint(),
-                        rx_bytes: peer_state.rx_bytes.load(Ordering::Relaxed),
-                        tx_bytes: peer_state.tx_bytes.load(Ordering::Relaxed),
+                        rx_bytes: peer_state.get_rx_bytes(),
+                        tx_bytes: peer_state.get_tx_bytes(),
                         persistent_keepalive_interval: peer_state.get_keepalive_interval(),
                         allowed_ips: peer_handle.list_allowed_ips(),
                         last_handshake_time,

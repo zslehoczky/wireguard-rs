@@ -19,12 +19,11 @@ use wg_traits::{
 
 use crate::wireguard::WireGuard;
 
+pub use handshake::handshake_worker;
 use handshake::spawn_handshake_workers;
+pub use tun::tun_worker;
 use tun::{spawn_tun_workers, tun_event_loop_worker};
 use uapi::{config_worker, uapi_server_worker};
-
-pub use handshake::handshake_worker;
-pub use tun::tun_worker;
 pub use udp::udp_worker;
 
 pub enum HandshakeJob<E> {

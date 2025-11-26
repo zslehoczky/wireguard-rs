@@ -1,53 +1,247 @@
 use std::fmt;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
-use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
+use log::debug;
+use spin::Mutex;
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
-use crate::router::{self, KeyPair, message_data_len};
-use crate::wireguard::WireGuard;
+use crate::router::{self, KeyPair, PeerHandle, message_data_len};
+use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
 use crate::workers::HandshakeJob;
 
 use super::constants::{
-    KEEPALIVE_TIMEOUT, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES, REKEY_AFTER_TIME, REKEY_TIMEOUT,
-    TIME_HORIZON,
+    KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
+    REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
-use super::timers::Timers;
+
+pub trait TimerStopControl {
+    fn stop(&self);
+}
+
+pub trait TimerControls: TimerStopControl {
+    fn start(&self, duration: Duration) -> bool;
+    fn reset(&self, duration: Duration);
+}
+
+pub trait PeerTimers: Send + Sync {
+    fn set_timer_callbacks(&self, timer_callbacks: Arc<dyn TimerCallbacks>);
+
+    fn all(&self) -> &dyn TimerStopControl;
+
+    fn retransmit_handshake(&self) -> &dyn TimerControls;
+    fn send_keepalive(&self) -> &dyn TimerControls;
+    fn new_handshake(&self) -> &dyn TimerControls;
+    fn zero_key_material(&self) -> &dyn TimerControls;
+    fn send_persistent_keepalive(&self) -> &dyn TimerControls;
+}
+
+// only updated during configuration
+struct TimerState {
+    timers: Box<dyn PeerTimers>,
+
+    enabled: AtomicBool,
+
+    keepalive_interval: AtomicU64,
+    need_another_keepalive: AtomicBool,
+
+    handshake_attempts: AtomicUsize,
+    sent_lastminute_handshake: AtomicBool,
+}
+
+impl TimerState {
+    fn new(timers: Box<dyn PeerTimers>, enabled: bool) -> TimerState {
+        // create a timer instance for the provided peer
+        TimerState {
+            timers,
+
+            enabled: AtomicBool::new(enabled),
+
+            keepalive_interval: AtomicU64::new(0), // disabled
+            need_another_keepalive: AtomicBool::new(false),
+
+            handshake_attempts: AtomicUsize::new(0),
+            sent_lastminute_handshake: AtomicBool::new(false),
+        }
+    }
+
+    fn needs_another_keepalive(&self) -> bool {
+        self.need_another_keepalive.swap(false, Ordering::SeqCst)
+    }
+
+    fn get_keepalive_interval(&self) -> u64 {
+        self.keepalive_interval.load(Ordering::SeqCst)
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    fn set_enabled(&self, value: bool) {
+        self.enabled.store(value, Ordering::SeqCst)
+    }
+
+    fn enable(&self) {
+        // set flag to reenable timer events
+        if self.is_enabled() {
+            return;
+        }
+
+        self.set_enabled(true);
+
+        // start send_persistent_keepalive
+        if self.get_keepalive_interval() > 0 {
+            self.timers
+                .send_persistent_keepalive()
+                .start(Duration::from_secs(0));
+        }
+    }
+
+    fn disable(&self) {
+        // set flag to prevent future timer events
+        if !self.is_enabled() {
+            return;
+        }
+        self.set_enabled(false);
+
+        // stop all pending timers
+        self.timers.all().stop();
+
+        // reset all timer state
+        self.handshake_attempts.store(0, Ordering::SeqCst);
+        self.sent_lastminute_handshake
+            .store(false, Ordering::SeqCst);
+        self.need_another_keepalive.store(false, Ordering::SeqCst);
+    }
+
+    fn start_new_handshake_timer(&self) {
+        if self.is_enabled() {
+            self.timers
+                .new_handshake()
+                .start(KEEPALIVE_TIMEOUT + REKEY_TIMEOUT);
+        }
+    }
+
+    fn queue_another_keepalive(&self) {
+        if self.is_enabled() && !self.timers.send_keepalive().start(KEEPALIVE_TIMEOUT) {
+            self.need_another_keepalive.store(true, Ordering::SeqCst)
+        }
+    }
+
+    fn stop_send_keepalive_timer(&self) {
+        if self.is_enabled() {
+            self.timers.send_keepalive().stop()
+        }
+    }
+
+    fn stop_new_handshake_timer(&self) {
+        if self.is_enabled() {
+            self.timers.new_handshake().stop();
+        }
+    }
+
+    fn restart_retransmit_handshake_timer(&self) {
+        if self.is_enabled() {
+            self.timers.send_keepalive().stop();
+            self.timers.retransmit_handshake().reset(REKEY_TIMEOUT);
+        }
+    }
+
+    /// Return Some(()) if timers are enabled, None otherwise
+    fn stop_retransmit_handshake_timer(&self) -> Option<()> {
+        if self.is_enabled() {
+            self.timers.retransmit_handshake().stop();
+            self.handshake_attempts.store(0, Ordering::SeqCst);
+            self.sent_lastminute_handshake
+                .store(false, Ordering::SeqCst);
+
+            return Some(());
+        }
+
+        None
+    }
+
+    fn restart_zero_key_material_timer(&self) {
+        if self.is_enabled() {
+            self.timers.zero_key_material().reset(REJECT_AFTER_TIME * 3);
+        }
+    }
+
+    fn push_persistent_keepalive_into_future(&self) {
+        if self.is_enabled() && self.get_keepalive_interval() > 0 {
+            self.timers
+                .send_persistent_keepalive()
+                .reset(Duration::from_secs(self.get_keepalive_interval()));
+        }
+    }
+
+    fn set_persistent_keepalive_interval(&self, secs: u64) {
+        // update the stored keepalive_interval
+        self.keepalive_interval.store(secs, Ordering::SeqCst);
+
+        // stop the keepalive timer with the old interval
+        self.timers.send_persistent_keepalive().stop();
+
+        // cause immediate expiry of persistent_keepalive timer
+        if secs > 0 && self.is_enabled() {
+            self.timers
+                .send_persistent_keepalive()
+                .reset(Duration::from_secs(0));
+        }
+    }
+
+    fn reset_handshake_attempts(&self) {
+        self.handshake_attempts.store(0, Ordering::SeqCst);
+    }
+
+    /// Return true if the event hasn't been registered before this call, otherwise false
+    fn register_lastminute_handshake_sent(&self) -> bool {
+        !self.sent_lastminute_handshake.swap(true, Ordering::Acquire)
+    }
+
+    fn get_timers(&self) -> &dyn PeerTimers {
+        self.timers.as_ref()
+    }
+}
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
-    pub id: u64,
+    id: u64,
 
     // wireguard device state
-    pub wg: WireGuard<T, B>,
+    wg: WireGuard<T, B>,
 
     // TODO: eliminate
-    pub pk: PublicKey,
+    pk: PublicKey,
 
     // handshake state
-    pub walltime_last_handshake: Mutex<Option<SystemTime>>, // walltime for last handshake (for UAPI status)
-    pub last_handshake_sent: Mutex<Instant>,                // instant for last handshake
-    pub handshake_queued: AtomicBool,                       // is a handshake job currently queued?
+    walltime_last_handshake: Mutex<Option<SystemTime>>, // walltime for last handshake (for UAPI status)
+    last_handshake_sent: Mutex<Instant>,                // instant for last handshake
+    handshake_queued: AtomicBool,                       // is a handshake job currently queued?
 
     // stats and configuration
-    pub rx_bytes: AtomicU64, // received bytes
-    pub tx_bytes: AtomicU64, // transmitted bytes
+    rx_bytes: AtomicU64, // received bytes
+    tx_bytes: AtomicU64, // transmitted bytes
 
     // timer model
-    pub timers: RwLock<Timers>,
+    timer_state: TimerState,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
-    pub fn new(id: u64, wg: WireGuard<T, B>, pk: PublicKey, timers_enabled: bool) -> Self {
-        let timers = Timers::new::<T, B>(&wg, &pk, timers_enabled);
+    pub fn new_as_arc(
+        id: u64,
+        wg: WireGuard<T, B>,
+        pk: PublicKey,
+        timers: Box<dyn PeerTimers>,
+        timers_enabled: bool,
+    ) -> Arc<Self> {
+        let timer_state = TimerState::new(timers, timers_enabled);
 
-        Self {
+        let result = Arc::new(Self {
             id,
             wg,
             pk,
@@ -56,8 +250,15 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             handshake_queued: AtomicBool::new(false),
             rx_bytes: AtomicU64::new(0),
             tx_bytes: AtomicU64::new(0),
-            timers: RwLock::new(timers),
-        }
+            timer_state,
+        });
+
+        result
+            .timer_state
+            .timers
+            .set_timer_callbacks(result.clone());
+
+        result
     }
 
     /* Queue a handshake request for the parallel workers
@@ -94,36 +295,26 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         }
     }
 
-    #[inline(always)]
-    pub fn timers(&'_ self) -> RwLockReadGuard<'_, Timers> {
-        self.timers.read()
-    }
-
-    #[inline(always)]
-    pub fn timers_mut(&'_ self) -> RwLockWriteGuard<'_, Timers> {
-        self.timers.write()
-    }
-
     pub fn get_keepalive_interval(&self) -> u64 {
-        self.timers().get_keepalive_interval()
+        self.timer_state.get_keepalive_interval()
     }
 
     pub fn stop_timers(&self) {
-        self.timers_mut().disable();
+        self.timer_state.disable();
     }
 
     pub fn start_timers(&self) {
-        self.timers_mut().enable();
+        self.timer_state.enable();
     }
 
     /* should be called after an authenticated data packet is sent */
     pub fn timers_data_sent(&self) {
-        self.timers().start_new_handshake_timer();
+        self.timer_state.start_new_handshake_timer();
     }
 
     /* should be called after an authenticated data packet is received */
     pub fn timers_data_received(&self) {
-        self.timers().queue_another_keepalive();
+        self.timer_state.queue_another_keepalive();
     }
 
     /* Should be called after any type of authenticated packet is sent, whether:
@@ -133,7 +324,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
      */
     pub fn timers_any_authenticated_packet_sent(&self) {
         log::trace!("timers_any_authenticated_packet_sent");
-        self.timers().stop_send_keepalive_timer();
+        self.timer_state.stop_send_keepalive_timer();
     }
 
     /* Should be called after any type of authenticated packet is received, whether:
@@ -143,13 +334,13 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
      */
     pub fn timers_any_authenticated_packet_received(&self) {
         log::trace!("timers_any_authenticated_packet_received");
-        self.timers().stop_new_handshake_timer();
+        self.timer_state.stop_new_handshake_timer();
     }
 
     /* Should be called after a handshake initiation message is sent. */
     pub fn timers_handshake_initiated(&self) {
         log::trace!("timers_handshake_initiated");
-        self.timers().restart_retransmit_handshake_timer();
+        self.timer_state.restart_retransmit_handshake_timer();
     }
 
     /* Should be called after a handshake response message is received and processed
@@ -157,7 +348,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
      */
     pub fn timers_handshake_complete(&self) {
         log::trace!("timers_handshake_complete");
-        let timers_update_result = self.timers().stop_retransmit_handshake_timer();
+        let timers_update_result = self.timer_state.stop_retransmit_handshake_timer();
         if timers_update_result.is_some() {
             *self.walltime_last_handshake.lock() = Some(SystemTime::now());
         }
@@ -168,7 +359,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
      */
     pub fn timers_session_derived(&self) {
         log::trace!("timers_session_derived");
-        self.timers().restart_zero_key_material_timer();
+        self.timer_state.restart_zero_key_material_timer();
     }
 
     /* Should be called before a packet with authentication, whether
@@ -176,7 +367,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
      */
     pub fn timers_any_authenticated_packet_traversal(&self) {
         log::trace!("timers_any_authenticated_packet_traversal");
-        self.timers().push_persistent_keepalive_into_future();
+        self.timer_state.push_persistent_keepalive_into_future();
     }
 
     /* Called after a handshake worker sends a handshake initiation to the peer
@@ -195,14 +386,26 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
     }
 
     pub fn set_persistent_keepalive_interval(&self, secs: u64) {
-        self.timers_mut().set_persistent_keepalive_interval(secs);
+        self.timer_state.set_persistent_keepalive_interval(secs);
     }
 
     pub fn packet_send_queued_handshake_initiation(&self, is_retry: bool) {
         if !is_retry {
-            self.timers().reset_handshake_attempts();
+            self.timer_state.reset_handshake_attempts();
         }
         self.packet_send_handshake_initiation();
+    }
+
+    pub fn get_walltime_last_handshake(&self) -> Option<SystemTime> {
+        *self.walltime_last_handshake.lock()
+    }
+
+    pub fn get_rx_bytes(&self) -> u64 {
+        self.rx_bytes.load(Ordering::SeqCst)
+    }
+
+    pub fn get_tx_bytes(&self) -> u64 {
+        self.tx_bytes.load(Ordering::SeqCst)
     }
 }
 
@@ -250,7 +453,7 @@ impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
             Instant::now() - keypair.birth > REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
         }
 
-        if keep_key_fresh(keypair) && self.timers().register_lastminute_handshake_sent() {
+        if keep_key_fresh(keypair) && self.timer_state.register_lastminute_handshake_sent() {
             self.packet_send_queued_handshake_initiation(false);
         }
     }
@@ -297,5 +500,129 @@ impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
 impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PeerState").field("id", &self.id).finish()
+    }
+}
+
+fn call_with_peer<F, T: Tun, B: UDP>(
+    wireguard_device: &WireGuard<T, B>,
+    public_key_of_peer: &PublicKey,
+    callback: F,
+) where
+    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
+{
+    wireguard_device.visit_peer(public_key_of_peer, |peer_handle, peer_state| {
+        callback(peer_handle, peer_state)
+    });
+}
+
+fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
+    wireguard_device: &WireGuard<T, B>,
+    public_key_of_peer: &PublicKey,
+    callback: F,
+) where
+    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>, &TimerState),
+{
+    call_with_peer(
+        wireguard_device,
+        public_key_of_peer,
+        |peer_handle, peer_state| {
+            let timers = &peer_state.timer_state;
+            if timers.is_enabled() {
+                callback(peer_handle, peer_state, timers)
+            }
+        },
+    )
+}
+
+impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
+    fn retransmit_handshake(&self) {
+        call_with_peer_and_timers(
+            &self.wg,
+            &self.pk,
+            |peer_handle, peer_state, timer_state| {
+                // check if handshake attempts remaining
+                let attempts = timer_state
+                    .handshake_attempts
+                    .fetch_add(1, Ordering::SeqCst);
+                if attempts > MAX_TIMER_HANDSHAKES {
+                    debug!(
+                        "Handshake for peer {} did not complete after {} attempts, giving up",
+                        peer_handle,
+                        attempts + 1
+                    );
+                    timer_state.get_timers().send_keepalive().stop();
+                    timer_state
+                        .get_timers()
+                        .zero_key_material()
+                        .start(REJECT_AFTER_TIME * 3);
+                    peer_handle.purge_staged_packets();
+                } else {
+                    debug!(
+                        "Handshake for {} did not complete after {} seconds, retrying (try {})",
+                        peer_handle,
+                        REKEY_TIMEOUT.as_secs(),
+                        attempts
+                    );
+                    timer_state
+                        .get_timers()
+                        .retransmit_handshake()
+                        .reset(REKEY_TIMEOUT);
+                    peer_handle.clear_src();
+                    peer_state.packet_send_queued_handshake_initiation(true);
+                }
+            },
+        )
+    }
+
+    fn send_keepalive(&self) {
+        call_with_peer_and_timers(&self.wg, &self.pk, |peer_handle, _, timer_state| {
+            // send keepalive and schedule next keepalive
+            peer_handle.send_keepalive();
+            if timer_state.needs_another_keepalive() {
+                timer_state
+                    .get_timers()
+                    .send_keepalive()
+                    .start(KEEPALIVE_TIMEOUT);
+            }
+        })
+    }
+
+    fn new_handshake(&self) {
+        call_with_peer(&self.wg, &self.pk, |peer_handle, peer_state| {
+            // clear source and retry
+            log::debug!(
+                "Retrying handshake with {} because we stopped hearing back after {} seconds",
+                peer_handle,
+                (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT).as_secs()
+            );
+            peer_handle.clear_src();
+            peer_state.packet_send_queued_handshake_initiation(false);
+        })
+    }
+
+    fn zero_key_material(&self) {
+        call_with_peer(&self.wg, &self.pk, |peer_handle, _| {
+            log::trace!("{} : timer fired (zero_key_material)", peer_handle);
+
+            // null all key-material
+            peer_handle.zero_keys();
+        })
+    }
+
+    fn send_persistent_keepalive(&self) {
+        call_with_peer_and_timers(&self.wg, &self.pk, |peer_handle, _, timer_state| {
+            log::trace!("{} : timer fired (send_persistent_keepalive)", peer_handle);
+
+            // send and schedule persistent keepalive
+            if timer_state.get_keepalive_interval() > 0 {
+                timer_state.get_timers().send_keepalive().stop();
+                peer_handle.send_keepalive();
+                log::trace!("{} : keepalive queued", peer_handle);
+                timer_state
+                    .get_timers()
+                    .send_persistent_keepalive()
+                    .start(Duration::from_secs(timer_state.get_keepalive_interval()));
+            }
+        })
     }
 }
