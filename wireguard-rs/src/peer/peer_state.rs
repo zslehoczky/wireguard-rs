@@ -14,31 +14,11 @@ use crate::router::{self, KeyPair, PeerHandle, message_data_len};
 use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
 use crate::workers::HandshakeJob;
 
+use super::PeerTimers;
 use super::constants::{
     KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
     REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
-
-pub trait TimerStopControl {
-    fn stop(&self);
-}
-
-pub trait TimerControls: TimerStopControl {
-    fn start(&self, duration: Duration) -> bool;
-    fn reset(&self, duration: Duration);
-}
-
-pub trait PeerTimers: Send + Sync {
-    fn set_timer_callbacks(&self, timer_callbacks: Arc<dyn TimerCallbacks>);
-
-    fn all(&self) -> &dyn TimerStopControl;
-
-    fn retransmit_handshake(&self) -> &dyn TimerControls;
-    fn send_keepalive(&self) -> &dyn TimerControls;
-    fn new_handshake(&self) -> &dyn TimerControls;
-    fn zero_key_material(&self) -> &dyn TimerControls;
-    fn send_persistent_keepalive(&self) -> &dyn TimerControls;
-}
 
 // only updated during configuration
 struct TimerState {
