@@ -44,20 +44,6 @@ impl<P: PeerDependencies> PeerInner<P> {
     }
 }
 
-/// A Peer dereferences to its opaque type:
-/// This allows the router code to take ownership of the opaque type
-/// used for callback events, while still enabling the rest of the code to access the opaque type
-/// (which might expose other functionality in their scope) from a Peer pointer.
-///
-/// e.g. it can take ownership of the timer state of a peer.
-impl<P: PeerDependencies> Deref for PeerInner<P> {
-    type Target = dyn PeerState;
-
-    fn deref(&self) -> &Self::Target {
-        self.peer_state.as_ref()
-    }
-}
-
 /// A Peer represents a reference to the router state associated with a peer
 pub struct Peer<P: PeerDependencies> {
     inner: Arc<PeerInner<P>>,
