@@ -173,7 +173,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     fn get_peers(&self) -> Vec<PeerState> {
         let mut state = vec![];
 
-        self.wireguard.visit_peers(|&public_key, peer_state| {
+        self.wireguard.for_each_peer(|&public_key, peer_state| {
             // convert the system time to (secs, nano) since epoch
             let last_handshake_time = peer_state.get_walltime_last_handshake().map(|t| {
                 let duration = t

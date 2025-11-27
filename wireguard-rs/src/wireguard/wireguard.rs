@@ -114,7 +114,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.down();
 
         // set all peers down (stops timers)
-        self.visit_peers(|_, peer_state| {
+        self.for_each_peer(|_, peer_state| {
             peer_state.stop_timers();
             peer_state.get_peer_handle().down();
         });
@@ -140,7 +140,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.up();
 
         // set all peers up (restarts timers)
-        self.visit_peers(|_, peer_state| {
+        self.for_each_peer(|_, peer_state| {
             peer_state.get_peer_handle().up();
             peer_state.start_timers();
         });
@@ -250,7 +250,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.peers.get(public_key).map(|e| e.clone())
     }
 
-    pub fn visit_peers<F>(&self, mut f: F)
+    pub fn for_each_peer<F>(&self, mut f: F)
     where
         F: FnMut(&PublicKey, &PeerState<T, B>),
     {
