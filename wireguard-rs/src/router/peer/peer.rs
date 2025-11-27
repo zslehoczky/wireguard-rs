@@ -1,13 +1,14 @@
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arraydeque::{ArrayDeque, Wrapping};
-use spin::Mutex;
+use spin::{Mutex, RwLock};
 
 use wg_traits::Endpoint as _;
 
+use crate::peer::PeerHandle as PeerHandleInterface;
 use crate::router::{
     KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
     parallel_queue::ParallelJobUnion, receive::ReceiveJob, router_error::RouterError,
@@ -20,7 +21,7 @@ use super::{PeerDependencies, PeerState, crypto_state};
 
 pub struct PeerInner<P: PeerDependencies> {
     device: Device<P>,
-    peer_state: Arc<dyn PeerState>,
+    peer_state: RwLock<Option<Weak<dyn PeerState>>>,
     outbound: SequentialQueue<SendJob<P>>,
     inbound: SequentialQueue<ReceiveJob<P>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
@@ -30,10 +31,10 @@ pub struct PeerInner<P: PeerDependencies> {
 }
 
 impl<P: PeerDependencies> PeerInner<P> {
-    fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
+    fn new(device: Device<P>) -> Self {
         Self {
-            peer_state,
             device,
+            peer_state: RwLock::new(None),
             inbound: SequentialQueue::new(),
             outbound: SequentialQueue::new(),
             enc_key: spin::Mutex::new(None),
@@ -47,15 +48,6 @@ impl<P: PeerDependencies> PeerInner<P> {
 /// A Peer represents a reference to the router state associated with a peer
 pub struct Peer<P: PeerDependencies> {
     inner: Arc<PeerInner<P>>,
-}
-
-/// A PeerHandle is a specially designated reference to the peer
-/// which removes the peer from the device when dropped.
-///
-/// A PeerHandle cannot be cloned (unlike the wrapped type).
-/// A PeerHandle dereferences to a Peer (meaning you can use it like a Peer struct)
-pub struct PeerHandle<P: PeerDependencies> {
-    peer: Peer<P>,
 }
 
 impl<P: PeerDependencies> Clone for Peer<P> {
@@ -84,49 +76,7 @@ impl<P: PeerDependencies> Deref for Peer<P> {
     }
 }
 
-impl<P: PeerDependencies> Deref for PeerHandle<P> {
-    type Target = PeerInner<P>;
-    fn deref(&self) -> &Self::Target {
-        &self.peer
-    }
-}
-
-impl<P: PeerDependencies> fmt::Display for PeerHandle<P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PeerHandle(format: TODO)")
-    }
-}
-
-impl<P: PeerDependencies> Drop for PeerHandle<P> {
-    fn drop(&mut self) {
-        let peer = &self.peer;
-
-        // remove from cryptkey router
-        self.peer.device.remove_route(peer);
-
-        // release ids from the receiver map
-        let released_ids = peer.keys.lock().reset();
-        if !released_ids.is_empty() {
-            peer.device.remove_receivers(&released_ids[..]);
-        }
-
-        *peer.enc_key.lock() = None;
-        *peer.endpoint.lock() = None;
-
-        log::debug!("peer dropped & removed from device");
-    }
-}
-
 impl<P: PeerDependencies> PeerInner<P> {
-    /// Send a raw message to the peer (used for handshake messages)
-    ///
-    /// # Arguments
-    ///
-    /// - `msg`, message body to send to peer
-    ///
-    /// # Returns
-    ///
-    /// Unit if packet was sent, or an error indicating why sending failed
     pub fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
         // send to endpoint (if known)
         match self.endpoint.lock().as_mut() {
@@ -134,12 +84,20 @@ impl<P: PeerDependencies> PeerInner<P> {
             None => Err(RouterError::NoEndpoint),
         }
     }
+
+    pub fn get_peer_state(&self) -> Arc<dyn PeerState> {
+        self.peer_state
+            .read()
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .expect("peer state should always exist")
+    }
 }
 
 impl<P: PeerDependencies> Peer<P> {
-    fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
+    fn new(device: Device<P>) -> Self {
         Self {
-            inner: Arc::new(PeerInner::new(device, peer_state)),
+            inner: Arc::new(PeerInner::new(device)),
         }
     }
 
@@ -188,7 +146,7 @@ impl<P: PeerDependencies> Peer<P> {
         if need_key {
             log::debug!("request new key");
             debug_assert!(job.is_none());
-            self.peer_state.need_key();
+            self.get_peer_state().need_key();
         };
 
         if let Some(job) = job {
@@ -236,7 +194,7 @@ impl<P: PeerDependencies> Peer<P> {
             keys.rotate();
 
             // tell the world outside the router that a key was confirmed
-            self.peer_state.key_confirmed();
+            self.get_peer_state().key_confirmed();
 
             // set new key for encryption
             *self.enc_key.lock() = ekey;
@@ -254,10 +212,6 @@ impl<P: PeerDependencies> Peer<P> {
         self.device.write_inbound(data)
     }
 
-    pub fn get_peer_state(&self) -> &dyn PeerState {
-        self.peer_state.as_ref()
-    }
-
     pub fn get_outbound(&self) -> &SequentialQueue<SendJob<P>> {
         &self.outbound
     }
@@ -271,44 +225,68 @@ impl<P: PeerDependencies> Peer<P> {
     }
 }
 
+/// A PeerHandle is a specially designated reference to the peer
+/// which removes the peer from the device when dropped.
+///
+/// A PeerHandle cannot be cloned (unlike the wrapped type).
+/// A PeerHandle dereferences to a Peer (meaning you can use it like a Peer struct)
+pub struct PeerHandle<P: PeerDependencies> {
+    peer: Peer<P>,
+}
+
 impl<P: PeerDependencies> PeerHandle<P> {
-    pub fn new(device: Device<P>, peer_state: Arc<dyn PeerState>) -> Self {
+    pub fn new(device: Device<P>) -> Self {
         Self {
-            peer: Peer::new(device, peer_state),
+            peer: Peer::new(device),
         }
     }
+}
 
-    /// Set the endpoint of the peer
-    ///
-    /// # Arguments
-    ///
-    /// - `endpoint`, socket address converted to bind endpoint
-    ///
-    /// # Note
-    ///
-    /// This API still permits support for the "sticky socket" behavior,
-    /// as sockets should be "unsticked" when manually updating the endpoint
-    pub fn set_endpoint(&self, endpoint: P::UdpEndpoint) {
+impl<P: PeerDependencies> Deref for PeerHandle<P> {
+    type Target = PeerInner<P>;
+    fn deref(&self) -> &Self::Target {
+        &self.peer
+    }
+}
+
+impl<P: PeerDependencies> Drop for PeerHandle<P> {
+    fn drop(&mut self) {
+        let peer = &self.peer;
+
+        // remove from cryptkey router
+        self.peer.device.remove_route(peer);
+
+        // release ids from the receiver map
+        let released_ids = peer.keys.lock().reset();
+        if !released_ids.is_empty() {
+            peer.device.remove_receivers(&released_ids[..]);
+        }
+
+        *peer.enc_key.lock() = None;
+        *peer.endpoint.lock() = None;
+
+        log::debug!("peer dropped & removed from device");
+    }
+}
+
+impl<P: PeerDependencies> fmt::Display for PeerHandle<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PeerHandle(format: TODO)")
+    }
+}
+
+impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
+    fn set_endpoint(&self, endpoint: P::UdpEndpoint) {
         log::trace!("peer.set_endpoint");
         *self.peer.endpoint.lock() = Some(endpoint);
     }
 
-    pub fn get_peer_state(&self) -> &dyn PeerState {
-        self.peer.get_peer_state()
-    }
-
-    /// Returns the current endpoint of the peer (for configuration)
-    ///
-    /// # Note
-    ///
-    /// Does not convey potential "sticky socket" information
-    pub fn get_endpoint(&self) -> Option<SocketAddr> {
+    fn get_endpoint(&self) -> Option<SocketAddr> {
         log::trace!("peer.get_endpoint");
         self.peer.endpoint.lock().as_ref().map(|e| e.to_address())
     }
 
-    /// Zero all key-material related to the peer
-    pub fn zero_keys(&self) {
+    fn zero_keys(&self) {
         log::trace!("peer.zero_keys");
 
         // reset key-wheel and release keys
@@ -321,29 +299,13 @@ impl<P: PeerDependencies> PeerHandle<P> {
         *self.peer.enc_key.lock() = None;
     }
 
-    pub fn down(&self) {
+    fn down(&self) {
         self.zero_keys();
     }
 
-    pub fn up(&self) {}
+    fn up(&self) {}
 
-    /// Add a new keypair
-    ///
-    /// # Arguments
-    ///
-    /// - new: The new confirmed/unconfirmed key pair
-    ///
-    /// # Returns
-    ///
-    /// A vector of ids which has been released.
-    /// These should be released in the handshake module.
-    ///
-    /// # Note
-    ///
-    /// The number of ids to be released can be at most 3,
-    /// since the only way to add additional keys to the peer is by using this method
-    /// and a peer can have at most 3 keys allocated in the router at any time.
-    pub fn add_keypair(&self, new: KeyPair) -> Vec<u32> {
+    fn add_keypair(&self, new: KeyPair) -> Vec<u32> {
         log::trace!("Router, add_keypair: {:?}", new);
 
         let initiator = new.initiator;
@@ -392,47 +354,36 @@ impl<P: PeerDependencies> PeerHandle<P> {
         }
     }
 
-    pub fn send_keepalive(&self) {
+    fn send_keepalive(&self) {
         log::trace!("peer.send_keepalive");
         self.peer.send(vec![0u8; SIZE_MESSAGE_PREFIX], false)
     }
 
-    /// Map a subnet to the peer
-    ///
-    /// # Arguments
-    ///
-    /// - `ip`, the mask of the subnet
-    /// - `masklen`, the length of the mask
-    ///
-    /// # Note
-    ///
-    /// The `ip` must not have any bits set right of `masklen`.
-    /// e.g. `192.168.1.0/24` is valid, while `192.168.1.128/24` is not.
-    ///
-    /// If an identical value already exists as part of a prior peer,
-    /// the allowed IP entry will be removed from that peer and added to this peer.
-    pub fn add_allowed_ip(&self, ip: IpAddr, masklen: u32) {
+    fn add_allowed_ip(&self, ip: IpAddr, masklen: u32) {
         self.peer
             .device
             .insert_route(ip, masklen, self.peer.clone())
     }
 
-    /// List subnets mapped to the peer
-    ///
-    /// # Returns
-    ///
-    /// A vector of subnets, represented by as mask/size
-    pub fn list_allowed_ips(&self) -> Vec<(IpAddr, u32)> {
+    fn list_allowed_ips(&self) -> Vec<(IpAddr, u32)> {
         self.peer.device.list_routes(&self.peer)
     }
 
-    pub fn clear_src(&self) {
+    fn clear_src(&self) {
         if let Some(e) = (*self.peer.endpoint.lock()).as_mut() {
             e.clear_src()
         }
     }
 
-    pub fn purge_staged_packets(&self) {
+    fn purge_staged_packets(&self) {
         self.peer.staged_packets.lock().clear();
+    }
+
+    fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
+        self.peer.send_raw(msg)
+    }
+
+    fn set_peer_state(&self, peer_state: Arc<dyn PeerState>) {
+        *self.peer_state.write() = Some(Arc::downgrade(&peer_state));
     }
 }

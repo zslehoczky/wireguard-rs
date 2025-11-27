@@ -163,8 +163,9 @@ fn bench_router_outbound(b: &mut Bencher) {
     );
 
     // add peer to router
-    let opaque = Arc::new(BencherCallbacks::new());
-    let peer = router.new_peer(opaque.clone());
+    let peer_state = Arc::new(BencherCallbacks::new());
+    let peer = router.new_peer();
+    peer.set_peer_state(peer_state.clone());
     peer.add_keypair(dummy_keypair(true));
 
     // add subnet to peer
@@ -186,8 +187,8 @@ fn bench_router_outbound(b: &mut Bencher) {
     msg.reserve(16);
 
     b.iter(|| {
-        opaque.reset();
-        while opaque.sent() < BYTES_PER_ITER / packet.len() {
+        peer_state.reset();
+        while peer_state.sent() < BYTES_PER_ITER / packet.len() {
             router
                 .send(msg.to_vec())
                 .expect("failed to crypto-route packet");

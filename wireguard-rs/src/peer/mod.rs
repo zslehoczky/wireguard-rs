@@ -1,4 +1,5 @@
 pub mod constants;
+mod peer_handle;
 mod peer_state;
 mod timer_state;
 
@@ -7,6 +8,7 @@ use std::time::Duration;
 
 use crate::wireguard::TimerCallbacks;
 
+pub use peer_handle::PeerHandle;
 pub use peer_state::PeerState;
 
 pub trait TimerStopControl {

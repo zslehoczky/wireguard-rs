@@ -9,6 +9,7 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{Endpoint, tun::Tun, udp::PlatformUDP, udp::UDP};
 
+use crate::router::PeerState as _;
 use crate::wireguard::WireGuard;
 
 use super::HandshakeJob;
@@ -107,16 +108,16 @@ fn handle_message<T: Tun, B: UDP>(
             }
 
             // update peer state
-            if let Some(peer) = output.id {
+            if let Some(peer_state) = output.id {
                 // authenticated handshake packet received
 
                 // add to rx_bytes and tx_bytes
                 let req_len = msg.len() as u64;
-                peer.get_peer_state().increment_rx_bytes(req_len);
-                peer.get_peer_state().increment_tx_bytes(resp_len);
+                peer_state.increment_rx_bytes(req_len);
+                peer_state.increment_tx_bytes(resp_len);
 
                 // update endpoint
-                peer.set_endpoint(src);
+                peer_state.get_peer_handle().set_endpoint(src);
 
                 if resp_len > 0 {
                     // update timers after sending handshake response
@@ -124,28 +125,28 @@ fn handle_message<T: Tun, B: UDP>(
                         "{} : handshake worker, handshake response sent",
                         wireguard_device
                     );
-                    peer.get_peer_state().handshake_response_sent();
+                    peer_state.handshake_response_sent();
                 } else {
                     // update timers after receiving handshake response
                     debug!(
                         "{} : handshake worker, handshake response was received",
                         wireguard_device
                     );
-                    peer.get_peer_state().timers_handshake_complete();
+                    peer_state.timers_handshake_complete();
                 }
 
                 // add any new keypair to peer
                 if let Some(kp) = output.key_pair {
                     debug!(
                         "{} : handshake worker, new keypair for {}",
-                        wireguard_device, peer
+                        wireguard_device, peer_state
                     );
 
                     // this means that a handshake response was processed or sent
-                    peer.get_peer_state().timers_session_derived();
+                    peer_state.timers_session_derived();
 
                     // free any unused ids
-                    for id in peer.add_keypair(kp) {
+                    for id in peer_state.get_peer_handle().add_keypair(kp) {
                         device.release(id);
                     }
                 };
@@ -157,22 +158,22 @@ fn handle_message<T: Tun, B: UDP>(
 
 fn handle_new<T: Tun, B: UDP>(wireguard_device: &WireGuard<T, B>, public_key: PublicKey) {
     let device = wireguard_device.get_crypto_device();
-    if let Some(peer) = device.get(&public_key) {
+    if let Some(peer_state) = device.get(&public_key) {
         debug!(
             "{} : handshake worker, new handshake requested for {}",
-            wireguard_device, peer
+            wireguard_device, peer_state
         );
         let _ = device
             .begin(Instant::now(), &mut OsRng, &public_key)
             .map(|msg| {
-                let _ = peer.send_raw(msg.as_ref()).map_err(|e| {
+                let _ = peer_state.get_peer_handle().send_raw(msg.as_ref()).map_err(|e| {
                     debug!(
                         "{} : handshake worker, failed to send handshake initiation, error = {}",
                         wireguard_device, e
                     )
                 });
-                peer.get_peer_state().handshake_initiation_sent();
+                peer_state.handshake_initiation_sent();
             });
-        peer.get_peer_state().reset_queued_handshake();
+        peer_state.reset_queued_handshake();
     }
 }

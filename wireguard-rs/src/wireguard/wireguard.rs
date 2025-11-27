@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::Deref;
 use std::sync::{
-    Arc, Weak,
+    Arc,
     atomic::{AtomicUsize, Ordering},
 };
 use std::thread;
@@ -21,21 +21,21 @@ use wg_traits::{
 };
 
 use crate::peer::PeerState;
-use crate::router::{Device as RouterDevice, PeerHandle, RouterError};
+use crate::router::{Device as RouterDevice, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
 use super::constants::TIME_HORIZON;
 use super::timers::Timers;
 
-type CryptoDevice<T, B> = crypto::Device<PeerHandle<PeerDeps<T, B>>, Instant, StdTimestamp>;
+type CryptoDevice<T, B> = crypto::Device<Arc<PeerState<T, B>>, Instant, StdTimestamp>;
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     id: u32, // internal id (for logging)
     enabled: RwLock<bool>,
     mtu: AtomicUsize,
     crypto_device: RwLock<CryptoDevice<T, B>>,
-    peer_state_lookup: DashMap<PublicKey, Weak<PeerState<T, B>>>,
+    peer_state_lookup: DashMap<PublicKey, Arc<PeerState<T, B>>>,
     router: RouterDevice<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
     pending: AtomicUsize, // number of pending handshake packets in queue
@@ -114,9 +114,9 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.down();
 
         // set all peers down (stops timers)
-        self.visit_peers(|_, peer_handle, peer_state| {
+        self.visit_peers(|_, peer_state| {
             peer_state.stop_timers();
-            peer_handle.down();
+            peer_state.get_peer_handle().down();
         });
 
         *enabled = false;
@@ -140,16 +140,12 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.up();
 
         // set all peers up (restarts timers)
-        self.visit_peers(|_, peer_handle, peer_state| {
-            peer_handle.up();
+        self.visit_peers(|_, peer_state| {
+            peer_state.get_peer_handle().up();
             peer_state.start_timers();
         });
 
         *enabled = true;
-    }
-
-    pub fn remove_peer(&self, pk: &PublicKey) {
-        let _ = self.crypto_device.write().remove(pk);
     }
 
     pub fn set_key(&self, sk: Option<StaticSecret>) {
@@ -182,18 +178,29 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         let enabled = self.enabled.read();
 
         let peer_timers = Box::new(self.timers.create_peer_timers());
+        let peer_handle = self.router.new_peer();
 
-        let peer_state =
-            PeerState::new_as_arc(OsRng.r#gen(), self.clone(), pk, peer_timers, *enabled);
+        let peer_state = PeerState::new_as_arc(
+            OsRng.r#gen(),
+            self.clone(),
+            pk,
+            peer_timers,
+            *enabled,
+            peer_handle.clone(),
+        );
 
-        self.peer_state_lookup
-            .insert(pk, Arc::downgrade(&peer_state));
+        self.peer_state_lookup.insert(pk, peer_state.clone());
 
         // create new router peer
-        let peer = self.router.new_peer(peer_state.clone());
 
         // finally, add the peer to the handshake device
-        peers.add(pk, peer).is_ok()
+        peers.add(pk, peer_state).is_ok()
+    }
+
+    pub fn remove_peer(&self, pk: &PublicKey) {
+        let _ = self.crypto_device.write().remove(pk);
+
+        self.peer_state_lookup.remove(pk);
     }
 
     /// Begin consuming messages from the reader.
@@ -240,46 +247,24 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         false
     }
 
-    fn find_peer_state(&self, public_key: &PublicKey) -> Option<Arc<PeerState<T, B>>> {
-        if let Some(entry) = self.peer_state_lookup.get(public_key) {
-            if let Some(peer_state) = entry.upgrade() {
-                return Some(peer_state);
-            }
-        } else {
-            return None;
-        }
-
-        // cleanup if weak has expired
-        self.peer_state_lookup.remove(public_key);
-
-        None
-    }
-
     pub fn visit_peer<F>(&self, public_key: &PublicKey, mut f: F)
     where
-        F: FnMut(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
+        F: FnMut(&PeerState<T, B>),
     {
-        let peers = self.crypto_device.read();
-
-        if let Some(peer_handle) = peers.get(public_key) {
-            let peer_state = self
-                .find_peer_state(public_key)
-                .expect("peer state should exist");
-
-            f(peer_handle, &peer_state);
+        if let Some(peer_state) = self.peer_state_lookup.get(public_key) {
+            f(&peer_state);
         }
     }
 
     pub fn visit_peers<F>(&self, mut f: F)
     where
-        F: FnMut(&PublicKey, &PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
+        F: FnMut(&PublicKey, &PeerState<T, B>),
     {
-        for (public_key, peer_handle) in self.crypto_device.read().iter() {
-            let peer_state = self
-                .find_peer_state(&public_key)
-                .expect("peer state should exist");
+        for entry in &self.peer_state_lookup {
+            let public_key = entry.key();
+            let peer_state = entry.value();
 
-            f(&public_key, peer_handle, &peer_state);
+            f(public_key, peer_state);
         }
     }
 

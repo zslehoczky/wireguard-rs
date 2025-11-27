@@ -19,7 +19,7 @@ pub use constants::{
     message_data_len,
 };
 pub use device::Device;
-pub use peer::{PeerDependencies, PeerHandle, PeerState};
+pub use peer::{PeerDependencies, PeerState};
 pub use router_error::RouterError;
 pub use transport::TYPE_TRANSPORT;
 

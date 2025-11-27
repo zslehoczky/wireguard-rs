@@ -10,16 +10,16 @@ use spin::Mutex;
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
-use crate::router::{self, KeyPair, PeerHandle, message_data_len};
+use crate::router::{self, KeyPair, message_data_len};
 use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
 use crate::workers::HandshakeJob;
 
-use super::PeerTimers;
 use super::constants::{
     KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
     REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
 use super::timer_state::TimerState;
+use super::{PeerHandle, PeerTimers};
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -42,6 +42,8 @@ pub struct PeerState<T: Tun, B: UDP> {
 
     // timer model
     timer_state: TimerState,
+
+    peer_handle: Arc<dyn PeerHandle<PeerDeps<T, B>>>,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
@@ -51,6 +53,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         pk: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
+        peer_handle: Arc<dyn PeerHandle<PeerDeps<T, B>>>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -64,9 +67,11 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             rx_bytes: AtomicU64::new(0),
             tx_bytes: AtomicU64::new(0),
             timer_state,
+            peer_handle,
         });
 
         result.timer_state.set_timer_callbacks(result.clone());
+        result.peer_handle.set_peer_state(result.clone());
 
         result
     }
@@ -217,6 +222,10 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
     pub fn get_tx_bytes(&self) -> u64 {
         self.tx_bytes.load(Ordering::SeqCst)
     }
+
+    pub fn get_peer_handle(&self) -> &dyn PeerHandle<PeerDeps<T, B>> {
+        self.peer_handle.as_ref()
+    }
 }
 
 impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
@@ -313,124 +322,92 @@ impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
     }
 }
 
-fn call_with_peer<F, T: Tun, B: UDP>(
-    wireguard_device: &WireGuard<T, B>,
-    public_key_of_peer: &PublicKey,
-    callback: F,
-) where
-    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>),
-{
-    wireguard_device.visit_peer(public_key_of_peer, |peer_handle, peer_state| {
-        callback(peer_handle, peer_state)
-    });
-}
-
-fn call_with_peer_and_timers<F, T: Tun, B: UDP>(
-    wireguard_device: &WireGuard<T, B>,
-    public_key_of_peer: &PublicKey,
-    callback: F,
-) where
-    F: Fn(&PeerHandle<PeerDeps<T, B>>, &PeerState<T, B>, &TimerState),
-{
-    call_with_peer(
-        wireguard_device,
-        public_key_of_peer,
-        |peer_handle, peer_state| {
-            let timers = &peer_state.timer_state;
-            if timers.is_enabled() {
-                callback(peer_handle, peer_state, timers)
-            }
-        },
-    )
-}
-
 impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
     fn retransmit_handshake(&self) {
-        call_with_peer_and_timers(
-            &self.wg,
-            &self.pk,
-            |peer_handle, peer_state, timer_state| {
-                // check if handshake attempts remaining
-                let attempts = timer_state.increment_handshake_attempts();
-                if attempts > MAX_TIMER_HANDSHAKES {
-                    debug!(
-                        "Handshake for peer {} did not complete after {} attempts, giving up",
-                        peer_handle,
-                        attempts + 1
-                    );
-                    timer_state.get_timers().send_keepalive().stop();
-                    timer_state
-                        .get_timers()
-                        .zero_key_material()
-                        .start(REJECT_AFTER_TIME * 3);
-                    peer_handle.purge_staged_packets();
-                } else {
-                    debug!(
-                        "Handshake for {} did not complete after {} seconds, retrying (try {})",
-                        peer_handle,
-                        REKEY_TIMEOUT.as_secs(),
-                        attempts
-                    );
-                    timer_state
-                        .get_timers()
-                        .retransmit_handshake()
-                        .reset(REKEY_TIMEOUT);
-                    peer_handle.clear_src();
-                    peer_state.packet_send_queued_handshake_initiation(true);
-                }
-            },
-        )
+        let peer_handle = self.get_peer_handle();
+        let timer_state = &self.timer_state;
+
+        // check if handshake attempts remaining
+        let attempts = timer_state.increment_handshake_attempts();
+        if attempts > MAX_TIMER_HANDSHAKES {
+            debug!(
+                "Handshake for peer {} did not complete after {} attempts, giving up",
+                self.get_peer_handle(),
+                attempts + 1
+            );
+            timer_state.get_timers().send_keepalive().stop();
+            timer_state
+                .get_timers()
+                .zero_key_material()
+                .start(REJECT_AFTER_TIME * 3);
+            peer_handle.purge_staged_packets();
+        } else {
+            debug!(
+                "Handshake for {} did not complete after {} seconds, retrying (try {})",
+                peer_handle,
+                REKEY_TIMEOUT.as_secs(),
+                attempts
+            );
+            timer_state
+                .get_timers()
+                .retransmit_handshake()
+                .reset(REKEY_TIMEOUT);
+            peer_handle.clear_src();
+            self.packet_send_queued_handshake_initiation(true);
+        }
     }
 
     fn send_keepalive(&self) {
-        call_with_peer_and_timers(&self.wg, &self.pk, |peer_handle, _, timer_state| {
-            // send keepalive and schedule next keepalive
-            peer_handle.send_keepalive();
-            if timer_state.needs_another_keepalive() {
-                timer_state
-                    .get_timers()
-                    .send_keepalive()
-                    .start(KEEPALIVE_TIMEOUT);
-            }
-        })
+        let peer_handle = self.get_peer_handle();
+        let timer_state = &self.timer_state;
+
+        // send keepalive and schedule next keepalive
+        peer_handle.send_keepalive();
+        if timer_state.needs_another_keepalive() {
+            timer_state
+                .get_timers()
+                .send_keepalive()
+                .start(KEEPALIVE_TIMEOUT);
+        }
     }
 
     fn new_handshake(&self) {
-        call_with_peer(&self.wg, &self.pk, |peer_handle, peer_state| {
-            // clear source and retry
-            log::debug!(
-                "Retrying handshake with {} because we stopped hearing back after {} seconds",
-                peer_handle,
-                (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT).as_secs()
-            );
-            peer_handle.clear_src();
-            peer_state.packet_send_queued_handshake_initiation(false);
-        })
+        let peer_handle = self.get_peer_handle();
+
+        // clear source and retry
+        log::debug!(
+            "Retrying handshake with {} because we stopped hearing back after {} seconds",
+            peer_handle,
+            (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT).as_secs()
+        );
+        peer_handle.clear_src();
+        self.packet_send_queued_handshake_initiation(false);
     }
 
     fn zero_key_material(&self) {
-        call_with_peer(&self.wg, &self.pk, |peer_handle, _| {
-            log::trace!("{} : timer fired (zero_key_material)", peer_handle);
+        let peer_handle = self.get_peer_handle();
 
-            // null all key-material
-            peer_handle.zero_keys();
-        })
+        log::trace!("{} : timer fired (zero_key_material)", peer_handle);
+
+        // null all key-material
+        peer_handle.zero_keys();
     }
 
     fn send_persistent_keepalive(&self) {
-        call_with_peer_and_timers(&self.wg, &self.pk, |peer_handle, _, timer_state| {
-            log::trace!("{} : timer fired (send_persistent_keepalive)", peer_handle);
+        let peer_handle = self.get_peer_handle();
+        let timer_state = &self.timer_state;
 
-            // send and schedule persistent keepalive
-            if timer_state.get_keepalive_interval() > 0 {
-                timer_state.get_timers().send_keepalive().stop();
-                peer_handle.send_keepalive();
-                log::trace!("{} : keepalive queued", peer_handle);
-                timer_state
-                    .get_timers()
-                    .send_persistent_keepalive()
-                    .start(Duration::from_secs(timer_state.get_keepalive_interval()));
-            }
-        })
+        log::trace!("{} : timer fired (send_persistent_keepalive)", peer_handle);
+
+        // send and schedule persistent keepalive
+        if timer_state.get_keepalive_interval() > 0 {
+            timer_state.get_timers().send_keepalive().stop();
+            peer_handle.send_keepalive();
+            log::trace!("{} : keepalive queued", peer_handle);
+            timer_state
+                .get_timers()
+                .send_persistent_keepalive()
+                .start(Duration::from_secs(timer_state.get_keepalive_interval()));
+        }
     }
 }

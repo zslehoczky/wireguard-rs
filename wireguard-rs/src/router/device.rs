@@ -8,9 +8,11 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
+use crate::peer::PeerHandle as PeerHandleInterface;
+
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerDependencies, PeerHandle, PeerState};
+use super::peer::{DecryptionState, Peer, PeerDependencies, PeerHandle};
 use super::receive::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
@@ -86,8 +88,8 @@ impl<P: PeerDependencies> Device<P> {
     /// # Returns
     ///
     /// A atomic ref. counted peer (with liftime matching the device)
-    pub fn new_peer(&self, peer_state: Arc<dyn PeerState>) -> PeerHandle<P> {
-        PeerHandle::new(self.clone(), peer_state)
+    pub fn new_peer(&self) -> Arc<dyn PeerHandleInterface<P>> {
+        Arc::new(PeerHandle::new(self.clone()))
     }
 
     /// Cryptkey routes and sends a plaintext message (IP packet)

@@ -170,13 +170,17 @@ fn test_pure_wireguard() {
         let peer2 = peers1.get(&pk2).unwrap();
         let peer1 = peers2.get(&pk1).unwrap();
 
-        peer1.add_allowed_ip("192.168.1.0".parse().unwrap(), 24);
+        peer1
+            .get_peer_handle()
+            .add_allowed_ip("192.168.1.0".parse().unwrap(), 24);
 
-        peer2.add_allowed_ip("192.168.2.0".parse().unwrap(), 24);
+        peer2
+            .get_peer_handle()
+            .add_allowed_ip("192.168.2.0".parse().unwrap(), 24);
 
         // set endpoint (the other should be learned dynamically)
 
-        peer2.set_endpoint(dummy::UnitEndpoint);
+        peer2.get_peer_handle().set_endpoint(dummy::UnitEndpoint);
     }
 
     let num_packets = 20;

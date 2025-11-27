@@ -199,8 +199,10 @@ fn test_outbound() {
                 );
 
                 // add new peer
-                let opaque = Arc::new(TestCallbacks::new());
-                let peer = router.new_peer(opaque.clone());
+                let peer_state = Arc::new(TestCallbacks::new());
+                let peer = router.new_peer();
+                peer.set_peer_state(peer_state.clone());
+
                 let mask: IpAddr = mask.parse().unwrap();
 
                 // confirm using keepalive
@@ -235,7 +237,7 @@ fn test_outbound() {
                 // check for key-material request
                 if need_key {
                     assert_eq!(
-                        opaque.need_key.wait(TIMEOUT),
+                        peer_state.need_key.wait(TIMEOUT),
                         Some(()),
                         "should have requested a new key, if no encryption state was set"
                     );
@@ -244,7 +246,7 @@ fn test_outbound() {
                 // check for keepalive
                 if send_keepalive {
                     assert_eq!(
-                        opaque.send.wait(TIMEOUT),
+                        peer_state.send.wait(TIMEOUT),
                         Some((SIZE_KEEPALIVE, false)),
                         "keepalive should be sent before transport message"
                     );
@@ -253,14 +255,14 @@ fn test_outbound() {
                 // check for encryption of payload
                 if send_payload {
                     assert_eq!(
-                        opaque.send.wait(TIMEOUT),
+                        peer_state.send.wait(TIMEOUT),
                         Some((SIZE_KEEPALIVE + msg.len(), false)),
                         "message buffer should be encrypted"
                     )
                 }
 
                 // check that we handled all events
-                no_events!(opaque);
+                no_events!(peer_state);
             }
         }
     }
@@ -339,13 +341,15 @@ fn test_bidirectional() {
 
             // prepare opaque values for tracing callbacks
 
-            let opaque1 = Arc::new(TestCallbacks::new());
-            let opaque2 = Arc::new(TestCallbacks::new());
+            let peer_state1 = Arc::new(TestCallbacks::new());
+            let peer_state2 = Arc::new(TestCallbacks::new());
 
             // create peers with matching keypairs and assign subnets
 
-            let peer1 = router1.new_peer(opaque1.clone());
-            let peer2 = router2.new_peer(opaque2.clone());
+            let peer1 = router1.new_peer();
+            peer1.set_peer_state(peer_state1.clone());
+            let peer2 = router2.new_peer();
+            peer2.set_peer_state(peer_state2.clone());
 
             {
                 let (mask, len, _ip, _okay) = p1;
@@ -383,14 +387,14 @@ fn test_bidirectional() {
 
                 // a new key should have been requested from the handshake machine
                 assert_eq!(
-                    opaque2.need_key.wait(TIMEOUT),
+                    peer_state2.need_key.wait(TIMEOUT),
                     Some(()),
                     "a new key should be requested since a packet was attempted transmitted"
                 );
 
                 // no other events should fire
-                no_events!(opaque1);
-                no_events!(opaque2);
+                no_events!(peer_state1);
+                no_events!(peer_state2);
             }
 
             // add a keypair
@@ -399,14 +403,14 @@ fn test_bidirectional() {
 
             // this should cause a key-confirmation packet (keepalive or staged packet)
             assert_eq!(
-                opaque2.send.wait(TIMEOUT),
+                peer_state2.send.wait(TIMEOUT),
                 Some((confirm_packet_size, true)),
                 "expected successful transmission of a confirmation packet"
             );
 
             // no other events should fire
-            no_events!(opaque1);
-            no_events!(opaque2);
+            no_events!(peer_state1);
+            no_events!(peer_state2);
 
             // read confirming message received by the other end ("across the internet")
             let mut buf = vec![0u8; SIZE_MSG * 2];
@@ -425,14 +429,14 @@ fn test_bidirectional() {
 
             // check that a receive event is fired
             assert_eq!(
-                opaque1.recv.wait(TIMEOUT),
+                peer_state1.recv.wait(TIMEOUT),
                 Some((confirm_packet_size, true)),
                 "we expect processing to be successful"
             );
 
             // the key is confirmed
             assert_eq!(
-                opaque1.key_confirmed.wait(TIMEOUT),
+                peer_state1.key_confirmed.wait(TIMEOUT),
                 Some(()),
                 "confirmation message should confirm the key"
             );
@@ -444,8 +448,8 @@ fn test_bidirectional() {
             );
 
             // no other events should fire
-            no_events!(opaque1);
-            no_events!(opaque2);
+            no_events!(peer_state1);
+            no_events!(peer_state2);
 
             // now that peer1 has an endpoint
             // route packets in the other direction: peer1 -> peer2
@@ -477,14 +481,14 @@ fn test_bidirectional() {
 
                 // encryption succeeds and the correct size is logged
                 assert_eq!(
-                    opaque1.send.wait(TIMEOUT),
+                    peer_state1.send.wait(TIMEOUT),
                     Some((encrypted_size, true)),
                     "expected send event for peer1 -> peer2 payload"
                 );
 
                 // otherwise no events
-                no_events!(opaque1);
-                no_events!(opaque2);
+                no_events!(peer_state1);
+                no_events!(peer_state2);
 
                 // receive ("across the internet") on the other end
                 let mut buf = vec![0u8; MAX_SIZE_BODY + 512];
@@ -494,14 +498,14 @@ fn test_bidirectional() {
 
                 // check that decryption succeeds
                 assert_eq!(
-                    opaque2.recv.wait(TIMEOUT),
+                    peer_state2.recv.wait(TIMEOUT),
                     Some((msg.len() + SIZE_KEEPALIVE, true)),
                     "decryption and routing should succeed"
                 );
 
                 // otherwise no events
-                no_events!(opaque1);
-                no_events!(opaque2);
+                no_events!(peer_state1);
+                no_events!(peer_state2);
             }
         }
     }
