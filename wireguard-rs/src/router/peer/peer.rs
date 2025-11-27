@@ -8,12 +8,12 @@ use spin::{Mutex, RwLock};
 
 use wg_traits::Endpoint as _;
 
-use crate::peer::PeerHandle as PeerHandleInterface;
 use crate::router::{
     KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
     parallel_queue::ParallelJobUnion, receive::ReceiveJob, router_error::RouterError,
     send::SendJob, sequential_queue::SequentialQueue,
 };
+use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::encryption_state::EncryptionState;
 use super::key_wheel::KeyWheel;

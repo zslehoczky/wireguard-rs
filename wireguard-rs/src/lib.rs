@@ -3,7 +3,6 @@ extern crate alloc;
 #[cfg(feature = "profiler")]
 extern crate cpuprofiler;
 
-pub mod peer;
 pub mod router;
 pub mod run;
 

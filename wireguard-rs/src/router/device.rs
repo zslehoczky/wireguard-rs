@@ -8,7 +8,7 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
-use crate::peer::PeerHandle as PeerHandleInterface;
+use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
