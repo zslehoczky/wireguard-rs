@@ -143,7 +143,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     }
 
     fn add_peer(&self, peer: &PublicKey) -> bool {
-        self.wireguard.add_peer(*peer)
+        self.wireguard.add_peer(*peer).is_some()
     }
 
     fn set_preshared_key(&self, peer: &PublicKey, psk: [u8; 32]) {
@@ -151,23 +151,23 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     }
 
     fn set_endpoint(&self, peer: &PublicKey, addr: SocketAddr) {
-        self.wireguard.visit_peer(peer, |peer_state| {
+        if let Some(peer_state) = self.wireguard.get_peer(peer) {
             peer_state
                 .get_peer_handle()
                 .set_endpoint(<B::Endpoint as Endpoint>::from_address(addr));
-        });
+        }
     }
 
     fn set_persistent_keepalive_interval(&self, peer: &PublicKey, secs: u64) {
-        self.wireguard.visit_peer(peer, |peer_state| {
+        if let Some(peer_state) = self.wireguard.get_peer(peer) {
             peer_state.set_persistent_keepalive_interval(secs);
-        });
+        }
     }
 
     fn add_allowed_ip(&self, peer: &PublicKey, ip: IpAddr, masklen: u32) {
-        self.wireguard.visit_peer(peer, |peer_state| {
+        if let Some(peer_state) = self.wireguard.get_peer(peer) {
             peer_state.get_peer_handle().add_allowed_ip(ip, masklen);
-        });
+        }
     }
 
     fn get_peers(&self) -> Vec<PeerState> {

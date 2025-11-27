@@ -28,14 +28,14 @@ use super::constants::TIME_HORIZON;
 use super::peer::PeerState;
 use super::timers::Timers;
 
-type CryptoDevice<T, B> = crypto::Device<Arc<PeerState<T, B>>, Instant, StdTimestamp>;
+type CryptoDevice = crypto::Device<PublicKey, Instant, StdTimestamp>;
 
 pub struct WireguardInner<T: Tun, B: UDP> {
     id: u32, // internal id (for logging)
     enabled: RwLock<bool>,
     mtu: AtomicUsize,
-    crypto_device: RwLock<CryptoDevice<T, B>>,
-    peer_state_lookup: DashMap<PublicKey, Arc<PeerState<T, B>>>,
+    crypto_device: RwLock<CryptoDevice>,
+    peers: DashMap<PublicKey, Arc<PeerState<T, B>>>,
     router: RouterDevice<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
     pending: AtomicUsize, // number of pending handshake packets in queue
@@ -56,7 +56,7 @@ impl<T: Tun, B: UDP> WireguardInner<T, B> {
             router,
             pending: AtomicUsize::new(0),
             crypto_device: RwLock::new(crypto::Device::new()),
-            peer_state_lookup: DashMap::default(),
+            peers: DashMap::default(),
             handshake_sender: Mutex::new(Some(sender)),
             timers: Timers::new(),
         }
@@ -168,15 +168,16 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.crypto_device.read().get_psk(pk).ok().cloned()
     }
 
-    pub fn add_peer(&self, pk: PublicKey) -> bool {
+    pub fn add_peer(&self, pk: PublicKey) -> Option<Arc<PeerState<T, B>>> {
         let mut peers = self.crypto_device.write();
         if peers.contains_key(&pk) {
-            return false;
+            return None;
         }
 
         // prevent up/down while inserting
         let enabled = self.enabled.read();
 
+        // create new router peer
         let peer_timers = Box::new(self.timers.create_peer_timers());
         let peer_handle = self.router.new_peer();
 
@@ -186,21 +187,19 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             pk,
             peer_timers,
             *enabled,
-            peer_handle.clone(),
+            peer_handle,
         );
 
-        self.peer_state_lookup.insert(pk, peer_state.clone());
-
-        // create new router peer
+        self.peers.insert(pk, peer_state.clone());
 
         // finally, add the peer to the handshake device
-        peers.add(pk, peer_state).is_ok()
+        peers.add(pk, pk).ok().map(|_| peer_state)
     }
 
     pub fn remove_peer(&self, pk: &PublicKey) {
         let _ = self.crypto_device.write().remove(pk);
 
-        self.peer_state_lookup.remove(pk);
+        self.peers.remove(pk);
     }
 
     /// Begin consuming messages from the reader.
@@ -247,20 +246,15 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         false
     }
 
-    pub fn visit_peer<F>(&self, public_key: &PublicKey, mut f: F)
-    where
-        F: FnMut(&PeerState<T, B>),
-    {
-        if let Some(peer_state) = self.peer_state_lookup.get(public_key) {
-            f(&peer_state);
-        }
+    pub fn get_peer(&self, public_key: &PublicKey) -> Option<Arc<PeerState<T, B>>> {
+        self.peers.get(public_key).map(|e| e.clone())
     }
 
     pub fn visit_peers<F>(&self, mut f: F)
     where
         F: FnMut(&PublicKey, &PeerState<T, B>),
     {
-        for entry in &self.peer_state_lookup {
+        for entry in &self.peers {
             let public_key = entry.key();
             let peer_state = entry.value();
 
@@ -268,7 +262,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         }
     }
 
-    pub fn get_crypto_device(&self) -> RwLockReadGuard<'_, CryptoDevice<T, B>> {
+    pub fn get_crypto_device(&self) -> RwLockReadGuard<'_, CryptoDevice> {
         self.crypto_device.read()
     }
 

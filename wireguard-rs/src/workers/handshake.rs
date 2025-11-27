@@ -108,48 +108,50 @@ fn handle_message<T: Tun, B: UDP>(
             }
 
             // update peer state
-            if let Some(peer_state) = output.id {
+            if let Some(public_key) = output.id {
                 // authenticated handshake packet received
 
-                // add to rx_bytes and tx_bytes
-                let req_len = msg.len() as u64;
-                peer_state.increment_rx_bytes(req_len);
-                peer_state.increment_tx_bytes(resp_len);
+                if let Some(peer_state) = wireguard_device.get_peer(public_key) {
+                    // add to rx_bytes and tx_bytes
+                    let req_len = msg.len() as u64;
+                    peer_state.increment_rx_bytes(req_len);
+                    peer_state.increment_tx_bytes(resp_len);
 
-                // update endpoint
-                peer_state.get_peer_handle().set_endpoint(src);
+                    // update endpoint
+                    peer_state.get_peer_handle().set_endpoint(src);
 
-                if resp_len > 0 {
-                    // update timers after sending handshake response
-                    debug!(
-                        "{} : handshake worker, handshake response sent",
-                        wireguard_device
-                    );
-                    peer_state.handshake_response_sent();
-                } else {
-                    // update timers after receiving handshake response
-                    debug!(
-                        "{} : handshake worker, handshake response was received",
-                        wireguard_device
-                    );
-                    peer_state.timers_handshake_complete();
-                }
-
-                // add any new keypair to peer
-                if let Some(kp) = output.key_pair {
-                    debug!(
-                        "{} : handshake worker, new keypair for {}",
-                        wireguard_device, peer_state
-                    );
-
-                    // this means that a handshake response was processed or sent
-                    peer_state.timers_session_derived();
-
-                    // free any unused ids
-                    for id in peer_state.get_peer_handle().add_keypair(kp) {
-                        device.release(id);
+                    if resp_len > 0 {
+                        // update timers after sending handshake response
+                        debug!(
+                            "{} : handshake worker, handshake response sent",
+                            wireguard_device
+                        );
+                        peer_state.handshake_response_sent();
+                    } else {
+                        // update timers after receiving handshake response
+                        debug!(
+                            "{} : handshake worker, handshake response was received",
+                            wireguard_device
+                        );
+                        peer_state.timers_handshake_complete();
                     }
-                };
+
+                    // add any new keypair to peer
+                    if let Some(kp) = output.key_pair {
+                        debug!(
+                            "{} : handshake worker, new keypair for {}",
+                            wireguard_device, peer_state
+                        );
+
+                        // this means that a handshake response was processed or sent
+                        peer_state.timers_session_derived();
+
+                        // free any unused ids
+                        for id in peer_state.get_peer_handle().add_keypair(kp) {
+                            device.release(id);
+                        }
+                    };
+                }
             }
         }
         Err(e) => debug!("{} : handshake worker, error = {:?}", wireguard_device, e),
@@ -158,7 +160,7 @@ fn handle_message<T: Tun, B: UDP>(
 
 fn handle_new<T: Tun, B: UDP>(wireguard_device: &WireGuard<T, B>, public_key: PublicKey) {
     let device = wireguard_device.get_crypto_device();
-    if let Some(peer_state) = device.get(&public_key) {
+    if let Some(peer_state) = wireguard_device.get_peer(&public_key) {
         debug!(
             "{} : handshake worker, new handshake requested for {}",
             wireguard_device, peer_state
