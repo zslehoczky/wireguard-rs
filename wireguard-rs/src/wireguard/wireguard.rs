@@ -15,10 +15,13 @@ use spin::{Mutex, RwLock, RwLockReadGuard};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
-use wg_traits::{tun::Tun, udp::UDP};
+use wg_traits::{
+    tun::Tun,
+    udp::{self, UDP},
+};
 
 use crate::peer::PeerState;
-use crate::router::{Device as RouterDevice, PeerHandle};
+use crate::router::{Device as RouterDevice, PeerHandle, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
@@ -33,7 +36,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     mtu: AtomicUsize,
     crypto_device: RwLock<CryptoDevice<T, B>>,
     peer_state_lookup: DashMap<PublicKey, Weak<PeerState<T, B>>>,
-    pub router: RouterDevice<PeerDeps<T, B>>,
+    router: RouterDevice<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
     pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
@@ -302,5 +305,21 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn set_last_under_load(&self, value: Instant) {
         *self.last_under_load.lock() = value;
+    }
+
+    pub fn send_raw(
+        &self,
+        msg: &[u8],
+        dst: &mut B::Endpoint,
+    ) -> Result<(), <B::Writer as udp::Writer<B::Endpoint>>::Error> {
+        self.router.send_raw(msg, dst)
+    }
+
+    pub fn send(&self, msg: Vec<u8>) -> Result<(), RouterError> {
+        self.router.send(msg)
+    }
+
+    pub fn recv(&self, src: B::Endpoint, msg: Vec<u8>) -> Result<(), RouterError> {
+        self.router.recv(src, msg)
     }
 }

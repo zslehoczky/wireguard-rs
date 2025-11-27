@@ -20,6 +20,7 @@ pub use constants::{
 };
 pub use device::Device;
 pub use peer::{PeerDependencies, PeerHandle, PeerState};
+pub use router_error::RouterError;
 pub use transport::TYPE_TRANSPORT;
 
 pub type KeyPair = wg_crypto::KeyPair<std::time::Instant>;

@@ -43,7 +43,7 @@ pub fn udp_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: B::Reader) {
                 debug!("{} : reader, received transport message", wg);
 
                 // transport message
-                let _ = wg.router.recv(src, msg).map_err(|e| {
+                let _ = wg.recv(src, msg).map_err(|e| {
                     debug!("Failed to handle incoming transport message: {}", e);
                 });
             }

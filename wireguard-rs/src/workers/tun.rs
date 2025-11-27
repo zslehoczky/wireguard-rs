@@ -116,7 +116,7 @@ pub fn tun_worker<T: Tun, B: UDP>(wg: &WireGuard<T, B>, reader: T::Reader) {
         );
 
         // crypt-key route
-        let e = wg.router.send(msg);
+        let e = wg.send(msg);
         debug!("TUN worker, router returned {:?}", e);
     }
 }

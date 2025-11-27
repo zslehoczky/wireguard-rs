@@ -97,7 +97,6 @@ fn handle_message<T: Tun, B: UDP>(
                 resp_len = msg.as_ref().len() as u64;
                 // TODO: consider a more elegant solution for accessing the bind
                 let _ = wireguard_device
-                    .router
                     .send_raw(msg.as_ref(), &mut src)
                     .map_err(|e| {
                         debug!(
