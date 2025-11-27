@@ -70,7 +70,7 @@ impl<P: PeerDependencies> Device<P> {
         self.outbound.write().0 = false;
     }
 
-    /// Brints the router up
+    /// Brings the router up
     /// When the router is brought up it enables the transmission of outbound messages.
     pub fn up(&self) {
         self.outbound.write().0 = true;
