@@ -271,7 +271,7 @@ impl<P: PeerDependencies> Drop for PeerHandle<P> {
 
 impl<P: PeerDependencies> fmt::Display for PeerHandle<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PeerHandle(format: TODO)")
+        f.debug_struct("PeerHandle").finish()
     }
 }
 
