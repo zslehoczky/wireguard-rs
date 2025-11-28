@@ -13,7 +13,7 @@ use crate::wireguard::PeerHandle as PeerHandleInterface;
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{DecryptionState, Peer, PeerDependencies, PeerHandle};
-use super::receive::ReceiveJob;
+use super::receive_job::ReceiveJob;
 use super::receiver_lookup::ReceiverLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;

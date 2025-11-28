@@ -4,8 +4,8 @@ use std::thread::{self, JoinHandle};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
 use super::peer::PeerDependencies;
-use super::receive::ReceiveJob;
-use super::send::SendJob;
+use super::receive_job::ReceiveJob;
+use super::send_job::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 
 pub trait ParallelJob: Sized + SequentialJob {

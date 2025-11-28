@@ -3,11 +3,11 @@ mod device;
 mod ip;
 mod parallel_queue;
 mod peer;
-mod receive;
+mod receive_job;
 mod receiver_lookup;
 mod router_error;
 mod routing_table;
-mod send;
+mod send_job;
 mod sequential_queue;
 mod transport;
 
