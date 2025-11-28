@@ -22,7 +22,7 @@ pub struct DeviceInner<P: PeerDependencies> {
     inbound: P::TunWriter,
     outbound: RwLock<(bool, Option<P::UdpWriter>)>,
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
-    table: RoutingTable<P>,
+    outbound_routing_table: RoutingTable<P>,
     parallel_queue: ParallelQueue<P>,
 }
 
@@ -43,7 +43,7 @@ impl<P: PeerDependencies> Device<P> {
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
                 inbound_peer_lookup: RwLock::new(PeerLookup::new()),
-                table: RoutingTable::new(),
+                outbound_routing_table: RoutingTable::new(),
             }),
         }
     }
@@ -108,7 +108,7 @@ impl<P: PeerDependencies> Device<P> {
 
         // lookup peer based on IP packet destination address
         let peer = self
-            .table
+            .outbound_routing_table
             .get_route(packet)
             .ok_or(RouterError::NoCryptoKeyRoute)?;
 
@@ -208,19 +208,19 @@ impl<P: PeerDependencies> Device<P> {
     }
 
     pub fn check_route(&self, peer: &Peer<P>, packet: &mut [u8]) -> bool {
-        self.table.check_route(peer, packet)
+        self.outbound_routing_table.check_route(peer, packet)
     }
 
     pub fn insert_route(&self, ip: IpAddr, cidr: u32, peer: Peer<P>) {
-        self.table.insert(ip, cidr, peer)
+        self.outbound_routing_table.insert(ip, cidr, peer)
     }
 
     pub fn list_routes(&self, peer: &Peer<P>) -> Vec<(IpAddr, u32)> {
-        self.table.list(peer)
+        self.outbound_routing_table.list(peer)
     }
 
     pub fn remove_route(&self, peer: &Peer<P>) {
-        self.table.remove(peer)
+        self.outbound_routing_table.remove(peer)
     }
 }
 
