@@ -12,9 +12,8 @@ use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
-use super::peer::{DecryptionState, Peer, PeerDependencies, PeerHandle};
-use super::receive_job::ReceiveJob;
-use super::receiver_lookup::ReceiverLookup;
+use super::peer::{Peer, PeerDependencies, PeerHandle};
+use super::peer_lookup::PeerLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
@@ -22,7 +21,7 @@ use super::transport::{TYPE_TRANSPORT, TransportHeader};
 pub struct DeviceInner<P: PeerDependencies> {
     inbound: P::TunWriter,
     outbound: RwLock<(bool, Option<P::UdpWriter>)>,
-    recv: RwLock<ReceiverLookup<Peer<P>>>,
+    inbound_peer_lookup: RwLock<PeerLookup<P>>,
     table: RoutingTable<Peer<P>>,
     parallel_queue: ParallelQueue<P>,
 }
@@ -43,7 +42,7 @@ impl<P: PeerDependencies> Device<P> {
                 parallel_queue,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
-                recv: RwLock::new(ReceiverLookup::new()),
+                inbound_peer_lookup: RwLock::new(PeerLookup::new()),
                 table: RoutingTable::new(),
             }),
         }
@@ -151,22 +150,14 @@ impl<P: PeerDependencies> Device<P> {
         );
 
         // lookup peer based on receiver id
-        let dec = self
-            .recv
+        let peer = self
+            .inbound_peer_lookup
             .read()
             .get(&header.f_receiver.get())
             .ok_or(RouterError::UnknownReceiverId)?
             .clone();
 
-        // create inbound job
-        let job = ReceiveJob::new(msg, dec.clone(), src);
-
-        // 1. add to sequential queue (drop if full)
-        // 2. then add to parallel work queue (wait if full)
-        if dec.get_peer().get_inbound().push(job.clone()) {
-            self.parallel_queue
-                .queue_job(ParallelJobUnion::Inbound(job));
-        }
+        peer.recv(src, msg);
         Ok(())
     }
 
@@ -179,20 +170,18 @@ impl<P: PeerDependencies> Device<P> {
         self.parallel_queue.queue_job(job);
     }
 
-    pub fn add_receiver(
-        &self,
-        prev_id: Option<u32>,
-        new_id: u32,
-        decryption_state: DecryptionState<Peer<P>>,
-    ) -> Option<u32> {
+    pub fn add_receiver(&self, prev_id: Option<u32>, new_id: u32, peer: Peer<P>) -> Option<u32> {
         self.inner
-            .recv
+            .inbound_peer_lookup
             .write()
-            .add_receiver(prev_id, new_id, decryption_state)
+            .add_receiver(prev_id, new_id, peer)
     }
 
     pub fn remove_receivers(&self, release: &[u32]) {
-        self.inner.recv.write().remove_receivers(release)
+        self.inner
+            .inbound_peer_lookup
+            .write()
+            .remove_receivers(release)
     }
 
     pub fn write_inbound(&self, data: &[u8]) {

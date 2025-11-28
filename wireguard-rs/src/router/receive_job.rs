@@ -7,14 +7,14 @@ use zerocopy::{AsBytes, LayoutVerified};
 use super::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use super::ip::inner_length;
 use super::parallel_queue::ParallelJob;
-use super::peer::{DecryptionState, Peer, PeerDependencies};
+use super::peer::{Peer, PeerDependencies};
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 use super::transport::TransportHeader;
 
 struct Inner<P: PeerDependencies> {
     ready: AtomicBool,                                // job status
     buffer: Mutex<(Option<P::UdpEndpoint>, Vec<u8>)>, // endpoint & ciphertext buffer
-    state: Arc<DecryptionState<Peer<P>>>, // decryption state (keys and replay protector)
+    peer: Peer<P>, // decryption state (keys and replay protector)
 }
 
 pub struct ReceiveJob<P: PeerDependencies>(Arc<Inner<P>>);
@@ -26,22 +26,18 @@ impl<P: PeerDependencies> Clone for ReceiveJob<P> {
 }
 
 impl<P: PeerDependencies> ReceiveJob<P> {
-    pub fn new(
-        buffer: Vec<u8>,
-        state: Arc<DecryptionState<Peer<P>>>,
-        endpoint: P::UdpEndpoint,
-    ) -> Self {
+    pub fn new(buffer: Vec<u8>, endpoint: P::UdpEndpoint, peer: Peer<P>) -> Self {
         Self(Arc::new(Inner {
             ready: AtomicBool::new(false),
             buffer: Mutex::new((Some(endpoint), buffer)),
-            state,
+            peer,
         }))
     }
 }
 
 impl<P: PeerDependencies> ParallelJob for ReceiveJob<P> {
     fn sequential_queue(&self) -> &SequentialQueue<Self> {
-        self.0.state.get_peer().get_inbound()
+        self.0.peer.get_inbound()
     }
 
     /* The parallel section of an incoming job:
@@ -63,7 +59,7 @@ impl<P: PeerDependencies> ParallelJob for ReceiveJob<P> {
         {
             // closure for locking
             let job = &self.0;
-            let peer = job.state.get_peer();
+            let peer = &job.peer;
             let mut msg = job.buffer.lock();
 
             // process buffer
@@ -84,7 +80,7 @@ impl<P: PeerDependencies> ParallelJob for ReceiveJob<P> {
                 let key = LessSafeKey::new(
                     UnboundKey::new(
                         &CHACHA20_POLY1305,
-                        job.state.get_keypair().recv.key.as_ref(),
+                        peer.get_decryption_key().get_keypair().recv.key.as_ref(),
                     )
                     .unwrap(),
                 );
@@ -129,7 +125,8 @@ impl<P: PeerDependencies> SequentialJob for ReceiveJob<P> {
         log::trace!("processing sequential receive job");
 
         let job = &self.0;
-        let peer = job.state.get_peer();
+        let peer = &job.peer;
+        let decryption_key = peer.get_decryption_key();
         let mut msg = job.buffer.lock();
         let endpoint = msg.0.take();
 
@@ -144,15 +141,15 @@ impl<P: PeerDependencies> SequentialJob for ReceiveJob<P> {
             };
 
         // check for replay
-        if !job.state.update_protector(header.f_counter.get()) {
+        if !decryption_key.update_protector(header.f_counter.get()) {
             log::debug!("inbound worker: replay detected");
             return;
         }
 
         // check for confirms key
-        if !job.state.swap_confirmed(true, Ordering::SeqCst) {
+        if !decryption_key.swap_confirmed(true, Ordering::SeqCst) {
             log::debug!("inbound worker: message confirms key");
-            peer.confirm_key(&job.state.get_keypair());
+            peer.confirm_key(&decryption_key.get_keypair());
         }
 
         // update endpoint
@@ -168,6 +165,6 @@ impl<P: PeerDependencies> SequentialJob for ReceiveJob<P> {
 
         // trigger callback
         peer.get_peer_state()
-            .recv(msg.1.len(), true, &job.state.get_keypair());
+            .recv(msg.1.len(), true, &decryption_key.get_keypair());
     }
 }

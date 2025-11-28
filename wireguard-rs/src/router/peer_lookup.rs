@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use super::peer::DecryptionState;
+use crate::router::PeerDependencies;
 
-pub struct ReceiverLookup<P> {
-    lookup: HashMap<u32, Arc<DecryptionState<P>>>, // receiver id -> decryption state
+use super::peer::Peer;
+
+pub struct PeerLookup<P: PeerDependencies> {
+    lookup: HashMap<u32, Peer<P>>,
 }
 
-impl<P> ReceiverLookup<P> {
+impl<P: PeerDependencies> PeerLookup<P> {
     pub fn new() -> Self {
         Self {
             lookup: HashMap::new(),
@@ -18,24 +19,24 @@ impl<P> ReceiverLookup<P> {
         &mut self,
         prev_id: Option<u32>,
         new_id: u32,
-        decryption_state: DecryptionState<P>,
+        peer: Peer<P>,
     ) -> Option<u32> {
         let mut release = None;
 
-        // purge recv map of previous id
+        // remove item with previous id
         if let Some(prev_id) = prev_id {
             self.lookup.remove(&prev_id);
             release = Some(prev_id);
         }
 
-        // map new id to decryption state
+        // map new id to peer
         debug_assert!(!self.lookup.contains_key(&new_id));
-        self.lookup.insert(new_id, Arc::new(decryption_state));
+        self.lookup.insert(new_id, peer);
 
         release
     }
 
-    pub fn get(&self, id: &u32) -> Option<&Arc<DecryptionState<P>>> {
+    pub fn get(&self, id: &u32) -> Option<&Peer<P>> {
         self.lookup.get(id)
     }
 
@@ -46,7 +47,7 @@ impl<P> ReceiverLookup<P> {
     }
 }
 
-impl<P> Default for ReceiverLookup<P> {
+impl<P: PeerDependencies> Default for PeerLookup<P> {
     fn default() -> Self {
         Self::new()
     }

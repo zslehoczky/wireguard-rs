@@ -15,9 +15,10 @@ use crate::router::{
 };
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
+use super::decryption_state::DecryptionState;
 use super::encryption_state::EncryptionState;
 use super::key_wheel::KeyWheel;
-use super::{PeerDependencies, PeerState, crypto_state};
+use super::{PeerDependencies, PeerState};
 
 pub struct PeerInner<P: PeerDependencies> {
     device: Device<P>,
@@ -27,6 +28,7 @@ pub struct PeerInner<P: PeerDependencies> {
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     keys: Mutex<KeyWheel>,
     enc_key: Mutex<Option<EncryptionState>>,
+    dec_key: Mutex<Option<Arc<DecryptionState>>>,
     endpoint: Mutex<Option<P::UdpEndpoint>>,
 }
 
@@ -38,6 +40,7 @@ impl<P: PeerDependencies> PeerInner<P> {
             inbound: SequentialQueue::new(),
             outbound: SequentialQueue::new(),
             enc_key: spin::Mutex::new(None),
+            dec_key: spin::Mutex::new(None),
             endpoint: spin::Mutex::new(None),
             keys: spin::Mutex::new(KeyWheel::new()),
             staged_packets: spin::Mutex::new(ArrayDeque::new()),
@@ -98,6 +101,25 @@ impl<P: PeerDependencies> Peer<P> {
     fn new(device: Device<P>) -> Self {
         Self {
             inner: Arc::new(PeerInner::new(device)),
+        }
+    }
+
+    pub fn get_decryption_key(&self) -> Arc<DecryptionState> {
+        self.dec_key
+            .lock()
+            .as_ref()
+            .expect("decryption key should exist")
+            .clone()
+    }
+
+    pub fn recv(&self, src: P::UdpEndpoint, msg: Vec<u8>) {
+        // create inbound job
+        let job = ReceiveJob::new(msg, src, self.clone());
+
+        // 1. add to sequential queue (drop if full)
+        // 2. then add to parallel work queue (wait if full)
+        if self.get_inbound().push(job.clone()) {
+            self.device.queue_job(ParallelJobUnion::Inbound(job));
         }
     }
 
@@ -263,6 +285,7 @@ impl<P: PeerDependencies> Drop for PeerHandle<P> {
         }
 
         *peer.enc_key.lock() = None;
+        *peer.dec_key.lock() = None;
         *peer.endpoint.lock() = None;
 
         log::debug!("peer dropped & removed from device");
@@ -297,6 +320,7 @@ impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
 
         // clear encryption state
         *self.peer.enc_key.lock() = None;
+        *self.peer.dec_key.lock() = None;
     }
 
     fn down(&self) {
@@ -317,7 +341,8 @@ impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
 
             let new = Arc::new(new);
 
-            let (encryption_state, decryption_state) = crypto_state(self.peer.clone(), new.clone());
+            let encryption_state = EncryptionState::new(new.clone());
+            let decryption_state = DecryptionState::new(new.clone());
 
             // update key-wheel
             keys.update(new);
@@ -329,10 +354,12 @@ impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
 
             log::trace!("peer.add_keypair: updating inbound id map");
 
+            *self.peer.dec_key.lock() = Some(Arc::new(decryption_state));
+
             // update incoming packet id map
             self.peer
                 .device
-                .add_receiver(prev_id, new_id, decryption_state)
+                .add_receiver(prev_id, new_id, self.peer.clone())
         };
 
         // schedule confirmation

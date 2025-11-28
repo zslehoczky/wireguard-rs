@@ -12,20 +12,18 @@ use super::anti_replay::AntiReplay;
 
 pub type KeyPair = crypto::KeyPair<Instant>;
 
-pub struct DecryptionState<P> {
+pub struct DecryptionState {
     keypair: Arc<KeyPair>,
     confirmed: AtomicBool,
     protector: Mutex<AntiReplay>,
-    peer: P,
 }
 
-impl<P> DecryptionState<P> {
-    pub fn new(peer: P, keypair: Arc<KeyPair>) -> Self {
+impl DecryptionState {
+    pub fn new(keypair: Arc<KeyPair>) -> Self {
         Self {
             confirmed: AtomicBool::new(keypair.initiator),
             keypair,
             protector: spin::Mutex::new(AntiReplay::new()),
-            peer,
         }
     }
 
@@ -39,9 +37,5 @@ impl<P> DecryptionState<P> {
 
     pub fn update_protector(&self, seq: u64) -> bool {
         self.protector.lock().update(seq)
-    }
-
-    pub fn get_peer(&self) -> &P {
-        &self.peer
     }
 }
