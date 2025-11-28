@@ -22,7 +22,7 @@ pub struct DeviceInner<P: PeerDependencies> {
     inbound: P::TunWriter,
     outbound: RwLock<(bool, Option<P::UdpWriter>)>,
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
-    table: RoutingTable<Peer<P>>,
+    table: RoutingTable<P>,
     parallel_queue: ParallelQueue<P>,
 }
 

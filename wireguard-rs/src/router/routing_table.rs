@@ -8,14 +8,18 @@ use treebitmap::IpLookupTable;
 use treebitmap::address::Address;
 use zerocopy::LayoutVerified;
 
+use crate::router::PeerDependencies;
+
+use super::peer::Peer;
+
 /* Functions for obtaining and validating "cryptokey" routes */
 
-pub struct RoutingTable<T: Eq + Clone> {
-    ipv4: RwLock<IpLookupTable<Ipv4Addr, T>>,
-    ipv6: RwLock<IpLookupTable<Ipv6Addr, T>>,
+pub struct RoutingTable<P: PeerDependencies> {
+    ipv4: RwLock<IpLookupTable<Ipv4Addr, Peer<P>>>,
+    ipv6: RwLock<IpLookupTable<Ipv6Addr, Peer<P>>>,
 }
 
-impl<T: Eq + Clone> RoutingTable<T> {
+impl<P: PeerDependencies> RoutingTable<P> {
     pub fn new() -> Self {
         RoutingTable {
             ipv4: RwLock::new(IpLookupTable::new()),
@@ -24,7 +28,7 @@ impl<T: Eq + Clone> RoutingTable<T> {
     }
 
     // collect keys mapping to the given value
-    fn collect<A>(table: &IpLookupTable<A, T>, value: &T) -> Vec<(A, u32)>
+    fn collect<A>(table: &IpLookupTable<A, Peer<P>>, value: &Peer<P>) -> Vec<(A, u32)>
     where
         A: Address,
     {
@@ -37,14 +41,14 @@ impl<T: Eq + Clone> RoutingTable<T> {
         res
     }
 
-    pub fn insert(&self, ip: IpAddr, cidr: u32, value: T) {
+    pub fn insert(&self, ip: IpAddr, cidr: u32, value: Peer<P>) {
         match ip {
             IpAddr::V4(v4) => self.ipv4.write().insert(v4.mask(cidr), cidr, value),
             IpAddr::V6(v6) => self.ipv6.write().insert(v6.mask(cidr), cidr, value),
         };
     }
 
-    pub fn list(&self, value: &T) -> Vec<(IpAddr, u32)> {
+    pub fn list(&self, value: &Peer<P>) -> Vec<(IpAddr, u32)> {
         let mut res = vec![];
         res.extend(
             Self::collect(&*self.ipv4.read(), value)
@@ -59,7 +63,7 @@ impl<T: Eq + Clone> RoutingTable<T> {
         res
     }
 
-    pub fn remove(&self, value: &T) {
+    pub fn remove(&self, value: &Peer<P>) {
         let mut v4 = self.ipv4.write();
         for (ip, cidr) in Self::collect(&*v4, value) {
             v4.remove(ip, cidr);
@@ -72,7 +76,7 @@ impl<T: Eq + Clone> RoutingTable<T> {
     }
 
     #[inline(always)]
-    pub fn get_route(&self, packet: &[u8]) -> Option<T> {
+    pub fn get_route(&self, packet: &[u8]) -> Option<Peer<P>> {
         match packet.first()? >> 4 {
             VERSION_IP4 => {
                 // check length and cast to IPv4 header
@@ -114,7 +118,7 @@ impl<T: Eq + Clone> RoutingTable<T> {
     }
 
     #[inline(always)]
-    pub fn check_route(&self, peer: &T, packet: &[u8]) -> bool {
+    pub fn check_route(&self, peer: &Peer<P>, packet: &[u8]) -> bool {
         match packet.first().map(|v| v >> 4) {
             Some(VERSION_IP4) => LayoutVerified::new_from_prefix(packet)
                 .and_then(|(header, _): (LayoutVerified<&[u8], IPv4Header>, _)| {
