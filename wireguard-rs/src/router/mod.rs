@@ -1,5 +1,6 @@
 mod constants;
 mod device;
+mod encryption_queue;
 mod ip;
 mod parallel_queue;
 mod peer;
@@ -7,7 +8,6 @@ mod peer_lookup;
 mod receive_job;
 mod router_error;
 mod routing_table;
-mod send_job;
 mod sequential_queue;
 mod transport;
 

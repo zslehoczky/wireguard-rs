@@ -11,6 +11,7 @@ use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
+use super::encryption_queue::{EncryptionJob, EncryptionQueue};
 use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
 use super::peer::{Peer, PeerDependencies, PeerHandle};
 use super::peer_lookup::PeerLookup;
@@ -24,6 +25,7 @@ pub struct DeviceInner<P: PeerDependencies> {
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
     outbound_routing_table: RoutingTable<P>,
     parallel_queue: ParallelQueue<P>,
+    encryption_queue: EncryptionQueue<P>,
 }
 
 pub struct Device<P: PeerDependencies> {
@@ -44,6 +46,9 @@ impl<P: PeerDependencies> Device<P> {
                 outbound: RwLock::new((true, None)),
                 inbound_peer_lookup: RwLock::new(PeerLookup::new()),
                 outbound_routing_table: RoutingTable::new(),
+                encryption_queue: EncryptionQueue::new(
+                    NonZeroUsize::new(num_workers).expect("should not be zero"),
+                ),
             }),
         }
     }
@@ -168,6 +173,10 @@ impl<P: PeerDependencies> Device<P> {
 
     pub fn queue_job(&self, job: ParallelJobUnion<P>) {
         self.parallel_queue.queue_job(job);
+    }
+
+    pub fn enqueue_encryption_job(&self, job: EncryptionJob<P>) {
+        self.encryption_queue.enqueue_job(job);
     }
 
     pub fn add_receiver(&self, prev_id: Option<u32>, new_id: u32, peer: Peer<P>) -> Option<u32> {

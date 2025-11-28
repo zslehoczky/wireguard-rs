@@ -5,7 +5,6 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 
 use super::peer::PeerDependencies;
 use super::receive_job::ReceiveJob;
-use super::send_job::SendJob;
 use super::sequential_queue::{SequentialJob, SequentialQueue};
 
 pub trait ParallelJob: Sized + SequentialJob {
@@ -15,7 +14,6 @@ pub trait ParallelJob: Sized + SequentialJob {
 }
 
 pub enum ParallelJobUnion<P: PeerDependencies> {
-    Outbound(SendJob<P>),
     Inbound(ReceiveJob<P>),
 }
 
@@ -28,10 +26,6 @@ fn parallel_worker<P: PeerDependencies>(receiver: Receiver<ParallelJobUnion<P>>)
                 break;
             }
             Ok(ParallelJobUnion::Inbound(job)) => {
-                job.parallel_work();
-                job.sequential_queue().consume();
-            }
-            Ok(ParallelJobUnion::Outbound(job)) => {
                 job.parallel_work();
                 job.sequential_queue().consume();
             }
