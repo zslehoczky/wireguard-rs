@@ -39,12 +39,12 @@ impl OutboundJob {
     }
 }
 
-fn collection_worker(
+fn outbound_worker<P: PeerDependencies>(
+    peer: Peer<P>,
     registration_receiver: Receiver<u64>,
     job_receiver: Receiver<OutboundJob>,
-    write_sender: Sender<Arc<OutboundJob>>,
 ) {
-    let mut waiting_queue: BTreeMap<u64, Option<Arc<OutboundJob>>> = BTreeMap::new();
+    let mut waiting_queue: BTreeMap<u64, Option<OutboundJob>> = BTreeMap::new();
 
     for job in job_receiver {
         while let Ok(registered_id) = registration_receiver.try_recv() {
@@ -52,7 +52,7 @@ fn collection_worker(
         }
 
         if let Some(entry) = waiting_queue.get_mut(&job.counter) {
-            *entry = Some(Arc::new(job));
+            *entry = Some(job);
         }
 
         let mut last_processed_key: u64 = 0;
@@ -63,9 +63,7 @@ fn collection_worker(
 
             match value {
                 Some(job) => {
-                    write_sender
-                        .send(job.clone())
-                        .expect("channel should always be open");
+                    job.send(&peer);
                 }
                 None => {
                     break 'take_while_some;
@@ -79,18 +77,11 @@ fn collection_worker(
     }
 }
 
-fn write_worker<P: PeerDependencies>(peer: Peer<P>, receiver: Receiver<Arc<OutboundJob>>) {
-    for job in receiver {
-        job.send(&peer);
-    }
-}
-
 pub struct OutboundQueue {
     registration_sender: Sender<u64>,
-    collection_sender: Sender<OutboundJob>,
+    outbound_sender: Sender<OutboundJob>,
 
-    collection_handle: Option<JoinHandle<()>>,
-    write_handle: Option<JoinHandle<()>>,
+    outbound_handle: Option<JoinHandle<()>>,
 }
 
 impl OutboundQueue {
@@ -98,27 +89,20 @@ impl OutboundQueue {
         let (registration_sender, registration_receiver) = crossbeam_channel::bounded(QUEUE_SIZE);
 
         let (collection_sender, collection_receiver) = crossbeam_channel::bounded(QUEUE_SIZE);
-        let (write_sender, write_receiver) = crossbeam_channel::bounded(QUEUE_SIZE);
 
-        let collection_handle = {
-            thread::spawn(|| {
-                collection_worker(registration_receiver, collection_receiver, write_sender)
-            })
-        };
-
-        let write_handle = thread::spawn(|| write_worker(peer, write_receiver));
+        let collection_handle =
+            { thread::spawn(|| outbound_worker(peer, registration_receiver, collection_receiver)) };
 
         Self {
             registration_sender,
-            collection_sender,
+            outbound_sender: collection_sender,
 
-            collection_handle: Some(collection_handle),
-            write_handle: Some(write_handle),
+            outbound_handle: Some(collection_handle),
         }
     }
 
     pub fn enqueue_job(&self, job: OutboundJob) {
-        self.collection_sender
+        self.outbound_sender
             .send(job)
             .expect("channel should always be open");
     }
@@ -135,12 +119,7 @@ impl Drop for OutboundQueue {
         log::trace!("SendQueue: begin drop");
 
         // join all worker threads
-        self.collection_handle
-            .take()
-            .expect("collection thread should exist until drop")
-            .join()
-            .unwrap();
-        self.write_handle
+        self.outbound_handle
             .take()
             .expect("collection thread should exist until drop")
             .join()
