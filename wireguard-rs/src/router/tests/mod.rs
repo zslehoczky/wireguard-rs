@@ -10,7 +10,7 @@ use crate::peer::PeerStateInterface;
 use crate::wireguard::tests::make_packet;
 
 use super::{
-    Device, KeyPair,
+    KeyPair, Router,
     constants::{SIZE_MESSAGE_PREFIX, message_data_len},
 };
 

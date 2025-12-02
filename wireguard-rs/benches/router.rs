@@ -17,7 +17,7 @@ use wg_traits::udp::Writer;
 use wireguard_rs::peer::{
     PeerDependencies, PeerHandle, PeerHandleInterface as _, PeerStateInterface,
 };
-use wireguard_rs::router::{Device, FakeRouter, KeyPair, SIZE_MESSAGE_PREFIX};
+use wireguard_rs::router::{FakeRouter, KeyPair, Router, SIZE_MESSAGE_PREFIX};
 
 fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     // expand pseudo random payload
@@ -159,7 +159,7 @@ fn bench_router_outbound(b: &mut Bencher) {
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
     let router = Arc::new(FakeRouter::new(
-        Device::<TestPeerDeps<dummy::VoidBind>>::new(),
+        Router::<TestPeerDeps<dummy::VoidBind>>::new(),
         tun_writer,
         dummy::VoidBind,
     ));

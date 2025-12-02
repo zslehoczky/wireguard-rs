@@ -13,12 +13,12 @@ use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-pub struct Device<P: PeerDependencies> {
+pub struct Router<P: PeerDependencies> {
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
     outbound_routing_table: RoutingTable<P>,
 }
 
-impl<P: PeerDependencies> Device<P> {
+impl<P: PeerDependencies> Router<P> {
     pub fn new() -> Self {
         Self {
             inbound_peer_lookup: RwLock::new(PeerLookup::new()),
@@ -130,7 +130,7 @@ impl<P: PeerDependencies> Device<P> {
     }
 }
 
-impl<P: PeerDependencies> Default for Device<P> {
+impl<P: PeerDependencies> Default for Router<P> {
     fn default() -> Self {
         Self::new()
     }

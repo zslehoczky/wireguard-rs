@@ -19,7 +19,7 @@ use wg_traits::{
 };
 
 use crate::peer::{DeviceInterface, PeerHandle, PeerState};
-use crate::router::{Device as RouterDevice, RouterError};
+use crate::router::{Router, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
@@ -35,7 +35,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     mtu: AtomicUsize,
     crypto_device: RwLock<CryptoDevice>,
     peers: DashMap<PublicKey, Arc<PeerState<T, B>>>,
-    router: RouterDevice<PeerDeps<T, B>>,
+    router: Router<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
     pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
@@ -51,7 +51,7 @@ impl<T: Tun, B: UDP> WireguardInner<T, B> {
             id: OsRng.r#gen(),
             mtu: AtomicUsize::new(0),
             last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
-            router: RouterDevice::new(),
+            router: Router::new(),
             pending: AtomicUsize::new(0),
             crypto_device: RwLock::new(crypto::Device::new()),
             peers: DashMap::default(),

@@ -4,16 +4,16 @@ use wg_traits::tun::Writer as _;
 use wg_traits::udp::Writer as _;
 
 use crate::peer::{DeviceInterface, PeerDependencies};
-use crate::router::{Device, RouterError};
+use crate::router::{Router, RouterError};
 
 pub struct FakeRouter<P: PeerDependencies> {
-    router: Device<P>,
+    router: Router<P>,
     tun_writer: P::TunWriter,
     udp_writer: P::UdpWriter,
 }
 
 impl<P: PeerDependencies> FakeRouter<P> {
-    pub fn new(router: Device<P>, tun_writer: P::TunWriter, udp_writer: P::UdpWriter) -> Self {
+    pub fn new(router: Router<P>, tun_writer: P::TunWriter, udp_writer: P::UdpWriter) -> Self {
         Self {
             router,
             tun_writer,
@@ -23,7 +23,7 @@ impl<P: PeerDependencies> FakeRouter<P> {
 }
 
 impl<P: PeerDependencies> Deref for FakeRouter<P> {
-    type Target = Device<P>;
+    type Target = Router<P>;
 
     fn deref(&self) -> &Self::Target {
         &self.router

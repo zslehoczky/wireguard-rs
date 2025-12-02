@@ -150,7 +150,7 @@ fn test_outbound() {
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
     let router = Arc::new(FakeRouter::new(
-        Device::<TestPeerDeps<dummy::VoidBind>>::new(),
+        Router::<TestPeerDeps<dummy::VoidBind>>::new(),
         tun_writer,
         dummy::VoidBind,
     ));
@@ -336,13 +336,13 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
             let router1 = Arc::new(FakeRouter::new(
-                Device::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
+                Router::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
                 tun_writer1,
                 bind_writer1,
             ));
 
             let router2 = Arc::new(FakeRouter::new(
-                Device::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
+                Router::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
                 tun_writer2,
                 bind_writer2,
             ));
