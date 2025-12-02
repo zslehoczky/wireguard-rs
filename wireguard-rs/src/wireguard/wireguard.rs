@@ -18,7 +18,7 @@ use wg_traits::{
     udp::{self, UDP},
 };
 
-use crate::peer::{DeviceInterface, PeerHandle, PeerState};
+use crate::peer::{DeviceInterface, PeerState};
 use crate::router::{Router, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
@@ -228,7 +228,6 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
         // create new router peer
         let peer_timers = Box::new(self.timers.create_peer_timers());
-        let peer_handle = Arc::new(PeerHandle::new(self.inner.clone()));
 
         let peer_state = PeerState::new_as_arc(
             OsRng.r#gen(),
@@ -236,7 +235,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             pk,
             peer_timers,
             *enabled,
-            peer_handle,
+            self.inner.clone(),
         );
 
         self.peers.insert(pk, peer_state.clone());

@@ -14,14 +14,14 @@ use crate::router::{KeyPair, message_data_len};
 use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
 use crate::workers::HandshakeJob;
 
-use super::PeerTimers;
 use super::constants::{
     KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
     REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
-use super::peer_handle_interface::PeerHandleInterface;
+use super::peer_interface::PeerInterface;
 use super::peer_state_interface::PeerStateInterface;
 use super::timer_state::TimerState;
+use super::{DeviceInterface, Peer, PeerHandle, PeerTimers};
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -45,7 +45,7 @@ pub struct PeerState<T: Tun, B: UDP> {
     // timer model
     timer_state: TimerState,
 
-    peer_handle: Arc<dyn PeerHandleInterface<PeerDeps<T, B>>>,
+    peer_handle: PeerHandle<PeerDeps<T, B>>,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
@@ -55,7 +55,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         pk: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
-        peer_handle: Arc<dyn PeerHandleInterface<PeerDeps<T, B>>>,
+        device_interface: Arc<dyn DeviceInterface<PeerDeps<T, B>>>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -69,7 +69,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             rx_bytes: AtomicU64::new(0),
             tx_bytes: AtomicU64::new(0),
             timer_state,
-            peer_handle,
+            peer_handle: PeerHandle::new(device_interface),
         });
 
         result.timer_state.set_timer_callbacks(result.clone());
@@ -225,8 +225,8 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         self.tx_bytes.load(Ordering::SeqCst)
     }
 
-    pub fn get_peer_handle(&self) -> &dyn PeerHandleInterface<PeerDeps<T, B>> {
-        self.peer_handle.as_ref()
+    pub fn get_peer_handle(&self) -> &dyn PeerInterface<PeerDeps<T, B>> {
+        &self.peer_handle as &Peer<PeerDeps<T, B>>
     }
 }
 

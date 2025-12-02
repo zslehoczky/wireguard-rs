@@ -14,9 +14,7 @@ use wg_crypto as crypto;
 use wg_crypto::SymKey;
 use wg_platform::dummy;
 use wg_traits::udp::Writer;
-use wireguard_rs::peer::{
-    PeerDependencies, PeerHandle, PeerHandleInterface as _, PeerStateInterface,
-};
+use wireguard_rs::peer::{PeerDependencies, PeerHandle, PeerInterface as _, PeerStateInterface};
 use wireguard_rs::router::{FakeRouter, KeyPair, Router, SIZE_MESSAGE_PREFIX};
 
 fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {

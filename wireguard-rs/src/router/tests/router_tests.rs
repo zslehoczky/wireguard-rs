@@ -11,7 +11,7 @@ use rand::Rng;
 use wg_crypto as crypto;
 use wg_traits::{udp::Reader, udp::Writer};
 
-use crate::peer::{PeerDependencies, PeerHandle, PeerHandleInterface as _};
+use crate::peer::{PeerDependencies, PeerHandle, PeerInterface as _};
 use crate::router::FakeRouter;
 
 use super::*;

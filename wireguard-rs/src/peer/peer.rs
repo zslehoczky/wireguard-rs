@@ -18,7 +18,7 @@ use super::encryption_state::EncryptionState;
 use super::inbound_job::{DecryptionJob, InboundJob};
 use super::key_wheel::KeyWheel;
 use super::outbound_job::{EncryptionJob, OutboundJob};
-use super::peer_handle_interface::PeerHandleInterface;
+use super::peer_interface::PeerInterface;
 use super::send_queue::SendQueue;
 use super::{PeerDependencies, PeerStateInterface};
 
@@ -84,24 +84,6 @@ impl<P: PeerDependencies> Deref for Peer<P> {
     }
 }
 
-impl<P: PeerDependencies> PeerInner<P> {
-    pub fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
-        // send to endpoint (if known)
-        match self.endpoint.lock().as_mut() {
-            Some(endpoint) => self.device.write_outbound(msg, endpoint),
-            None => Err(RouterError::NoEndpoint),
-        }
-    }
-
-    pub fn get_peer_state(&self) -> Arc<dyn PeerStateInterface> {
-        self.peer_state
-            .read()
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .expect("peer state should always exist")
-    }
-}
-
 impl<P: PeerDependencies> Peer<P> {
     fn new(device: Arc<dyn DeviceInterface<P>>) -> Self {
         let result = Self {
@@ -123,6 +105,14 @@ impl<P: PeerDependencies> Peer<P> {
             .as_ref()
             .expect("decryption key should exist")
             .clone()
+    }
+
+    pub fn get_peer_state(&self) -> Arc<dyn PeerStateInterface> {
+        self.peer_state
+            .read()
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .expect("peer state should always exist")
     }
 
     pub fn recv(&self, endpoint: P::UdpEndpoint, buffer: Vec<u8>) {
@@ -270,6 +260,129 @@ impl<P: PeerDependencies> Peer<P> {
     }
 }
 
+impl<P: PeerDependencies> fmt::Display for Peer<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PeerHandle").finish()
+    }
+}
+
+impl<P: PeerDependencies> PeerInterface<P> for Peer<P> {
+    fn set_endpoint(&self, endpoint: P::UdpEndpoint) {
+        log::trace!("peer.set_endpoint");
+        *self.endpoint.lock() = Some(endpoint);
+    }
+
+    fn get_endpoint(&self) -> Option<SocketAddr> {
+        log::trace!("peer.get_endpoint");
+        self.endpoint.lock().as_ref().map(|e| e.to_address())
+    }
+
+    fn zero_keys(&self) {
+        log::trace!("peer.zero_keys");
+
+        // reset key-wheel and release keys
+        let released_ids = self.keys.lock().reset();
+        if !released_ids.is_empty() {
+            self.device.remove_receivers(&released_ids[..]);
+        }
+
+        // clear encryption state
+        *self.enc_key.lock() = None;
+        *self.dec_key.lock() = None;
+    }
+
+    fn down(&self) {
+        self.zero_keys();
+    }
+
+    fn up(&self) {}
+
+    fn add_keypair(&self, new: KeyPair) -> Vec<u32> {
+        log::trace!("Router, add_keypair: {:?}", new);
+
+        let initiator = new.initiator;
+        let released_id = {
+            let mut keys = self.keys.lock();
+
+            let prev_id = keys.get_prev().map(|k| k.local_id());
+            let new_id = new.recv.id;
+
+            let new = Arc::new(new);
+
+            let encryption_state = EncryptionState::new(new.clone());
+            let decryption_state = DecryptionState::new(new.clone());
+
+            // update key-wheel
+            keys.update(new);
+
+            if initiator {
+                // start using key for encryption
+                *self.enc_key.lock() = Some(encryption_state);
+            }
+
+            log::trace!("peer.add_keypair: updating inbound id map");
+
+            *self.dec_key.lock() = Some(Arc::new(decryption_state));
+
+            // update incoming packet id map
+            self.device.add_receiver(prev_id, new_id, self.clone())
+        };
+
+        // schedule confirmation
+        if initiator {
+            debug_assert!(self.enc_key.lock().is_some());
+            log::trace!("peer.add_keypair: is initiator, must confirm the key");
+            // attempt to confirm using staged packets
+            if !self.send_staged() {
+                // fall back to keepalive packet
+                self.send_keepalive();
+                log::debug!("peer.add_keypair: keepalive for confirmation",);
+            }
+            log::trace!("peer.add_keypair: key attempted confirmed");
+        }
+
+        match released_id {
+            Some(id) => vec![id],
+            None => vec![],
+        }
+    }
+
+    fn send_keepalive(&self) {
+        log::trace!("peer.send_keepalive");
+        self.send(vec![0u8; SIZE_MESSAGE_PREFIX], false)
+    }
+
+    fn add_allowed_ip(&self, ip: IpAddr, masklen: u32) {
+        self.device.insert_route(ip, masklen, self.clone())
+    }
+
+    fn list_allowed_ips(&self) -> Vec<(IpAddr, u32)> {
+        self.device.list_routes(self)
+    }
+
+    fn clear_src(&self) {
+        if let Some(e) = (*self.endpoint.lock()).as_mut() {
+            e.clear_src()
+        }
+    }
+
+    fn purge_staged_packets(&self) {
+        self.staged_packets.lock().clear();
+    }
+
+    fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
+        // send to endpoint (if known)
+        match self.endpoint.lock().as_mut() {
+            Some(endpoint) => self.device.write_outbound(msg, endpoint),
+            None => Err(RouterError::NoEndpoint),
+        }
+    }
+
+    fn set_peer_state(&self, peer_state: Arc<dyn PeerStateInterface>) {
+        *self.peer_state.write() = Some(Arc::downgrade(&peer_state));
+    }
+}
+
 /// A PeerHandle is a specially designated reference to the peer
 /// which removes the peer from the device when dropped.
 ///
@@ -288,7 +401,8 @@ impl<P: PeerDependencies> PeerHandle<P> {
 }
 
 impl<P: PeerDependencies> Deref for PeerHandle<P> {
-    type Target = PeerInner<P>;
+    type Target = Peer<P>;
+
     fn deref(&self) -> &Self::Target {
         &self.peer
     }
@@ -312,128 +426,5 @@ impl<P: PeerDependencies> Drop for PeerHandle<P> {
         *peer.endpoint.lock() = None;
 
         log::debug!("peer dropped & removed from device");
-    }
-}
-
-impl<P: PeerDependencies> fmt::Display for PeerHandle<P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PeerHandle").finish()
-    }
-}
-
-impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
-    fn set_endpoint(&self, endpoint: P::UdpEndpoint) {
-        log::trace!("peer.set_endpoint");
-        *self.peer.endpoint.lock() = Some(endpoint);
-    }
-
-    fn get_endpoint(&self) -> Option<SocketAddr> {
-        log::trace!("peer.get_endpoint");
-        self.peer.endpoint.lock().as_ref().map(|e| e.to_address())
-    }
-
-    fn zero_keys(&self) {
-        log::trace!("peer.zero_keys");
-
-        // reset key-wheel and release keys
-        let released_ids = self.keys.lock().reset();
-        if !released_ids.is_empty() {
-            self.device.remove_receivers(&released_ids[..]);
-        }
-
-        // clear encryption state
-        *self.peer.enc_key.lock() = None;
-        *self.peer.dec_key.lock() = None;
-    }
-
-    fn down(&self) {
-        self.zero_keys();
-    }
-
-    fn up(&self) {}
-
-    fn add_keypair(&self, new: KeyPair) -> Vec<u32> {
-        log::trace!("Router, add_keypair: {:?}", new);
-
-        let initiator = new.initiator;
-        let released_id = {
-            let mut keys = self.peer.keys.lock();
-
-            let prev_id = keys.get_prev().map(|k| k.local_id());
-            let new_id = new.recv.id;
-
-            let new = Arc::new(new);
-
-            let encryption_state = EncryptionState::new(new.clone());
-            let decryption_state = DecryptionState::new(new.clone());
-
-            // update key-wheel
-            keys.update(new);
-
-            if initiator {
-                // start using key for encryption
-                *self.peer.enc_key.lock() = Some(encryption_state);
-            }
-
-            log::trace!("peer.add_keypair: updating inbound id map");
-
-            *self.peer.dec_key.lock() = Some(Arc::new(decryption_state));
-
-            // update incoming packet id map
-            self.peer
-                .device
-                .add_receiver(prev_id, new_id, self.peer.clone())
-        };
-
-        // schedule confirmation
-        if initiator {
-            debug_assert!(self.peer.enc_key.lock().is_some());
-            log::trace!("peer.add_keypair: is initiator, must confirm the key");
-            // attempt to confirm using staged packets
-            if !self.peer.send_staged() {
-                // fall back to keepalive packet
-                self.send_keepalive();
-                log::debug!("peer.add_keypair: keepalive for confirmation",);
-            }
-            log::trace!("peer.add_keypair: key attempted confirmed");
-        }
-
-        match released_id {
-            Some(id) => vec![id],
-            None => vec![],
-        }
-    }
-
-    fn send_keepalive(&self) {
-        log::trace!("peer.send_keepalive");
-        self.peer.send(vec![0u8; SIZE_MESSAGE_PREFIX], false)
-    }
-
-    fn add_allowed_ip(&self, ip: IpAddr, masklen: u32) {
-        self.peer
-            .device
-            .insert_route(ip, masklen, self.peer.clone())
-    }
-
-    fn list_allowed_ips(&self) -> Vec<(IpAddr, u32)> {
-        self.peer.device.list_routes(&self.peer)
-    }
-
-    fn clear_src(&self) {
-        if let Some(e) = (*self.peer.endpoint.lock()).as_mut() {
-            e.clear_src()
-        }
-    }
-
-    fn purge_staged_packets(&self) {
-        self.peer.staged_packets.lock().clear();
-    }
-
-    fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
-        self.peer.send_raw(msg)
-    }
-
-    fn set_peer_state(&self, peer_state: Arc<dyn PeerStateInterface>) {
-        *self.peer_state.write() = Some(Arc::downgrade(&peer_state));
     }
 }

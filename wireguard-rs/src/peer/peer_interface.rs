@@ -6,7 +6,7 @@ use crate::router::RouterError;
 
 use super::{KeyPair, PeerDependencies, PeerStateInterface};
 
-pub trait PeerHandleInterface<P: PeerDependencies>: Send + Sync + fmt::Display {
+pub trait PeerInterface<P: PeerDependencies>: Send + Sync + fmt::Display {
     /// Set the endpoint of the peer
     ///
     /// # Arguments

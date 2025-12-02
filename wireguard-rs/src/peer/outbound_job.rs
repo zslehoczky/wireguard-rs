@@ -4,6 +4,7 @@ use std::sync::Arc;
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use zerocopy::{AsBytes, LayoutVerified};
 
+use crate::peer::PeerInterface as _;
 use crate::router::{REJECT_AFTER_MESSAGES, SIZE_TAG, TYPE_TRANSPORT, TransportHeader};
 
 use super::peer::Peer;

@@ -8,7 +8,7 @@ mod key_wheel;
 mod outbound_job;
 #[allow(clippy::module_inception)]
 mod peer;
-mod peer_handle_interface;
+mod peer_interface;
 mod peer_state;
 mod peer_state_interface;
 mod send_queue;
@@ -24,7 +24,7 @@ use crate::wireguard::TimerCallbacks;
 
 pub use device_interface::DeviceInterface;
 pub use peer::{Peer, PeerHandle};
-pub use peer_handle_interface::PeerHandleInterface;
+pub use peer_interface::PeerInterface;
 pub use peer_state::PeerState;
 pub use peer_state_interface::PeerStateInterface;
 
