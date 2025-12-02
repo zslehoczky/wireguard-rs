@@ -1,6 +1,4 @@
 use std::net::IpAddr;
-use std::ops::Deref;
-use std::sync::Arc;
 
 use spin::RwLock;
 use zerocopy::LayoutVerified;
@@ -15,22 +13,16 @@ use super::router_error::RouterError;
 use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
-pub struct DeviceInner<P: PeerDependencies> {
+pub struct Device<P: PeerDependencies> {
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
     outbound_routing_table: RoutingTable<P>,
-}
-
-pub struct Device<P: PeerDependencies> {
-    inner: Arc<DeviceInner<P>>,
 }
 
 impl<P: PeerDependencies> Device<P> {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(DeviceInner {
-                inbound_peer_lookup: RwLock::new(PeerLookup::new()),
-                outbound_routing_table: RoutingTable::new(),
-            }),
+            inbound_peer_lookup: RwLock::new(PeerLookup::new()),
+            outbound_routing_table: RoutingTable::new(),
         }
     }
 
@@ -112,17 +104,13 @@ impl<P: PeerDependencies> Device<P> {
     }
 
     pub fn add_receiver(&self, prev_id: Option<u32>, new_id: u32, peer: Peer<P>) -> Option<u32> {
-        self.inner
-            .inbound_peer_lookup
+        self.inbound_peer_lookup
             .write()
             .add_receiver(prev_id, new_id, peer)
     }
 
     pub fn remove_receivers(&self, release: &[u32]) {
-        self.inner
-            .inbound_peer_lookup
-            .write()
-            .remove_receivers(release)
+        self.inbound_peer_lookup.write().remove_receivers(release)
     }
 
     pub fn check_route(&self, peer: &Peer<P>, packet: &mut [u8]) -> bool {
@@ -139,29 +127,6 @@ impl<P: PeerDependencies> Device<P> {
 
     pub fn remove_route(&self, peer: &Peer<P>) {
         self.outbound_routing_table.remove(peer)
-    }
-}
-
-impl<P: PeerDependencies> Clone for Device<P> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<P: PeerDependencies> PartialEq for Device<P> {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-impl<P: PeerDependencies> Eq for Device<P> {}
-
-impl<P: PeerDependencies> Deref for Device<P> {
-    type Target = DeviceInner<P>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
