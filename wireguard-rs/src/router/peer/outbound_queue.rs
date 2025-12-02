@@ -1,7 +1,9 @@
+use rayon::prelude::*;
+
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{self, Receiver, Sender};
 
 use crate::router::PeerDependencies;
 use crate::router::constants::INORDER_QUEUE_SIZE;
@@ -9,6 +11,12 @@ use crate::router::constants::INORDER_QUEUE_SIZE;
 use super::EncryptionJob;
 use super::KeyPair;
 use super::peer::Peer;
+
+fn create_channel<T>(size: usize) -> (Sender<T>, Receiver<T>) {
+    let (sender, receiver) = crossbeam_channel::bounded(size);
+
+    (sender, receiver)
+}
 
 pub enum OutboundJob {
     Encryption { job: EncryptionJob },
@@ -49,21 +57,31 @@ impl UdpSendJob {
 }
 
 fn outbound_worker<P: PeerDependencies>(peer: Peer<P>, outbound_receiver: Receiver<OutboundJob>) {
-    outbound_receiver
-        .iter()
-        .map(create_send_job)
-        .for_each(|send_job| send_job.send(&peer));
+    let mut queue = Vec::new();
+
+    for job in &outbound_receiver {
+        queue.push(job);
+
+        while let Ok(job) = outbound_receiver.try_recv() {
+            queue.push(job);
+        }
+
+        for send_job_vec in queue.par_drain(..).map(create_send_job).collect_vec_list() {
+            for send_job in send_job_vec {
+                send_job.send(&peer);
+            }
+        }
+    }
 }
 
 pub struct OutboundQueue {
     outbound_sender: Sender<OutboundJob>,
-
     outbound_handle: Option<JoinHandle<()>>,
 }
 
 impl OutboundQueue {
     pub fn new<P: PeerDependencies>(peer: Peer<P>) -> Self {
-        let (outbound_sender, outbound_receiver) = crossbeam_channel::bounded(INORDER_QUEUE_SIZE);
+        let (outbound_sender, outbound_receiver) = create_channel(INORDER_QUEUE_SIZE);
 
         let collection_handle = { thread::spawn(|| outbound_worker(peer, outbound_receiver)) };
 

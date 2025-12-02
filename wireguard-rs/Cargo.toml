@@ -33,6 +33,7 @@ treebitmap.workspace = true
 x25519-dalek.workspace = true
 zerocopy.workspace = true
 zeroize.workspace = true
+rayon = "1.11"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
