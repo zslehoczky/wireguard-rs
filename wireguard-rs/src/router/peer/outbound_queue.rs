@@ -75,7 +75,7 @@ fn outbound_worker<P: PeerDependencies>(peer: Peer<P>, outbound_receiver: Receiv
 }
 
 pub struct OutboundQueue {
-    outbound_sender: Sender<OutboundJob>,
+    outbound_sender: Option<Sender<OutboundJob>>,
     outbound_handle: Option<JoinHandle<()>>,
 }
 
@@ -83,17 +83,18 @@ impl OutboundQueue {
     pub fn new<P: PeerDependencies>(peer: Peer<P>) -> Self {
         let (outbound_sender, outbound_receiver) = create_channel(INORDER_QUEUE_SIZE);
 
-        let collection_handle = { thread::spawn(|| outbound_worker(peer, outbound_receiver)) };
+        let outbound_handle = { thread::spawn(|| outbound_worker(peer, outbound_receiver)) };
 
         Self {
-            outbound_sender,
-
-            outbound_handle: Some(collection_handle),
+            outbound_sender: Some(outbound_sender),
+            outbound_handle: Some(outbound_handle),
         }
     }
 
     pub fn enqueue_job(&self, job: OutboundJob) {
         self.outbound_sender
+            .as_ref()
+            .expect("sender should always exist")
             .send(job)
             .expect("channel should always be open");
     }
@@ -102,6 +103,8 @@ impl OutboundQueue {
 impl Drop for OutboundQueue {
     fn drop(&mut self) {
         log::trace!("SendQueue: begin drop");
+
+        self.outbound_sender = None;
 
         // join all worker threads
         self.outbound_handle
