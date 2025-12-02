@@ -6,12 +6,31 @@ use zerocopy::{AsBytes, LayoutVerified};
 
 use crate::router::PeerDependencies;
 use crate::router::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
-use crate::router::ip::inner_length;
+use crate::router::ip::{IPv4Header, IPv6Header, VERSION_IP4, VERSION_IP6};
 use crate::router::transport::TransportHeader;
 
 use super::KeyPair;
 use super::peer::Peer;
 use super::send_queue::{Job, SendJob};
+
+fn inner_length(packet: &[u8]) -> Option<usize> {
+    match packet.first()? >> 4 {
+        VERSION_IP4 => {
+            let (header, _): (LayoutVerified<&[u8], IPv4Header>, _) =
+                LayoutVerified::new_from_prefix(packet)?;
+
+            Some(header.f_total_len.get() as usize)
+        }
+        VERSION_IP6 => {
+            // check length and cast to IPv6 header
+            let (header, _): (LayoutVerified<&[u8], IPv6Header>, _) =
+                LayoutVerified::new_from_prefix(packet)?;
+
+            Some(header.f_len.get() as usize + size_of::<IPv6Header>())
+        }
+        _ => None,
+    }
+}
 
 pub struct TunSendJob<P: PeerDependencies> {
     buffer: Vec<u8>,
