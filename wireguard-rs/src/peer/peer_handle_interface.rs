@@ -2,9 +2,11 @@ use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use crate::router::{KeyPair, PeerDependencies, PeerState, RouterError};
+use crate::router::RouterError;
 
-pub trait PeerHandle<P: PeerDependencies>: Send + Sync + fmt::Display {
+use super::{KeyPair, PeerDependencies, PeerStateInterface};
+
+pub trait PeerHandleInterface<P: PeerDependencies>: Send + Sync + fmt::Display {
     /// Set the endpoint of the peer
     ///
     /// # Arguments
@@ -89,5 +91,5 @@ pub trait PeerHandle<P: PeerDependencies>: Send + Sync + fmt::Display {
     /// Unit if packet was sent, or an error indicating why sending failed
     fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError>;
 
-    fn set_peer_state(&self, peer_state: Arc<dyn PeerState>);
+    fn set_peer_state(&self, peer_state: Arc<dyn PeerStateInterface>);
 }

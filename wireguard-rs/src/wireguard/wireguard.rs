@@ -20,12 +20,12 @@ use wg_traits::{
     udp::{self, UDP},
 };
 
+use crate::peer::PeerState;
 use crate::router::{Device as RouterDevice, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
 use super::PeerDeps;
 use super::constants::TIME_HORIZON;
-use super::peer::PeerState;
 use super::timers::Timers;
 
 type CryptoDevice = crypto::Device<PublicKey, Instant, StdTimestamp>;

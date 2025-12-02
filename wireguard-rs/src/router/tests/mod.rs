@@ -1,16 +1,18 @@
 mod router_tests;
 
+use std::time::Instant;
+
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
-
-use super::{
-    Device, KeyPair, PeerState,
-    constants::{SIZE_MESSAGE_PREFIX, message_data_len},
-};
-use crate::wireguard::tests::make_packet;
 use wg_platform::dummy;
 
-use std::time::Instant;
+use crate::peer::PeerStateInterface;
+use crate::wireguard::tests::make_packet;
+
+use super::{
+    Device, KeyPair,
+    constants::{SIZE_MESSAGE_PREFIX, message_data_len},
+};
 
 fn init() {
     let _ = env_logger::builder().is_test(true).try_init();

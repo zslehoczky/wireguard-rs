@@ -8,10 +8,9 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
-use crate::wireguard::PeerHandle as PeerHandleInterface;
+use crate::peer::{Peer, PeerDependencies, PeerHandle, PeerHandleInterface};
 
 use super::constants::SIZE_MESSAGE_PREFIX;
-use super::peer::{Peer, PeerDependencies, PeerHandle};
 use super::peer_lookup::PeerLookup;
 use super::router_error::RouterError;
 use super::routing_table::RoutingTable;

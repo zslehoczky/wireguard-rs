@@ -1,6 +1,5 @@
 mod config;
 mod constants;
-mod peer;
 mod timers;
 #[allow(clippy::module_inception)]
 mod wireguard;
@@ -12,11 +11,10 @@ use std::marker::PhantomData;
 
 use wg_traits::{tun::Tun, udp::UDP};
 
-use crate::router::PeerDependencies;
+use crate::peer::PeerDependencies;
 
 pub use config::WireGuardConfig;
 pub use constants::TIME_HORIZON;
-pub use peer::PeerHandle;
 pub use timers::TimerCallbacks;
 pub use wireguard::WireGuard;
 

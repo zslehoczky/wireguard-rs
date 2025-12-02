@@ -9,7 +9,7 @@ use x25519_dalek::PublicKey;
 
 use wg_traits::{Endpoint, tun::Tun, udp::PlatformUDP, udp::UDP};
 
-use crate::router::PeerState as _;
+use crate::peer::PeerStateInterface as _;
 use crate::wireguard::WireGuard;
 
 use super::HandshakeJob;

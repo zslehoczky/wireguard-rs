@@ -4,14 +4,14 @@ use std::sync::atomic::Ordering;
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use zerocopy::{AsBytes, LayoutVerified};
 
-use crate::router::PeerDependencies;
-use crate::router::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
-use crate::router::ip::{IPv4Header, IPv6Header, VERSION_IP4, VERSION_IP6};
-use crate::router::transport::TransportHeader;
+use crate::router::{
+    IPv4Header, IPv6Header, REJECT_AFTER_MESSAGES, SIZE_TAG, TransportHeader, VERSION_IP4,
+    VERSION_IP6,
+};
 
-use super::KeyPair;
 use super::peer::Peer;
 use super::send_queue::{Job, SendJob};
+use super::{KeyPair, PeerDependencies};
 
 fn inner_length(packet: &[u8]) -> Option<usize> {
     match packet.first()? >> 4 {

@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use super::KeyPair;
 
-pub trait PeerState: Send + Sync + 'static {
+pub trait PeerStateInterface: Send + Sync + 'static {
     // Called after the router encrypts a transport message destined for the peer.
     // This method is called, even if the encrypted payload is empty (keepalive)
     fn send(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64);

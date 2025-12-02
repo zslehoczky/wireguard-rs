@@ -10,16 +10,18 @@ use spin::Mutex;
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
-use crate::router::{self, KeyPair, message_data_len};
+use crate::router::{KeyPair, message_data_len};
 use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
 use crate::workers::HandshakeJob;
 
+use super::PeerTimers;
 use super::constants::{
     KEEPALIVE_TIMEOUT, MAX_TIMER_HANDSHAKES, REJECT_AFTER_TIME, REKEY_AFTER_MESSAGES,
     REKEY_AFTER_TIME, REKEY_TIMEOUT,
 };
+use super::peer_handle_interface::PeerHandleInterface;
+use super::peer_state_interface::PeerStateInterface;
 use super::timer_state::TimerState;
-use super::{PeerHandle, PeerTimers};
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -43,7 +45,7 @@ pub struct PeerState<T: Tun, B: UDP> {
     // timer model
     timer_state: TimerState,
 
-    peer_handle: Arc<dyn PeerHandle<PeerDeps<T, B>>>,
+    peer_handle: Arc<dyn PeerHandleInterface<PeerDeps<T, B>>>,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
@@ -53,7 +55,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         pk: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
-        peer_handle: Arc<dyn PeerHandle<PeerDeps<T, B>>>,
+        peer_handle: Arc<dyn PeerHandleInterface<PeerDeps<T, B>>>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -223,12 +225,12 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         self.tx_bytes.load(Ordering::SeqCst)
     }
 
-    pub fn get_peer_handle(&self) -> &dyn PeerHandle<PeerDeps<T, B>> {
+    pub fn get_peer_handle(&self) -> &dyn PeerHandleInterface<PeerDeps<T, B>> {
         self.peer_handle.as_ref()
     }
 }
 
-impl<T: Tun, B: UDP> router::PeerState for PeerState<T, B> {
+impl<T: Tun, B: UDP> PeerStateInterface for PeerState<T, B> {
     fn send(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
         log::trace!("{} : EVENT(send)", self);
 

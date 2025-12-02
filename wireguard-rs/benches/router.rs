@@ -1,19 +1,21 @@
-use bencher::{Bencher, benchmark_group, benchmark_main};
-use wg_platform::dummy;
-use wg_traits::udp::Writer;
-use wireguard_rs::router::{Device, KeyPair, PeerDependencies, PeerState, SIZE_MESSAGE_PREFIX};
-
-use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::ipv6::MutableIpv6Packet;
-use rand_chacha::ChaCha8Rng;
-use rand_chacha::rand_core::{RngCore, SeedableRng};
 use std::convert::TryInto;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
+
+use bencher::{Bencher, benchmark_group, benchmark_main};
+use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::packet::ipv6::MutableIpv6Packet;
+use rand_chacha::ChaCha8Rng;
+use rand_chacha::rand_core::{RngCore, SeedableRng};
+
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
+use wg_platform::dummy;
+use wg_traits::udp::Writer;
+use wireguard_rs::peer::{PeerDependencies, PeerStateInterface};
+use wireguard_rs::router::{Device, KeyPair, SIZE_MESSAGE_PREFIX};
 
 fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
     // expand pseudo random payload
@@ -124,7 +126,7 @@ impl<W: Writer<dummy::UnitEndpoint>> PeerDependencies for TestPeerDeps<W> {
     type UdpWriter = W;
 }
 
-impl PeerState for BencherCallbacks {
+impl PeerStateInterface for BencherCallbacks {
     fn send(&self, size: usize, _sent: bool, _keypair: &Arc<KeyPair>, _counter: u64) {
         self.sent.fetch_add(size, Ordering::SeqCst);
     }

@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use spin::RwLock;
 
+use crate::peer::{self, TimerControls, TimerStopControl};
+
 use super::constants::{TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK};
-use super::peer::{self, TimerControls, TimerStopControl};
 
 pub trait TimerCallbacks: Send + Sync {
     fn retransmit_handshake(&self);

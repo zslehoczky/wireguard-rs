@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::router::PeerDependencies;
-
-use super::peer::Peer;
+use crate::peer::{Peer, PeerDependencies};
 
 pub struct PeerLookup<P: PeerDependencies> {
     lookup: HashMap<u32, Peer<P>>,

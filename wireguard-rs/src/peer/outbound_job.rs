@@ -4,13 +4,11 @@ use std::sync::Arc;
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use zerocopy::{AsBytes, LayoutVerified};
 
-use crate::router::PeerDependencies;
-use crate::router::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
-use crate::router::transport::{TYPE_TRANSPORT, TransportHeader};
+use crate::router::{REJECT_AFTER_MESSAGES, SIZE_TAG, TYPE_TRANSPORT, TransportHeader};
 
-use super::KeyPair;
 use super::peer::Peer;
 use super::send_queue::{Job, SendJob};
+use super::{KeyPair, PeerDependencies};
 
 pub struct UdpSendJob<P: PeerDependencies> {
     peer_deps: PhantomData<P>,

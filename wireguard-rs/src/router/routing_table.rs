@@ -8,9 +8,7 @@ use treebitmap::IpLookupTable;
 use treebitmap::address::Address;
 use zerocopy::LayoutVerified;
 
-use crate::router::PeerDependencies;
-
-use super::peer::Peer;
+use crate::peer::{Peer, PeerDependencies};
 
 /* Functions for obtaining and validating "cryptokey" routes */
 

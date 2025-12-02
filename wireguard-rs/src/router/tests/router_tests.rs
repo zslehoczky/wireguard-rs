@@ -1,6 +1,3 @@
-use wg_crypto as crypto;
-use wg_traits::{udp::Reader, udp::Writer};
-
 use std::net::IpAddr;
 use std::ops::Deref;
 use std::sync::{
@@ -11,7 +8,10 @@ use std::time::Duration;
 
 use rand::Rng;
 
-use crate::router::PeerDependencies;
+use wg_crypto as crypto;
+use wg_traits::{udp::Reader, udp::Writer};
+
+use crate::peer::PeerDependencies;
 
 use super::*;
 
@@ -108,7 +108,7 @@ macro_rules! no_events {
     };
 }
 
-impl PeerState for TestCallbacks {
+impl PeerStateInterface for TestCallbacks {
     fn send(
         &self,
         size: usize,

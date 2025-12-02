@@ -1,15 +1,37 @@
+mod anti_replay;
 pub mod constants;
-mod peer_handle;
+mod decryption_state;
+mod encryption_state;
+mod inbound_job;
+mod key_wheel;
+mod outbound_job;
+#[allow(clippy::module_inception)]
+mod peer;
+mod peer_handle_interface;
 mod peer_state;
+mod peer_state_interface;
+mod send_queue;
 mod timer_state;
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use wg_traits::{Endpoint, tun, udp};
+
+use crate::router::KeyPair;
 use crate::wireguard::TimerCallbacks;
 
-pub use peer_handle::PeerHandle;
+pub use peer::{Peer, PeerHandle};
+pub use peer_handle_interface::PeerHandleInterface;
 pub use peer_state::PeerState;
+pub use peer_state_interface::PeerStateInterface;
+
+pub trait PeerDependencies: Send + Sync + 'static {
+    type UdpEndpoint: Endpoint + Send + Sync + 'static;
+
+    type TunWriter: tun::Writer;
+    type UdpWriter: udp::Writer<Self::UdpEndpoint>;
+}
 
 pub trait TimerStopControl {
     fn stop(&self);

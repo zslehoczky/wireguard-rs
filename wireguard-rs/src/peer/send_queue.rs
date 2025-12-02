@@ -5,9 +5,9 @@ use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
-use crate::router::PeerDependencies;
-use crate::router::constants::INORDER_QUEUE_SIZE;
+use crate::router::MAX_QUEUED_PACKETS;
 
+use super::PeerDependencies;
 use super::peer::Peer;
 
 pub trait SendJob<P: PeerDependencies>: Send + Sync + 'static {
@@ -52,7 +52,7 @@ pub struct SendQueue<P: PeerDependencies, J: Job<P>> {
 
 impl<P: PeerDependencies, J: Job<P>> SendQueue<P, J> {
     pub fn new(peer: Peer<P>) -> Self {
-        let (job_sender, job_receiver) = create_channel(INORDER_QUEUE_SIZE);
+        let (job_sender, job_receiver) = create_channel(MAX_QUEUED_PACKETS);
 
         let worker_handle = { thread::spawn(|| send_worker(peer, job_receiver)) };
 

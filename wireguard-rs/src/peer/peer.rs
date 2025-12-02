@@ -9,25 +9,24 @@ use spin::{Mutex, RwLock};
 use wg_traits::Endpoint as _;
 
 use crate::router::{
-    KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
-    router_error::RouterError,
+    Device, KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, RouterError, SIZE_MESSAGE_PREFIX,
 };
-use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::decryption_state::DecryptionState;
 use super::encryption_state::EncryptionState;
 use super::inbound_job::{DecryptionJob, InboundJob};
 use super::key_wheel::KeyWheel;
 use super::outbound_job::{EncryptionJob, OutboundJob};
+use super::peer_handle_interface::PeerHandleInterface;
 use super::send_queue::SendQueue;
-use super::{PeerDependencies, PeerState};
+use super::{PeerDependencies, PeerStateInterface};
 
 type InboundQueue<P> = SendQueue<P, InboundJob<P>>;
 type OutboundQueue<P> = SendQueue<P, OutboundJob<P>>;
 
 pub struct PeerInner<P: PeerDependencies> {
     device: Device<P>,
-    peer_state: RwLock<Option<Weak<dyn PeerState>>>,
+    peer_state: RwLock<Option<Weak<dyn PeerStateInterface>>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     keys: Mutex<KeyWheel>,
     enc_key: Mutex<Option<EncryptionState>>,
@@ -93,7 +92,7 @@ impl<P: PeerDependencies> PeerInner<P> {
         }
     }
 
-    pub fn get_peer_state(&self) -> Arc<dyn PeerState> {
+    pub fn get_peer_state(&self) -> Arc<dyn PeerStateInterface> {
         self.peer_state
             .read()
             .as_ref()
@@ -433,7 +432,7 @@ impl<P: PeerDependencies> PeerHandleInterface<P> for PeerHandle<P> {
         self.peer.send_raw(msg)
     }
 
-    fn set_peer_state(&self, peer_state: Arc<dyn PeerState>) {
+    fn set_peer_state(&self, peer_state: Arc<dyn PeerStateInterface>) {
         *self.peer_state.write() = Some(Arc::downgrade(&peer_state));
     }
 }
