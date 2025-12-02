@@ -14,7 +14,9 @@ use wg_crypto as crypto;
 use wg_crypto::SymKey;
 use wg_platform::dummy;
 use wg_traits::udp::Writer;
-use wireguard_rs::peer::{PeerDependencies, PeerStateInterface};
+use wireguard_rs::peer::{
+    PeerDependencies, PeerHandle, PeerHandleInterface as _, PeerStateInterface,
+};
 use wireguard_rs::router::{Device, KeyPair, SIZE_MESSAGE_PREFIX};
 
 fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
@@ -156,11 +158,11 @@ fn bench_router_outbound(b: &mut Bencher) {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(tun_writer);
+    let router: Arc<Device<TestPeerDeps<dummy::VoidBind>>> = Arc::new(Device::new(tun_writer));
 
     // add peer to router
     let peer_state = Arc::new(BencherCallbacks::new());
-    let peer = router.new_peer();
+    let peer = PeerHandle::new(router.clone());
     peer.set_peer_state(peer_state.clone());
     peer.add_keypair(dummy_keypair(true));
 

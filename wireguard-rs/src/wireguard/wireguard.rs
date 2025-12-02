@@ -20,7 +20,7 @@ use wg_traits::{
     udp::{self, UDP},
 };
 
-use crate::peer::PeerState;
+use crate::peer::{DeviceInterface, PeerHandle, PeerState};
 use crate::router::{Device as RouterDevice, RouterError};
 use crate::workers::{HandshakeJob, udp_worker};
 
@@ -60,6 +60,53 @@ impl<T: Tun, B: UDP> WireguardInner<T, B> {
             handshake_sender: Mutex::new(Some(sender)),
             timers: Timers::new(),
         }
+    }
+}
+
+impl<T: Tun, B: UDP> DeviceInterface<PeerDeps<T, B>> for WireguardInner<T, B> {
+    fn add_receiver(
+        &self,
+        prev_id: Option<u32>,
+        new_id: u32,
+        peer: crate::peer::Peer<PeerDeps<T, B>>,
+    ) -> Option<u32> {
+        self.router.add_receiver(prev_id, new_id, peer)
+    }
+
+    fn check_route(&self, peer: &crate::peer::Peer<PeerDeps<T, B>>, packet: &mut [u8]) -> bool {
+        self.router.check_route(peer, packet)
+    }
+
+    fn insert_route(
+        &self,
+        ip: std::net::IpAddr,
+        cidr: u32,
+        peer: crate::peer::Peer<PeerDeps<T, B>>,
+    ) {
+        self.router.insert_route(ip, cidr, peer);
+    }
+
+    fn list_routes(
+        &self,
+        peer: &crate::peer::Peer<PeerDeps<T, B>>,
+    ) -> Vec<(std::net::IpAddr, u32)> {
+        self.router.list_routes(peer)
+    }
+
+    fn read_outbound(&self, msg: &[u8], endpoint: &mut B::Endpoint) -> Result<(), RouterError> {
+        self.router.read_outbound(msg, endpoint)
+    }
+
+    fn remove_receivers(&self, release: &[u32]) {
+        self.router.remove_receivers(release);
+    }
+
+    fn remove_route(&self, peer: &crate::peer::Peer<PeerDeps<T, B>>) {
+        self.router.remove_route(peer);
+    }
+
+    fn write_inbound(&self, data: &[u8]) {
+        self.router.write_inbound(data);
     }
 }
 
@@ -179,7 +226,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
         // create new router peer
         let peer_timers = Box::new(self.timers.create_peer_timers());
-        let peer_handle = self.router.new_peer();
+        let peer_handle = Arc::new(PeerHandle::new(self.inner.clone()));
 
         let peer_state = PeerState::new_as_arc(
             OsRng.r#gen(),

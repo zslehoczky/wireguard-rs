@@ -11,7 +11,7 @@ use rand::Rng;
 use wg_crypto as crypto;
 use wg_traits::{udp::Reader, udp::Writer};
 
-use crate::peer::PeerDependencies;
+use crate::peer::{PeerDependencies, PeerHandle, PeerHandleInterface as _};
 
 use super::*;
 
@@ -148,7 +148,7 @@ fn test_outbound() {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(tun_writer);
+    let router: Arc<Device<TestPeerDeps<dummy::VoidBind>>> = Arc::new(Device::new(tun_writer));
     router.set_outbound_writer(dummy::VoidBind);
 
     let tests = [
@@ -200,7 +200,7 @@ fn test_outbound() {
 
                 // add new peer
                 let peer_state = Arc::new(TestCallbacks::new());
-                let peer = router.new_peer();
+                let peer = PeerHandle::new(router.clone());
                 peer.set_peer_state(peer_state.clone());
 
                 let mask: IpAddr = mask.parse().unwrap();
@@ -331,12 +331,12 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer1, _) = dummy::TunTest::create(false);
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
-            let router1: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
-                Device::new(tun_writer1);
+            let router1: Arc<Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>> =
+                Arc::new(Device::new(tun_writer1));
             router1.set_outbound_writer(bind_writer1);
 
-            let router2: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
-                Device::new(tun_writer2);
+            let router2: Arc<Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>> =
+                Arc::new(Device::new(tun_writer2));
             router2.set_outbound_writer(bind_writer2);
 
             // prepare opaque values for tracing callbacks
@@ -346,9 +346,9 @@ fn test_bidirectional() {
 
             // create peers with matching keypairs and assign subnets
 
-            let peer1 = router1.new_peer();
+            let peer1 = PeerHandle::new(router1.clone());
             peer1.set_peer_state(peer_state1.clone());
-            let peer2 = router2.new_peer();
+            let peer2 = PeerHandle::new(router2.clone());
             peer2.set_peer_state(peer_state2.clone());
 
             {

@@ -1,6 +1,7 @@
 mod anti_replay;
 pub mod constants;
 mod decryption_state;
+mod device_interface;
 mod encryption_state;
 mod inbound_job;
 mod key_wheel;
@@ -21,6 +22,7 @@ use wg_traits::{Endpoint, tun, udp};
 use crate::router::KeyPair;
 use crate::wireguard::TimerCallbacks;
 
+pub use device_interface::DeviceInterface;
 pub use peer::{Peer, PeerHandle};
 pub use peer_handle_interface::PeerHandleInterface;
 pub use peer_state::PeerState;

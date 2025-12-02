@@ -8,7 +8,7 @@ use zerocopy::LayoutVerified;
 
 use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
-use crate::peer::{Peer, PeerDependencies, PeerHandle, PeerHandleInterface};
+use crate::peer::{DeviceInterface, Peer, PeerDependencies};
 
 use super::constants::SIZE_MESSAGE_PREFIX;
 use super::peer_lookup::PeerLookup;
@@ -71,15 +71,6 @@ impl<P: PeerDependencies> Device<P> {
     pub fn clear_sending_keys(&self) {
         log::debug!("Clear sending keys");
         // TODO: Implement. Consider: The device does not have an explicit list of peers
-    }
-
-    /// Adds a new peer to the device
-    ///
-    /// # Returns
-    ///
-    /// A atomic ref. counted peer (with liftime matching the device)
-    pub fn new_peer(&self) -> Arc<dyn PeerHandleInterface<P>> {
-        Arc::new(PeerHandle::new(self.clone()))
     }
 
     /// Cryptkey routes and sends a plaintext message (IP packet)
@@ -231,5 +222,44 @@ impl<P: PeerDependencies> Deref for Device<P> {
     type Target = DeviceInner<P>;
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl<P: PeerDependencies> DeviceInterface<P> for Device<P> {
+    fn add_receiver(
+        &self,
+        prev_id: Option<u32>,
+        new_id: u32,
+        peer: crate::peer::Peer<P>,
+    ) -> Option<u32> {
+        self.add_receiver(prev_id, new_id, peer)
+    }
+
+    fn check_route(&self, peer: &crate::peer::Peer<P>, packet: &mut [u8]) -> bool {
+        self.check_route(peer, packet)
+    }
+
+    fn insert_route(&self, ip: std::net::IpAddr, cidr: u32, peer: crate::peer::Peer<P>) {
+        self.insert_route(ip, cidr, peer);
+    }
+
+    fn list_routes(&self, peer: &crate::peer::Peer<P>) -> Vec<(std::net::IpAddr, u32)> {
+        self.list_routes(peer)
+    }
+
+    fn read_outbound(&self, msg: &[u8], endpoint: &mut P::UdpEndpoint) -> Result<(), RouterError> {
+        self.read_outbound(msg, endpoint)
+    }
+
+    fn remove_receivers(&self, release: &[u32]) {
+        self.remove_receivers(release);
+    }
+
+    fn remove_route(&self, peer: &crate::peer::Peer<P>) {
+        self.remove_route(peer);
+    }
+
+    fn write_inbound(&self, data: &[u8]) {
+        self.write_inbound(data);
     }
 }

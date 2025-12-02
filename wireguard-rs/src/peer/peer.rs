@@ -9,10 +9,11 @@ use spin::{Mutex, RwLock};
 use wg_traits::Endpoint as _;
 
 use crate::router::{
-    Device, KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, RouterError, SIZE_MESSAGE_PREFIX,
+    KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, RouterError, SIZE_MESSAGE_PREFIX,
 };
 
 use super::decryption_state::DecryptionState;
+use super::device_interface::DeviceInterface;
 use super::encryption_state::EncryptionState;
 use super::inbound_job::{DecryptionJob, InboundJob};
 use super::key_wheel::KeyWheel;
@@ -25,7 +26,7 @@ type InboundQueue<P> = SendQueue<P, InboundJob<P>>;
 type OutboundQueue<P> = SendQueue<P, OutboundJob<P>>;
 
 pub struct PeerInner<P: PeerDependencies> {
-    device: Device<P>,
+    device: Arc<dyn DeviceInterface<P>>,
     peer_state: RwLock<Option<Weak<dyn PeerStateInterface>>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     keys: Mutex<KeyWheel>,
@@ -37,7 +38,7 @@ pub struct PeerInner<P: PeerDependencies> {
 }
 
 impl<P: PeerDependencies> PeerInner<P> {
-    fn new(device: Device<P>) -> Self {
+    fn new(device: Arc<dyn DeviceInterface<P>>) -> Self {
         Self {
             device,
             peer_state: RwLock::new(None),
@@ -102,7 +103,7 @@ impl<P: PeerDependencies> PeerInner<P> {
 }
 
 impl<P: PeerDependencies> Peer<P> {
-    fn new(device: Device<P>) -> Self {
+    fn new(device: Arc<dyn DeviceInterface<P>>) -> Self {
         let result = Self {
             inner: Arc::new(PeerInner::new(device)),
         };
@@ -279,7 +280,7 @@ pub struct PeerHandle<P: PeerDependencies> {
 }
 
 impl<P: PeerDependencies> PeerHandle<P> {
-    pub fn new(device: Device<P>) -> Self {
+    pub fn new(device: Arc<dyn DeviceInterface<P>>) -> Self {
         Self {
             peer: Peer::new(device),
         }
