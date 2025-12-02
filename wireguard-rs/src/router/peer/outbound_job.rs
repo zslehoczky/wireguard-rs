@@ -3,11 +3,43 @@ use std::sync::Arc;
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use zerocopy::{AsBytes, LayoutVerified};
 
+use crate::router::PeerDependencies;
 use crate::router::constants::{REJECT_AFTER_MESSAGES, SIZE_TAG};
 use crate::router::transport::{TYPE_TRANSPORT, TransportHeader};
 
 use super::KeyPair;
-use super::outbound_queue::UdpSendJob;
+use super::peer::Peer;
+use super::send_queue::{Job, SendJob};
+
+pub struct UdpSendJob {
+    buffer: Vec<u8>,
+    counter: u64,
+    keypair: Arc<KeyPair>,
+}
+
+impl UdpSendJob {
+    pub fn new(buffer: Vec<u8>, counter: u64, keypair: Arc<KeyPair>) -> Self {
+        Self {
+            buffer,
+            counter,
+            keypair,
+        }
+    }
+}
+
+impl SendJob for UdpSendJob {
+    fn send<P: PeerDependencies>(self, peer: &Peer<P>) {
+        log::trace!("processing sequential send job");
+
+        // send to peer
+        let msg = &self.buffer;
+        let xmit = peer.send_raw(&msg[..]).is_ok();
+
+        // trigger callback (for timers)
+        peer.get_peer_state()
+            .send(msg.len(), xmit, &self.keypair, self.counter);
+    }
+}
 
 pub struct EncryptionJob {
     buffer: Vec<u8>,
@@ -68,5 +100,19 @@ impl EncryptionJob {
         }
 
         UdpSendJob::new(self.buffer, self.counter, self.keypair)
+    }
+}
+
+pub enum OutboundJob {
+    Encryption { job: EncryptionJob },
+}
+
+impl Job for OutboundJob {
+    type S = UdpSendJob;
+
+    fn process(self) -> Self::S {
+        match self {
+            OutboundJob::Encryption { job } => job.encrypt(),
+        }
     }
 }

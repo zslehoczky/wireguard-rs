@@ -16,10 +16,10 @@ use crate::router::{
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::decryption_state::DecryptionState;
-use super::encryption_job::EncryptionJob;
 use super::encryption_state::EncryptionState;
 use super::key_wheel::KeyWheel;
-use super::outbound_queue::{OutboundJob, OutboundQueue};
+use super::outbound_job::{EncryptionJob, OutboundJob};
+use super::send_queue::SendQueue;
 use super::{PeerDependencies, PeerState};
 
 pub struct PeerInner<P: PeerDependencies> {
@@ -31,7 +31,7 @@ pub struct PeerInner<P: PeerDependencies> {
     enc_key: Mutex<Option<EncryptionState>>,
     dec_key: Mutex<Option<Arc<DecryptionState>>>,
     endpoint: Mutex<Option<P::UdpEndpoint>>,
-    outbound_queue: RwLock<Option<Arc<OutboundQueue>>>,
+    outbound_queue: RwLock<Option<Arc<SendQueue<OutboundJob>>>>,
 }
 
 impl<P: PeerDependencies> PeerInner<P> {
@@ -105,7 +105,7 @@ impl<P: PeerDependencies> Peer<P> {
             inner: Arc::new(PeerInner::new(device)),
         };
 
-        let outbound_queue = OutboundQueue::new(result.clone());
+        let outbound_queue = SendQueue::new(result.clone());
         *result.inner.outbound_queue.write() = Some(Arc::new(outbound_queue));
 
         result
@@ -249,7 +249,7 @@ impl<P: PeerDependencies> Peer<P> {
             .enqueue_job(OutboundJob::Encryption { job });
     }
 
-    fn get_outbound_queue(&self) -> Arc<OutboundQueue> {
+    fn get_outbound_queue(&self) -> Arc<SendQueue<OutboundJob>> {
         self.outbound_queue
             .read()
             .as_ref()
