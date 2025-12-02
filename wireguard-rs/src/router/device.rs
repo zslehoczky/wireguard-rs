@@ -3,12 +3,11 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use spin::RwLock;
-use wg_traits::udp;
 use zerocopy::LayoutVerified;
 
-use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
+use wg_traits::Endpoint as _;
 
-use crate::peer::{DeviceInterface, Peer, PeerDependencies};
+use crate::peer::{Peer, PeerDependencies};
 
 use super::constants::SIZE_MESSAGE_PREFIX;
 use super::peer_lookup::PeerLookup;
@@ -17,8 +16,6 @@ use super::routing_table::RoutingTable;
 use super::transport::{TYPE_TRANSPORT, TransportHeader};
 
 pub struct DeviceInner<P: PeerDependencies> {
-    inbound: P::TunWriter,
-    outbound: RwLock<(bool, Option<P::UdpWriter>)>,
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
     outbound_routing_table: RoutingTable<P>,
 }
@@ -28,42 +25,13 @@ pub struct Device<P: PeerDependencies> {
 }
 
 impl<P: PeerDependencies> Device<P> {
-    pub fn new(tun: P::TunWriter) -> Self {
+    pub fn new() -> Self {
         Self {
             inner: Arc::new(DeviceInner {
-                inbound: tun,
-                outbound: RwLock::new((true, None)),
                 inbound_peer_lookup: RwLock::new(PeerLookup::new()),
                 outbound_routing_table: RoutingTable::new(),
             }),
         }
-    }
-
-    pub fn send_raw(
-        &self,
-        msg: &[u8],
-        dst: &mut P::UdpEndpoint,
-    ) -> Result<(), <P::UdpWriter as udp::Writer<P::UdpEndpoint>>::Error> {
-        let bind = self.outbound.read();
-        if bind.0
-            && let Some(bind) = bind.1.as_ref()
-        {
-            return bind.write(msg, dst);
-        }
-        Ok(())
-    }
-
-    /// Brings the router down.
-    /// When the router is brought down it:
-    /// - Prevents transmission of outbound messages.
-    pub fn down(&self) {
-        self.outbound.write().0 = false;
-    }
-
-    /// Brings the router up
-    /// When the router is brought up it enables the transmission of outbound messages.
-    pub fn up(&self) {
-        self.outbound.write().0 = true;
     }
 
     /// A new secret key has been set for the device.
@@ -143,11 +111,6 @@ impl<P: PeerDependencies> Device<P> {
         Ok(())
     }
 
-    /// Set outbound writer
-    pub fn set_outbound_writer(&self, new: P::UdpWriter) {
-        self.outbound.write().1 = Some(new);
-    }
-
     pub fn add_receiver(&self, prev_id: Option<u32>, new_id: u32, peer: Peer<P>) -> Option<u32> {
         self.inner
             .inbound_peer_lookup
@@ -160,29 +123,6 @@ impl<P: PeerDependencies> Device<P> {
             .inbound_peer_lookup
             .write()
             .remove_receivers(release)
-    }
-
-    pub fn write_inbound(&self, data: &[u8]) {
-        self.inbound.write(data).unwrap_or_else(|e| {
-            log::debug!("failed to write inbound packet to TUN: {:?}", e);
-        })
-    }
-
-    pub fn read_outbound(
-        &self,
-        msg: &[u8],
-        endpoint: &mut P::UdpEndpoint,
-    ) -> Result<(), RouterError> {
-        let outbound = self.outbound.read();
-        let (open, outbound) = outbound.deref();
-        if *open {
-            outbound
-                .as_ref()
-                .ok_or(RouterError::SendError)
-                .and_then(|w| w.write(msg, endpoint).map_err(|_| RouterError::SendError))
-        } else {
-            Ok(())
-        }
     }
 
     pub fn check_route(&self, peer: &Peer<P>, packet: &mut [u8]) -> bool {
@@ -225,41 +165,8 @@ impl<P: PeerDependencies> Deref for Device<P> {
     }
 }
 
-impl<P: PeerDependencies> DeviceInterface<P> for Device<P> {
-    fn add_receiver(
-        &self,
-        prev_id: Option<u32>,
-        new_id: u32,
-        peer: crate::peer::Peer<P>,
-    ) -> Option<u32> {
-        self.add_receiver(prev_id, new_id, peer)
-    }
-
-    fn check_route(&self, peer: &crate::peer::Peer<P>, packet: &mut [u8]) -> bool {
-        self.check_route(peer, packet)
-    }
-
-    fn insert_route(&self, ip: std::net::IpAddr, cidr: u32, peer: crate::peer::Peer<P>) {
-        self.insert_route(ip, cidr, peer);
-    }
-
-    fn list_routes(&self, peer: &crate::peer::Peer<P>) -> Vec<(std::net::IpAddr, u32)> {
-        self.list_routes(peer)
-    }
-
-    fn read_outbound(&self, msg: &[u8], endpoint: &mut P::UdpEndpoint) -> Result<(), RouterError> {
-        self.read_outbound(msg, endpoint)
-    }
-
-    fn remove_receivers(&self, release: &[u32]) {
-        self.remove_receivers(release);
-    }
-
-    fn remove_route(&self, peer: &crate::peer::Peer<P>) {
-        self.remove_route(peer);
-    }
-
-    fn write_inbound(&self, data: &[u8]) {
-        self.write_inbound(data);
+impl<P: PeerDependencies> Default for Device<P> {
+    fn default() -> Self {
+        Self::new()
     }
 }

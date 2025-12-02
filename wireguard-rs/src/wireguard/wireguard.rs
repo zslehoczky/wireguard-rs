@@ -1,9 +1,7 @@
 use std::fmt;
 use std::ops::Deref;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,7 +14,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{
-    tun::Tun,
+    tun::{Tun, Writer as _},
     udp::{self, UDP},
 };
 
@@ -27,6 +25,7 @@ use crate::workers::{HandshakeJob, udp_worker};
 use super::PeerDeps;
 use super::constants::TIME_HORIZON;
 use super::timers::Timers;
+use super::udp_writer::UdpWriter;
 
 type CryptoDevice = crypto::Device<PublicKey, Instant, StdTimestamp>;
 
@@ -41,24 +40,25 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
     timers: Timers,
+    tun_writer: T::Writer,
+    udp_writer: RwLock<UdpWriter<B>>,
 }
 
 impl<T: Tun, B: UDP> WireguardInner<T, B> {
-    fn new(
-        router: RouterDevice<PeerDeps<T, B>>,
-        sender: Sender<HandshakeJob<B::Endpoint>>,
-    ) -> Self {
+    fn new(tun_writer: T::Writer, handshake_sender: Sender<HandshakeJob<B::Endpoint>>) -> Self {
         Self {
             enabled: RwLock::new(false),
             id: OsRng.r#gen(),
             mtu: AtomicUsize::new(0),
             last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
-            router,
+            router: RouterDevice::new(),
             pending: AtomicUsize::new(0),
             crypto_device: RwLock::new(crypto::Device::new()),
             peers: DashMap::default(),
-            handshake_sender: Mutex::new(Some(sender)),
+            handshake_sender: Mutex::new(Some(handshake_sender)),
             timers: Timers::new(),
+            tun_writer,
+            udp_writer: RwLock::new(UdpWriter::default()),
         }
     }
 }
@@ -93,10 +93,6 @@ impl<T: Tun, B: UDP> DeviceInterface<PeerDeps<T, B>> for WireguardInner<T, B> {
         self.router.list_routes(peer)
     }
 
-    fn read_outbound(&self, msg: &[u8], endpoint: &mut B::Endpoint) -> Result<(), RouterError> {
-        self.router.read_outbound(msg, endpoint)
-    }
-
     fn remove_receivers(&self, release: &[u32]) {
         self.router.remove_receivers(release);
     }
@@ -106,7 +102,13 @@ impl<T: Tun, B: UDP> DeviceInterface<PeerDeps<T, B>> for WireguardInner<T, B> {
     }
 
     fn write_inbound(&self, data: &[u8]) {
-        self.router.write_inbound(data);
+        self.tun_writer.write(data).unwrap_or_else(|e| {
+            log::debug!("failed to write inbound packet to TUN: {:?}", e);
+        })
+    }
+
+    fn write_outbound(&self, msg: &[u8], endpoint: &mut B::Endpoint) -> Result<(), RouterError> {
+        self.udp_writer.read().send_checked(msg, endpoint)
     }
 }
 
@@ -157,8 +159,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // set mtu
         self.mtu.store(0, Ordering::Relaxed);
 
-        // avoid transmission from router
-        self.router.down();
+        // disable transmission
+        self.udp_writer.write().set_enabled(false);
 
         // set all peers down (stops timers)
         self.for_each_peer(|_, peer_state| {
@@ -183,8 +185,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             return;
         }
 
-        // enable transmission from router
-        self.router.up();
+        // enable transmission
+        self.udp_writer.write().set_enabled(true);
 
         // set all peers up (restarts timers)
         self.for_each_peer(|_, peer_state| {
@@ -262,14 +264,12 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     }
 
     pub fn set_writer(&self, writer: B::Writer) {
-        self.router.set_outbound_writer(writer);
+        self.udp_writer.write().set_writer(writer);
     }
 
-    pub fn new(writer: T::Writer, sender: Sender<HandshakeJob<B::Endpoint>>) -> Self {
-        let router = RouterDevice::new(writer);
-
+    pub fn new(tun_writer: T::Writer, handshake_sender: Sender<HandshakeJob<B::Endpoint>>) -> Self {
         Self {
-            inner: Arc::new(WireguardInner::new(router, sender)),
+            inner: Arc::new(WireguardInner::new(tun_writer, handshake_sender)),
         }
     }
 
@@ -334,7 +334,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         msg: &[u8],
         dst: &mut B::Endpoint,
     ) -> Result<(), <B::Writer as udp::Writer<B::Endpoint>>::Error> {
-        self.router.send_raw(msg, dst)
+        self.udp_writer.read().send_unchecked(msg, dst)
     }
 
     pub fn send(&self, msg: Vec<u8>) -> Result<(), RouterError> {

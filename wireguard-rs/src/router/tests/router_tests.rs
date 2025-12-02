@@ -12,6 +12,7 @@ use wg_crypto as crypto;
 use wg_traits::{udp::Reader, udp::Writer};
 
 use crate::peer::{PeerDependencies, PeerHandle, PeerHandleInterface as _};
+use crate::router::FakeRouter;
 
 use super::*;
 
@@ -148,8 +149,11 @@ fn test_outbound() {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Arc<Device<TestPeerDeps<dummy::VoidBind>>> = Arc::new(Device::new(tun_writer));
-    router.set_outbound_writer(dummy::VoidBind);
+    let router = Arc::new(FakeRouter::new(
+        Device::<TestPeerDeps<dummy::VoidBind>>::new(),
+        tun_writer,
+        dummy::VoidBind,
+    ));
 
     let tests = [
         ("192.168.1.0", 24, "192.168.1.20", true),
@@ -331,13 +335,17 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer1, _) = dummy::TunTest::create(false);
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
-            let router1: Arc<Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>> =
-                Arc::new(Device::new(tun_writer1));
-            router1.set_outbound_writer(bind_writer1);
+            let router1 = Arc::new(FakeRouter::new(
+                Device::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
+                tun_writer1,
+                bind_writer1,
+            ));
 
-            let router2: Arc<Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>> =
-                Arc::new(Device::new(tun_writer2));
-            router2.set_outbound_writer(bind_writer2);
+            let router2 = Arc::new(FakeRouter::new(
+                Device::<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>>::new(),
+                tun_writer2,
+                bind_writer2,
+            ));
 
             // prepare opaque values for tracing callbacks
 

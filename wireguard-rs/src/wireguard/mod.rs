@@ -1,6 +1,7 @@
 mod config;
 mod constants;
 mod timers;
+mod udp_writer;
 #[allow(clippy::module_inception)]
 mod wireguard;
 

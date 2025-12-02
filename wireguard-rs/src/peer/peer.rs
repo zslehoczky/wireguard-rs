@@ -88,7 +88,7 @@ impl<P: PeerDependencies> PeerInner<P> {
     pub fn send_raw(&self, msg: &[u8]) -> Result<(), RouterError> {
         // send to endpoint (if known)
         match self.endpoint.lock().as_mut() {
-            Some(endpoint) => self.device.read_outbound(msg, endpoint),
+            Some(endpoint) => self.device.write_outbound(msg, endpoint),
             None => Err(RouterError::NoEndpoint),
         }
     }

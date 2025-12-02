@@ -13,11 +13,11 @@ pub trait DeviceInterface<P: PeerDependencies>: Send + Sync + 'static {
 
     fn list_routes(&self, peer: &Peer<P>) -> Vec<(IpAddr, u32)>;
 
-    fn read_outbound(&self, msg: &[u8], endpoint: &mut P::UdpEndpoint) -> Result<(), RouterError>;
-
     fn remove_receivers(&self, release: &[u32]);
 
     fn remove_route(&self, peer: &Peer<P>);
 
     fn write_inbound(&self, data: &[u8]);
+
+    fn write_outbound(&self, msg: &[u8], endpoint: &mut P::UdpEndpoint) -> Result<(), RouterError>;
 }
