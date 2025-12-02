@@ -15,7 +15,7 @@ pub trait Writer<E: Endpoint>: Send + Sync + 'static {
 
 pub trait UDP: Send + Sync + 'static {
     type Error: Error;
-    type Endpoint: Endpoint;
+    type Endpoint: Endpoint + Send + Sync + 'static;
 
     /* Until Rust gets type equality constraints these have to be generic */
     type Writer: Writer<Self::Endpoint>;

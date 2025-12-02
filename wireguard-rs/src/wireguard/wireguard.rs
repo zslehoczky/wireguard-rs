@@ -218,12 +218,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.router.set_outbound_writer(writer);
     }
 
-    pub fn new(
-        writer: T::Writer,
-        sender: Sender<HandshakeJob<B::Endpoint>>,
-        n_cpus: usize,
-    ) -> Self {
-        let router = RouterDevice::new(n_cpus, writer);
+    pub fn new(writer: T::Writer, sender: Sender<HandshakeJob<B::Endpoint>>) -> Self {
+        let router = RouterDevice::new(writer);
 
         Self {
             inner: Arc::new(WireguardInner::new(router, sender)),

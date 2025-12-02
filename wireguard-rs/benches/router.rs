@@ -11,7 +11,6 @@ use std::convert::TryInto;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread::available_parallelism;
 use std::time::Instant;
 use wg_crypto as crypto;
 use wg_crypto::SymKey;
@@ -155,12 +154,7 @@ fn bench_router_outbound(b: &mut Bencher) {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(
-        available_parallelism()
-            .expect("parallelism info should be available")
-            .get(),
-        tun_writer,
-    );
+    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(tun_writer);
 
     // add peer to router
     let peer_state = Arc::new(BencherCallbacks::new());

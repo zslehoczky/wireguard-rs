@@ -148,7 +148,7 @@ fn test_outbound() {
 
     // create device
     let (_fake, _reader, tun_writer, _mtu) = dummy::TunTest::create(false);
-    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(1, tun_writer);
+    let router: Device<TestPeerDeps<dummy::VoidBind>> = Device::new(tun_writer);
     router.set_outbound_writer(dummy::VoidBind);
 
     let tests = [
@@ -332,11 +332,11 @@ fn test_bidirectional() {
             let (_fake, _, tun_writer2, _) = dummy::TunTest::create(false);
 
             let router1: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
-                Device::new(1, tun_writer1);
+                Device::new(tun_writer1);
             router1.set_outbound_writer(bind_writer1);
 
             let router2: Device<TestPeerDeps<dummy::PairWriter<dummy::UnitEndpoint>>> =
-                Device::new(1, tun_writer2);
+                Device::new(tun_writer2);
             router2.set_outbound_writer(bind_writer2);
 
             // prepare opaque values for tracing callbacks

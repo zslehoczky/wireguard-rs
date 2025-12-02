@@ -10,28 +10,31 @@ use wg_traits::Endpoint as _;
 
 use crate::router::{
     KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
-    parallel_queue::ParallelJobUnion, receive_job::ReceiveJob, router_error::RouterError,
-    sequential_queue::SequentialQueue,
+    router_error::RouterError,
 };
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::decryption_state::DecryptionState;
 use super::encryption_state::EncryptionState;
+use super::inbound_job::{DecryptionJob, InboundJob};
 use super::key_wheel::KeyWheel;
 use super::outbound_job::{EncryptionJob, OutboundJob};
 use super::send_queue::SendQueue;
 use super::{PeerDependencies, PeerState};
 
+type InboundQueue<P> = SendQueue<P, InboundJob<P>>;
+type OutboundQueue<P> = SendQueue<P, OutboundJob<P>>;
+
 pub struct PeerInner<P: PeerDependencies> {
     device: Device<P>,
     peer_state: RwLock<Option<Weak<dyn PeerState>>>,
-    inbound: SequentialQueue<ReceiveJob<P>>,
     staged_packets: Mutex<ArrayDeque<[Vec<u8>; MAX_QUEUED_PACKETS], Wrapping>>,
     keys: Mutex<KeyWheel>,
     enc_key: Mutex<Option<EncryptionState>>,
     dec_key: Mutex<Option<Arc<DecryptionState>>>,
     endpoint: Mutex<Option<P::UdpEndpoint>>,
-    outbound_queue: RwLock<Option<Arc<SendQueue<OutboundJob>>>>,
+    inbound_queue: RwLock<Option<Arc<InboundQueue<P>>>>,
+    outbound_queue: RwLock<Option<Arc<OutboundQueue<P>>>>,
 }
 
 impl<P: PeerDependencies> PeerInner<P> {
@@ -39,12 +42,12 @@ impl<P: PeerDependencies> PeerInner<P> {
         Self {
             device,
             peer_state: RwLock::new(None),
-            inbound: SequentialQueue::new(),
             enc_key: spin::Mutex::new(None),
             dec_key: spin::Mutex::new(None),
             endpoint: spin::Mutex::new(None),
             keys: spin::Mutex::new(KeyWheel::new()),
             staged_packets: spin::Mutex::new(ArrayDeque::new()),
+            inbound_queue: RwLock::new(None),
             outbound_queue: RwLock::new(None),
         }
     }
@@ -105,6 +108,9 @@ impl<P: PeerDependencies> Peer<P> {
             inner: Arc::new(PeerInner::new(device)),
         };
 
+        let inbound_queue = SendQueue::new(result.clone());
+        *result.inner.inbound_queue.write() = Some(Arc::new(inbound_queue));
+
         let outbound_queue = SendQueue::new(result.clone());
         *result.inner.outbound_queue.write() = Some(Arc::new(outbound_queue));
 
@@ -119,15 +125,12 @@ impl<P: PeerDependencies> Peer<P> {
             .clone()
     }
 
-    pub fn recv(&self, src: P::UdpEndpoint, msg: Vec<u8>) {
-        // create inbound job
-        let job = ReceiveJob::new(msg, src, self.clone());
-
-        // 1. add to sequential queue (drop if full)
-        // 2. then add to parallel work queue (wait if full)
-        if self.get_inbound().push(job.clone()) {
-            self.device.queue_job(ParallelJobUnion::Inbound(job));
-        }
+    pub fn recv(&self, endpoint: P::UdpEndpoint, buffer: Vec<u8>) {
+        self.enqueue_decryption_job(DecryptionJob::new(
+            buffer,
+            endpoint,
+            self.get_decryption_key().get_keypair(),
+        ));
     }
 
     /// Encrypt and send a message to the peer
@@ -228,32 +231,41 @@ impl<P: PeerDependencies> Peer<P> {
         self.send_staged();
     }
 
-    pub fn check_route(&self, peer: &Self, packet: &mut [u8]) -> bool {
-        self.device.check_route(peer, packet)
+    pub fn check_route(&self, packet: &mut [u8]) -> bool {
+        self.device.check_route(self, packet)
     }
 
     pub fn write_inbound(&self, data: &[u8]) {
         self.device.write_inbound(data)
     }
 
-    pub fn get_inbound(&self) -> &SequentialQueue<ReceiveJob<P>> {
-        &self.inbound
-    }
-
     pub fn update_endpoint(&self, new_endpoint: Option<P::UdpEndpoint>) {
         *self.endpoint.lock() = new_endpoint;
     }
 
-    pub fn enqueue_encryption_job(&self, job: EncryptionJob) {
+    pub fn enqueue_decryption_job(&self, job: DecryptionJob<P>) {
+        self.get_inbound_queue()
+            .enqueue_job(InboundJob::Decryption { job });
+    }
+
+    pub fn enqueue_encryption_job(&self, job: EncryptionJob<P>) {
         self.get_outbound_queue()
             .enqueue_job(OutboundJob::Encryption { job });
     }
 
-    fn get_outbound_queue(&self) -> Arc<SendQueue<OutboundJob>> {
+    fn get_inbound_queue(&self) -> Arc<SendQueue<P, InboundJob<P>>> {
+        self.inbound_queue
+            .read()
+            .as_ref()
+            .expect("inbound queue should always exist")
+            .clone()
+    }
+
+    fn get_outbound_queue(&self) -> Arc<SendQueue<P, OutboundJob<P>>> {
         self.outbound_queue
             .read()
             .as_ref()
-            .expect("send queue should always exist")
+            .expect("outbound queue should always exist")
             .clone()
     }
 }

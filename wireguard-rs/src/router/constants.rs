@@ -10,7 +10,6 @@ pub const REJECT_AFTER_MESSAGES: u64 = u64::MAX - (1 << 4);
 // performance
 
 pub const INORDER_QUEUE_SIZE: usize = MAX_QUEUED_PACKETS;
-pub const PARALLEL_QUEUE_SIZE: usize = 4 * MAX_QUEUED_PACKETS;
 
 // message size
 

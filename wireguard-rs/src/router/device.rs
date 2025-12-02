@@ -10,8 +10,7 @@ use wg_traits::{Endpoint as _, tun::Writer as _, udp::Writer as _};
 
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
-use super::constants::{PARALLEL_QUEUE_SIZE, SIZE_MESSAGE_PREFIX};
-use super::parallel_queue::{NonZeroUsize, ParallelJobUnion, ParallelQueue};
+use super::constants::SIZE_MESSAGE_PREFIX;
 use super::peer::{Peer, PeerDependencies, PeerHandle};
 use super::peer_lookup::PeerLookup;
 use super::router_error::RouterError;
@@ -23,7 +22,6 @@ pub struct DeviceInner<P: PeerDependencies> {
     outbound: RwLock<(bool, Option<P::UdpWriter>)>,
     inbound_peer_lookup: RwLock<PeerLookup<P>>,
     outbound_routing_table: RoutingTable<P>,
-    parallel_queue: ParallelQueue<P>,
 }
 
 pub struct Device<P: PeerDependencies> {
@@ -31,15 +29,9 @@ pub struct Device<P: PeerDependencies> {
 }
 
 impl<P: PeerDependencies> Device<P> {
-    pub fn new(num_workers: usize, tun: P::TunWriter) -> Self {
-        let parallel_queue = ParallelQueue::new(
-            NonZeroUsize::new(num_workers).expect("should not be zero"),
-            PARALLEL_QUEUE_SIZE,
-        );
-
+    pub fn new(tun: P::TunWriter) -> Self {
         Self {
             inner: Arc::new(DeviceInner {
-                parallel_queue,
                 inbound: tun,
                 outbound: RwLock::new((true, None)),
                 inbound_peer_lookup: RwLock::new(PeerLookup::new()),
@@ -164,10 +156,6 @@ impl<P: PeerDependencies> Device<P> {
     /// Set outbound writer
     pub fn set_outbound_writer(&self, new: P::UdpWriter) {
         self.outbound.write().1 = Some(new);
-    }
-
-    pub fn queue_job(&self, job: ParallelJobUnion<P>) {
-        self.parallel_queue.queue_job(job);
     }
 
     pub fn add_receiver(&self, prev_id: Option<u32>, new_id: u32, peer: Peer<P>) -> Option<u32> {

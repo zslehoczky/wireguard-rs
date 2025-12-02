@@ -48,8 +48,7 @@ fn run(config: Config) -> Result<(), ErrorReason> {
 
     let (handshake_sender, handshake_receiver) = crossbeam_channel::bounded(n_cpus.get());
 
-    let wireguard_device =
-        WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender, n_cpus.get());
+    let wireguard_device = WireGuard::<plt::Tun, plt::UDP>::new(tun_writer, handshake_sender);
 
     run_workers(
         uapi_socket,

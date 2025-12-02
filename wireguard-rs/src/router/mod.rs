@@ -1,13 +1,10 @@
 mod constants;
 mod device;
 mod ip;
-mod parallel_queue;
 mod peer;
 mod peer_lookup;
-mod receive_job;
 mod router_error;
 mod routing_table;
-mod sequential_queue;
 mod transport;
 
 #[cfg(test)]
