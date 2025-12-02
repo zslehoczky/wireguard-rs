@@ -10,12 +10,13 @@ use wg_traits::Endpoint as _;
 
 use crate::router::{
     KeyPair, MAX_QUEUED_PACKETS, REJECT_AFTER_MESSAGES, SIZE_MESSAGE_PREFIX, device::Device,
-    encryption_queue::EncryptionJob, parallel_queue::ParallelJobUnion, receive_job::ReceiveJob,
-    router_error::RouterError, sequential_queue::SequentialQueue,
+    parallel_queue::ParallelJobUnion, receive_job::ReceiveJob, router_error::RouterError,
+    sequential_queue::SequentialQueue,
 };
 use crate::wireguard::PeerHandle as PeerHandleInterface;
 
 use super::decryption_state::DecryptionState;
+use super::encryption_job::EncryptionJob;
 use super::encryption_state::EncryptionState;
 use super::key_wheel::KeyWheel;
 use super::outbound_queue::{OutboundJob, OutboundQueue};
@@ -158,10 +159,7 @@ impl<P: PeerDependencies> Peer<P> {
                         (None, true)
                     } else {
                         log::debug!("encryption state available, nonce = {}", state.get_nonce());
-                        let counter = state.get_nonce();
-                        let job =
-                            EncryptionJob::new(msg, counter, state.get_keypair(), self.clone());
-                        self.get_outbound_queue().register_counter(counter);
+                        let job = EncryptionJob::new(msg, state.get_nonce(), state.get_keypair());
                         state.increment_nonce();
                         (Some(job), false)
                     }
@@ -177,7 +175,7 @@ impl<P: PeerDependencies> Peer<P> {
 
         if let Some(job) = job {
             log::debug!("schedule encryption job");
-            self.device.enqueue_encryption_job(job);
+            self.enqueue_encryption_job(job);
         }
     }
 
@@ -246,8 +244,9 @@ impl<P: PeerDependencies> Peer<P> {
         *self.endpoint.lock() = new_endpoint;
     }
 
-    pub fn enqueue_outbound_job(&self, job: OutboundJob) {
-        self.get_outbound_queue().enqueue_job(job);
+    pub fn enqueue_encryption_job(&self, job: EncryptionJob) {
+        self.get_outbound_queue()
+            .enqueue_job(OutboundJob::Encryption { job });
     }
 
     fn get_outbound_queue(&self) -> Arc<OutboundQueue> {

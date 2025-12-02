@@ -1,6 +1,5 @@
 mod constants;
 mod device;
-mod encryption_queue;
 mod ip;
 mod parallel_queue;
 mod peer;

@@ -1,5 +1,6 @@
 mod anti_replay;
 mod decryption_state;
+mod encryption_job;
 mod encryption_state;
 mod key_wheel;
 mod outbound_queue;
@@ -10,7 +11,8 @@ mod peer_state;
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::router::KeyPair;
-pub use outbound_queue::OutboundJob;
+
+pub use encryption_job::EncryptionJob;
 pub use peer::{Peer, PeerHandle};
 pub use peer_state::PeerState;
 
