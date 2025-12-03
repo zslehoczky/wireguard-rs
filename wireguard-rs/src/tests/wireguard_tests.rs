@@ -208,6 +208,9 @@ fn test_pure_wireguard() {
 
         test_pure_wireguard_inner(wireguard_device_pair, tun_fake_io_pair);
 
+        wireguard_device_0.down();
+        wireguard_device_1.down();
+
         wireguard_device_0.close_handshake_queue();
         wireguard_device_1.close_handshake_queue();
     });

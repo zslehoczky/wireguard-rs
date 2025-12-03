@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
+use log::debug;
 use rand::Rng;
 use rand::rngs::OsRng;
 use spin::{Mutex, RwLock, RwLockReadGuard};
@@ -16,7 +17,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_crypto::{self as crypto, PSK, StdTimestamp};
 use wg_traits::{
     tun::{Tun, Writer as _},
-    udp::{self, UDP},
+    udp::{self, Reader as _, UDP},
 };
 
 use crate::peer::{DeviceInterface, PeerState};
@@ -274,8 +275,28 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     /// Any previous reader thread is stopped by closing the previous reader,
     /// which unblocks the thread and causes an error on reader.read
     pub fn add_udp_reader(&self, reader: B::Reader) -> thread::JoinHandle<()> {
-        let wg = self.clone();
-        thread::spawn(move || udp_worker(&wg, reader))
+        let (sender, receiver) = crossbeam_channel::unbounded();
+
+        thread::spawn(move || {
+            loop {
+                let mut msg = vec![0; 4096];
+
+                let (size, src) = match reader.read(&mut msg) {
+                    Err(e) => {
+                        debug!("Bind reader closed with {}", e);
+                        return;
+                    }
+                    Ok(v) => v,
+                };
+
+                if sender.send((msg, size, src)).is_err() {
+                    return;
+                }
+            }
+        });
+
+        let wireguard_device = self.clone();
+        thread::spawn(move || udp_worker(&wireguard_device, receiver))
     }
 
     pub fn set_writer(&self, writer: B::Writer) {
@@ -358,5 +379,9 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
     pub fn recv(&self, src: B::Endpoint, msg: Vec<u8>) -> Result<(), RouterError> {
         self.router.recv(src, msg)
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        *self.enabled.read()
     }
 }
