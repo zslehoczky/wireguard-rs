@@ -255,11 +255,9 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     ///
     /// Any previous reader thread is stopped by closing the previous reader,
     /// which unblocks the thread and causes an error on reader.read
-    pub fn add_udp_reader(&self, reader: B::Reader) {
+    pub fn add_udp_reader(&self, reader: B::Reader) -> thread::JoinHandle<()> {
         let wg = self.clone();
-        thread::spawn(move || {
-            udp_worker(&wg, reader);
-        });
+        thread::spawn(move || udp_worker(&wg, reader))
     }
 
     pub fn set_writer(&self, writer: B::Writer) {
