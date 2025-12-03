@@ -8,11 +8,7 @@ use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
 use crate::wireguard::WireGuard;
 use crate::workers::{handshake_worker, tun_worker};
 
-use super::make_packet;
-
-fn init() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
+use super::{init, make_packet};
 
 fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
     let n_cpus: usize = 1;
