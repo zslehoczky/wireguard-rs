@@ -17,12 +17,11 @@ use wg_traits::{
     udp::PlatformUDP,
 };
 
-use crate::wireguard::WireGuard;
+use crate::wireguard::{WireGuard, WireGuardConfig};
 
-pub use handshake::handshake_worker;
-use handshake::spawn_handshake_workers;
-pub use tun::tun_worker;
-use tun::{spawn_tun_workers, tun_event_loop_worker};
+pub use handshake::spawn_handshake_workers;
+pub use tun::spawn_tun_workers;
+use tun::tun_event_loop_worker;
 use uapi::{config_worker, uapi_server_worker};
 pub use udp::udp_worker;
 
@@ -40,14 +39,13 @@ pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
     wireguard_device: WireGuard<T, B>,
 ) {
     thread::scope(|thread_scope| {
-        spawn_handshake_workers(
+        wireguard_device.add_handshake_reader(
             thread_scope,
-            &wireguard_device,
             handshake_receiver,
             n_handshake_workers,
         );
 
-        let tun_reader_jobs = spawn_tun_workers(thread_scope, &wireguard_device, tun_readers);
+        let tun_reader_jobs = wireguard_device.add_tun_readers(thread_scope, tun_readers);
 
         let (config_sender, config_receiver) = crossbeam_channel::unbounded();
 
@@ -64,7 +62,8 @@ pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
 
         // config consumer
         thread_scope.spawn(|| {
-            config_worker(&wireguard_device, config_receiver);
+            let mut wireguard_config = WireGuardConfig::new(&wireguard_device);
+            config_worker(&mut wireguard_config, config_receiver);
         });
 
         // wait until tun device is disconnected

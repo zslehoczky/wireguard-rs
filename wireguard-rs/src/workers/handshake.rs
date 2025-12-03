@@ -7,7 +7,7 @@ use log::debug;
 use rand::rngs::OsRng;
 use x25519_dalek::PublicKey;
 
-use wg_traits::{Endpoint, tun::Tun, udp::PlatformUDP, udp::UDP};
+use wg_traits::{Endpoint, tun::Tun, udp::UDP};
 
 use crate::peer::PeerStateInterface as _;
 use crate::wireguard::WireGuard;
@@ -15,7 +15,7 @@ use crate::wireguard::WireGuard;
 use super::HandshakeJob;
 use super::constants::{DURATION_UNDER_LOAD, MAX_QUEUED_INCOMING_HANDSHAKES, THRESHOLD_UNDER_LOAD};
 
-pub fn spawn_handshake_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
+pub fn spawn_handshake_workers<'scope, 'env, T: Tun, B: UDP>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
     wireguard_device: &'env WireGuard<T, B>,
     handshake_receiver: crossbeam_channel::Receiver<HandshakeJob<B::Endpoint>>,

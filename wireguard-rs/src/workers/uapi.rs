@@ -15,7 +15,7 @@ use wg_uapi::uapi::{
 };
 
 use crate::run::{error::ExitCode, profiler::profiler_stop};
-use crate::wireguard::{WireGuard, WireGuardConfig};
+use crate::wireguard::WireGuardConfig;
 
 use super::line_reader::{ReadOutcome, read_line_block};
 
@@ -29,19 +29,14 @@ pub enum ConfigMessage {
 }
 
 pub fn config_worker<T: Tun, B: PlatformUDP>(
-    wireguard_device: &WireGuard<T, B>,
+    wireguard_config: &mut WireGuardConfig<T, B>,
     config_receiver: crossbeam_channel::Receiver<ConfigMessage>,
 ) {
-    let mut wireguard_config = WireGuardConfig::new(wireguard_device);
-
     while let Ok(message) = config_receiver.recv() {
         match message {
             ConfigMessage::UapiConfigOperation(config_operation, sender) => {
                 sender
-                    .send(handle_config_operation(
-                        config_operation,
-                        &mut wireguard_config,
-                    ))
+                    .send(handle_config_operation(config_operation, wireguard_config))
                     .expect("channel is open until result is received");
             }
             ConfigMessage::TunUp(mtu) => {

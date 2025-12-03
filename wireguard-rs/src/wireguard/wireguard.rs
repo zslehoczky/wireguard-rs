@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,7 +21,7 @@ use wg_traits::{
 
 use crate::peer::{DeviceInterface, PeerState};
 use crate::router::{Router, RouterError};
-use crate::workers::{HandshakeJob, udp_worker};
+use crate::workers::{HandshakeJob, spawn_handshake_workers, spawn_tun_workers, udp_worker};
 
 use super::PeerDeps;
 use super::constants::TIME_HORIZON;
@@ -248,6 +249,23 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         let _ = self.crypto_device.write().remove(pk);
 
         self.peers.remove(pk);
+    }
+
+    pub fn add_handshake_reader<'scope, 'env>(
+        &'env self,
+        thread_scope: &'scope thread::Scope<'scope, 'env>,
+        handshake_receiver: crossbeam_channel::Receiver<HandshakeJob<B::Endpoint>>,
+        n_handshake_workers: NonZeroUsize,
+    ) -> Vec<thread::ScopedJoinHandle<'scope, ()>> {
+        spawn_handshake_workers(thread_scope, self, handshake_receiver, n_handshake_workers)
+    }
+
+    pub fn add_tun_readers<'scope, 'env>(
+        &'env self,
+        thread_scope: &'scope thread::Scope<'scope, 'env>,
+        tun_readers: Vec<T::Reader>,
+    ) -> Vec<thread::ScopedJoinHandle<'scope, ()>> {
+        spawn_tun_workers(thread_scope, self, tun_readers)
     }
 
     /// Begin consuming messages from the reader.

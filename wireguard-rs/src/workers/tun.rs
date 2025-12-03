@@ -5,7 +5,7 @@ use log::{debug, error, trace};
 
 use wg_traits::{
     tun::{Reader as TunReader, Status, Tun, TunEvent},
-    udp::{PlatformUDP, UDP},
+    udp::UDP,
 };
 
 use crate::router::{CAPACITY_MESSAGE_POSTFIX, SIZE_MESSAGE_PREFIX};
@@ -15,7 +15,7 @@ use crate::wireguard::WireGuard;
 use super::constants::MESSAGE_PADDING_MULTIPLE;
 use super::uapi::ConfigMessage;
 
-pub fn spawn_tun_workers<'scope, 'env, T: Tun, B: PlatformUDP>(
+pub fn spawn_tun_workers<'scope, 'env, T: Tun, B: UDP>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
     wireguard_device: &'env WireGuard<T, B>,
     tun_readers: Vec<T::Reader>,

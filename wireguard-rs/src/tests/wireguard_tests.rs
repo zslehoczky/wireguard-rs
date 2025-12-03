@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::thread;
 
 use crossbeam_channel::Receiver;
@@ -6,7 +7,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use wg_platform::dummy::{self};
 
 use crate::wireguard::WireGuard;
-use crate::workers::{HandshakeJob, handshake_worker, tun_worker};
+use crate::workers::HandshakeJob;
 
 use super::{init, make_packet};
 
@@ -33,7 +34,7 @@ fn create_wireguard_device() -> (
     )
 }
 
-fn initialize_wireguard_device<'scope, 'env>(
+fn initialize_workers<'scope, 'env>(
     thread_scope: &'scope thread::Scope<'scope, 'env>,
     wireguard_device: &'env WireGuard<dummy::TunTest, dummy::PairBind>,
     handshake_receiver: Receiver<HandshakeJob<dummy::UnitEndpoint>>,
@@ -41,8 +42,12 @@ fn initialize_wireguard_device<'scope, 'env>(
     bind_reader: dummy::PairReader<dummy::UnitEndpoint>,
     bind_writer: dummy::PairWriter<dummy::UnitEndpoint>,
 ) {
-    thread_scope.spawn(|| handshake_worker(wireguard_device, handshake_receiver));
-    thread_scope.spawn(|| tun_worker(wireguard_device, tun_reader));
+    wireguard_device.add_handshake_reader(
+        thread_scope,
+        handshake_receiver,
+        NonZeroUsize::new(1).unwrap(),
+    );
+    wireguard_device.add_tun_readers(thread_scope, vec![tun_reader]);
 
     wireguard_device.up(1500);
     wireguard_device.set_writer(bind_writer);
@@ -181,7 +186,7 @@ fn test_pure_wireguard() {
     let ((bind_reader_0, bind_writer_0), (bind_reader_1, bind_writer_1)) = dummy::PairBind::pair();
 
     thread::scope(|thread_scope| {
-        initialize_wireguard_device(
+        initialize_workers(
             thread_scope,
             &wireguard_device_0,
             handshake_receiver_0,
@@ -189,7 +194,7 @@ fn test_pure_wireguard() {
             bind_reader_0,
             bind_writer_0,
         );
-        initialize_wireguard_device(
+        initialize_workers(
             thread_scope,
             &wireguard_device_1,
             handshake_receiver_1,
