@@ -6,6 +6,8 @@ extern crate cpuprofiler;
 pub mod peer;
 pub mod router;
 pub mod run;
+#[cfg(test)]
+mod tests;
 
 /// The wireguard sub-module represents a full, pure, WireGuard implementation:
 ///

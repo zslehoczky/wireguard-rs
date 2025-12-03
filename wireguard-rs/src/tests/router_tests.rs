@@ -9,12 +9,13 @@ use std::time::Duration;
 use rand::Rng;
 
 use wg_crypto as crypto;
+use wg_platform::dummy;
 use wg_traits::{udp::Reader, udp::Writer};
 
-use crate::peer::{PeerDependencies, PeerHandle, PeerInterface as _};
-use crate::router::FakeRouter;
+use crate::peer::{PeerDependencies, PeerHandle, PeerInterface as _, PeerStateInterface};
+use crate::router::{FakeRouter, Router, message_data_len};
 
-use super::*;
+use super::{Instant, KeyPair, dummy_keypair, init, make_packet, pad};
 
 const SIZE_MSG: usize = 1024;
 const SIZE_KEEPALIVE: usize = message_data_len(0);

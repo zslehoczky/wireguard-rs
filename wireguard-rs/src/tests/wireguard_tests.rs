@@ -1,81 +1,15 @@
-use std::convert::TryInto;
-use std::net::IpAddr;
-
-use crossbeam_channel::bounded;
-
-#[cfg(test)]
-use rand::{RngCore, SeedableRng};
-#[cfg(test)]
-use rand_chacha::ChaCha8Rng;
-
-#[cfg(test)]
-use pnet::packet::ipv4::MutableIpv4Packet;
-#[cfg(test)]
-use pnet::packet::ipv6::MutableIpv6Packet;
-
-#[cfg(test)]
-use super::WireGuard;
-
-#[cfg(test)]
-use crate::workers::{handshake_worker, tun_worker};
-
-#[cfg(test)]
-use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
-
-#[cfg(test)]
 use std::thread;
 
-#[cfg(test)]
-use hex;
-
-#[cfg(test)]
+use crossbeam_channel::bounded;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-#[cfg(test)]
-pub(crate) fn make_packet(size: usize, src: IpAddr, dst: IpAddr, id: u64) -> Vec<u8> {
-    // expand pseudo random payload
-    let mut rng = ChaCha8Rng::seed_from_u64(id);
-    let mut p: Vec<u8> = vec![0; size];
-    rng.fill_bytes(&mut p);
+use wg_platform::dummy::{self, PairBind, TunFakeIO, TunTest};
 
-    // create "IP packet"
-    let mut msg = Vec::with_capacity(size);
-    match dst {
-        IpAddr::V4(dst) => {
-            let length = size + MutableIpv4Packet::minimum_packet_size();
-            msg.resize(length, 0);
+use crate::wireguard::WireGuard;
+use crate::workers::{handshake_worker, tun_worker};
 
-            let mut packet = MutableIpv4Packet::new(&mut msg[..]).unwrap();
-            packet.set_destination(dst);
-            packet.set_total_length(length.try_into().expect("length too great for IPv4 packet"));
-            packet.set_source(if let IpAddr::V4(src) = src {
-                src
-            } else {
-                panic!("src.version != dst.version")
-            });
-            packet.set_payload(&p);
-            packet.set_version(4);
-        }
-        IpAddr::V6(dst) => {
-            let length = size + MutableIpv6Packet::minimum_packet_size();
-            msg.resize(length, 0);
+use super::make_packet;
 
-            let mut packet = MutableIpv6Packet::new(&mut msg[..]).unwrap();
-            packet.set_destination(dst);
-            packet.set_payload_length(size.try_into().expect("length too great for IPv6 packet"));
-            packet.set_source(if let IpAddr::V6(src) = src {
-                src
-            } else {
-                panic!("src.version != dst.version")
-            });
-            packet.set_payload(&p);
-            packet.set_version(6);
-        }
-    }
-    msg
-}
-
-#[cfg(test)]
 fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
 }
@@ -105,7 +39,6 @@ fn create_wireguard_device() -> (TunFakeIO, WireGuard<TunTest, PairBind>) {
     (fake, wireguard_device)
 }
 
-#[cfg(test)]
 /* Create and configure
  * two matching pure (no side-effects) instances of WireGuard.
  *

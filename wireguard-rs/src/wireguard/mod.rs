@@ -5,9 +5,6 @@ mod udp_writer;
 #[allow(clippy::module_inception)]
 mod wireguard;
 
-#[cfg(test)]
-pub mod tests;
-
 use std::marker::PhantomData;
 
 use wg_traits::{tun::Tun, udp::UDP};
