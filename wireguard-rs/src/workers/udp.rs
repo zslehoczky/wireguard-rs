@@ -27,11 +27,6 @@ pub fn udp_worker<T: Tun, B: UDP>(
         };
         msg.truncate(size);
 
-        // TODO: start device down
-        if wireguard_device.get_mtu() == 0 {
-            continue;
-        }
-
         // message type de-multiplexer
         if msg.len() < std::mem::size_of::<u32>() {
             continue;
