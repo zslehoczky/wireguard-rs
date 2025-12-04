@@ -240,11 +240,11 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
             let peer_state = PeerState::new(
                 OsRng.r#gen(),
-                self.clone(),
                 public_key,
                 peer_timers,
                 *enabled,
                 self.inner.clone(),
+                self.handshake_sender.lock().as_ref().unwrap().clone(),
             );
 
             self.peers.insert(public_key, peer_state.clone());

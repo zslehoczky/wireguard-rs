@@ -6,14 +6,14 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use log::debug;
 use spin::Mutex;
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
 use crate::router::{KeyPair, message_data_len};
-use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerEvent, WireGuard};
+use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerEvent};
 use crate::workers::HandshakeJob;
 
 use super::constants::{
@@ -36,12 +36,7 @@ trait TimerCallbacks: Send + Sync {
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
     id: u64,
-
-    // wireguard device state
-    wg: WireGuard<T, B>,
-
-    // TODO: eliminate
-    pk: PublicKey,
+    public_key: PublicKey,
 
     // handshake state
     walltime_last_handshake: Mutex<Option<SystemTime>>, // walltime for last handshake (for UAPI status)
@@ -56,25 +51,24 @@ pub struct PeerState<T: Tun, B: UDP> {
     timer_state: TimerState,
 
     peer_handle: PeerHandle<PeerDeps<T, B>>,
-
     timer_event_worker_enabled: AtomicBool,
+    handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
     pub fn new(
         id: u64,
-        wg: WireGuard<T, B>,
-        pk: PublicKey,
+        public_key: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
         device_interface: Arc<dyn DeviceInterface<PeerDeps<T, B>>>,
+        handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
         let result = Arc::new(Self {
             id,
-            wg,
-            pk,
+            public_key,
             walltime_last_handshake: Mutex::new(None),
             last_handshake_sent: Mutex::new(Instant::now() - TIME_HORIZON),
             handshake_queued: AtomicBool::new(false),
@@ -83,6 +77,7 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             timer_state,
             peer_handle: PeerHandle::new(device_interface),
             timer_event_worker_enabled: AtomicBool::new(true),
+            handshake_sender,
         });
 
         result.peer_handle.set_peer_state(result.clone());
@@ -137,7 +132,9 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
 
         // create a new handshake job for the peer
         if !self.handshake_queued.swap(true, Ordering::SeqCst) {
-            self.wg.send_to_handshake_queue(HandshakeJob::New(self.pk));
+            self.handshake_sender
+                .send(HandshakeJob::New(self.public_key))
+                .unwrap();
             log::trace!(
                 "{} : packet_send_handshake_initiation, handshake queued",
                 self
