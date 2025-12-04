@@ -9,11 +9,10 @@ use std::time::{Duration, Instant, SystemTime};
 use crossbeam_channel::{Receiver, Sender};
 use log::debug;
 use spin::Mutex;
-use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
 use crate::router::{KeyPair, message_data_len};
-use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerEvent};
+use crate::wireguard::{TIME_HORIZON, TimerEvent};
 use crate::workers::HandshakeJob;
 
 use super::constants::{
@@ -23,9 +22,9 @@ use super::constants::{
 use super::peer_interface::PeerInterface;
 use super::peer_state_interface::PeerStateInterface;
 use super::timer_state::TimerState;
-use super::{DeviceInterface, Peer, PeerHandle, PeerTimers, TimerCallbacks};
+use super::{DeviceInterface, Peer, PeerDependencies, PeerHandle, PeerTimers, TimerCallbacks};
 
-pub struct PeerState<T: Tun, B: UDP> {
+pub struct PeerState<P: PeerDependencies> {
     // internal id (for logging)
     id: u64,
     public_key: PublicKey,
@@ -42,19 +41,19 @@ pub struct PeerState<T: Tun, B: UDP> {
     // timer model
     timer_state: TimerState,
 
-    peer_handle: PeerHandle<PeerDeps<T, B>>,
+    peer_handle: PeerHandle<P>,
     timer_event_worker_enabled: AtomicBool,
-    handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
+    handshake_sender: Sender<HandshakeJob<P::UdpEndpoint>>,
 }
 
-impl<T: Tun, B: UDP> PeerState<T, B> {
+impl<P: PeerDependencies> PeerState<P> {
     pub fn new(
         id: u64,
         public_key: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
-        device_interface: Arc<dyn DeviceInterface<PeerDeps<T, B>>>,
-        handshake_sender: Sender<HandshakeJob<B::Endpoint>>,
+        device_interface: Arc<dyn DeviceInterface<P>>,
+        handshake_sender: Sender<HandshakeJob<P::UdpEndpoint>>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -252,12 +251,12 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         self.tx_bytes.load(Ordering::SeqCst)
     }
 
-    pub fn get_peer_handle(&self) -> &dyn PeerInterface<PeerDeps<T, B>> {
-        &self.peer_handle as &Peer<PeerDeps<T, B>>
+    pub fn get_peer_handle(&self) -> &dyn PeerInterface<P> {
+        &self.peer_handle as &Peer<P>
     }
 }
 
-impl<T: Tun, B: UDP> PeerStateInterface for PeerState<T, B> {
+impl<P: PeerDependencies> PeerStateInterface for PeerState<P> {
     fn send(&self, size: usize, sent: bool, keypair: &Arc<KeyPair>, counter: u64) {
         log::trace!("{} : EVENT(send)", self);
 
@@ -345,13 +344,13 @@ impl<T: Tun, B: UDP> PeerStateInterface for PeerState<T, B> {
     }
 }
 
-impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
+impl<P: PeerDependencies> fmt::Display for PeerState<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PeerState").field("id", &self.id).finish()
     }
 }
 
-impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
+impl<P: PeerDependencies> TimerCallbacks for PeerState<P> {
     fn new_handshake(&self) {
         let peer_handle = self.get_peer_handle();
 

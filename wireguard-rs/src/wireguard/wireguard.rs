@@ -36,7 +36,7 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     enabled: RwLock<bool>,
     mtu: AtomicUsize,
     crypto_device: RwLock<CryptoDevice>,
-    peers: DashMap<PublicKey, Arc<PeerState<T, B>>>,
+    peers: DashMap<PublicKey, Arc<PeerState<PeerDeps<T, B>>>>,
     router: Router<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
@@ -221,7 +221,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         &'wireguard self,
         thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
         pk: PublicKey,
-    ) -> Option<Arc<PeerState<T, B>>> {
+    ) -> Option<Arc<PeerState<PeerDeps<T, B>>>> {
         let crypto_device = self.crypto_device.write();
 
         if crypto_device.contains_key(&pk) {
@@ -349,13 +349,13 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         false
     }
 
-    pub fn get_peer(&self, public_key: &PublicKey) -> Option<Arc<PeerState<T, B>>> {
+    pub fn get_peer(&self, public_key: &PublicKey) -> Option<Arc<PeerState<PeerDeps<T, B>>>> {
         self.peers.get(public_key).map(|e| e.clone())
     }
 
     pub fn for_each_peer<F>(&self, mut f: F)
     where
-        F: FnMut(&PublicKey, &PeerState<T, B>),
+        F: FnMut(&PublicKey, &PeerState<PeerDeps<T, B>>),
     {
         for entry in &self.peers {
             let public_key = entry.key();
