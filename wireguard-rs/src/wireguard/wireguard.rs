@@ -219,40 +219,56 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.crypto_device.read().get_psk(pk).ok().cloned()
     }
 
-    pub fn add_peer(&self, pk: PublicKey) -> Option<Arc<PeerState<T, B>>> {
-        let mut peers = self.crypto_device.write();
-        if peers.contains_key(&pk) {
+    pub fn add_peer<'scope, 'wireguard>(
+        &'wireguard self,
+        thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
+        pk: PublicKey,
+    ) -> Option<Arc<PeerState<T, B>>> {
+        let crypto_device = self.crypto_device.write();
+
+        if crypto_device.contains_key(&pk) {
             return None;
         }
 
-        // prevent up/down while inserting
-        let enabled = self.enabled.read();
+        let public_key = pk;
 
-        let (timer_sender, timer_receiver) = crossbeam_channel::unbounded();
+        thread_scope.spawn(move || {
+            // prevent up/down while inserting
+            let enabled = self.enabled.read();
 
-        // create new router peer
-        let peer_timers = Box::new(self.timers.create_peer_timers(timer_sender));
+            let (timer_event_sender, timer_event_receiver) = crossbeam_channel::unbounded();
 
-        let peer_state = PeerState::new(
-            OsRng.r#gen(),
-            self.clone(),
-            pk,
-            peer_timers,
-            *enabled,
-            self.inner.clone(),
-            timer_receiver,
-        );
+            let peer_timers = Box::new(self.timers.create_peer_timers(timer_event_sender));
 
-        self.peers.insert(pk, peer_state.clone());
+            let peer_state = PeerState::new(
+                OsRng.r#gen(),
+                self.clone(),
+                public_key,
+                peer_timers,
+                *enabled,
+                self.inner.clone(),
+            );
 
-        // finally, add the peer to the handshake device
-        peers.add(pk, pk).ok().map(|_| peer_state)
+            self.peers.insert(public_key, peer_state.clone());
+
+            std::mem::drop(crypto_device);
+
+            thread::scope(|peer_thread_scope| {
+                peer_state.start_timer_event_worker(peer_thread_scope, timer_event_receiver);
+            });
+        });
+
+        let _ = self.crypto_device.write().add(pk, pk);
+
+        self.get_peer(&pk)
     }
 
     pub fn remove_peer(&self, pk: &PublicKey) {
-        let _ = self.crypto_device.write().remove(pk);
+        if let Some((_, peer_state)) = self.peers.remove(pk) {
+            peer_state.stop_timer_event_worker();
+        }
 
-        self.peers.remove(pk);
+        let _ = self.crypto_device.write().remove(pk);
     }
 
     pub fn add_handshake_reader<'scope, 'wireguard>(

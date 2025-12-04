@@ -54,10 +54,11 @@ fn initialize_workers<'scope, 'wireguard>(
     wireguard_device.add_udp_reader(thread_scope, bind_reader);
 }
 
-fn test_pure_wireguard_inner(
+fn test_pure_wireguard_inner<'scope, 'wireguard>(
+    thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
     wireguard_device_pair: (
-        &WireGuard<dummy::TunTest, dummy::PairBind>,
-        &WireGuard<dummy::TunTest, dummy::PairBind>,
+        &'wireguard WireGuard<dummy::TunTest, dummy::PairBind>,
+        &'wireguard WireGuard<dummy::TunTest, dummy::PairBind>,
     ),
     tun_fake_io_pair: (dummy::TunFakeIO, dummy::TunFakeIO),
 ) {
@@ -80,8 +81,8 @@ fn test_pure_wireguard_inner(
     let pk0 = PublicKey::from(&sk0);
     let pk1 = PublicKey::from(&sk1);
 
-    let peer_state0 = wireguard_device_pair.1.add_peer(pk0).unwrap();
-    let peer_state1 = wireguard_device_pair.0.add_peer(pk1).unwrap();
+    let peer_state0 = wireguard_device_pair.1.add_peer(thread_scope, pk0).unwrap();
+    let peer_state1 = wireguard_device_pair.0.add_peer(thread_scope, pk1).unwrap();
 
     wireguard_device_pair.0.set_key(Some(sk0));
     wireguard_device_pair.1.set_key(Some(sk1));
@@ -163,6 +164,9 @@ fn test_pure_wireguard_inner(
             );
         }
     }
+
+    wireguard_device_pair.1.remove_peer(&pk0);
+    wireguard_device_pair.0.remove_peer(&pk1);
 }
 
 /* Create and configure
@@ -206,7 +210,7 @@ fn test_pure_wireguard() {
         let wireguard_device_pair = (&wireguard_device_0, &wireguard_device_1);
         let tun_fake_io_pair = (tun_fake_io_0, tun_fake_io_1);
 
-        test_pure_wireguard_inner(wireguard_device_pair, tun_fake_io_pair);
+        test_pure_wireguard_inner(thread_scope, wireguard_device_pair, tun_fake_io_pair);
 
         wireguard_device_0.down();
         wireguard_device_1.down();

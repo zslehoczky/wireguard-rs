@@ -148,7 +148,7 @@ impl<'scope, 'wireguard, T: tun::Tun, B: udp::PlatformUDP>
     }
 
     fn add_peer(&self, peer: &PublicKey) -> bool {
-        self.wireguard.add_peer(*peer).is_some()
+        self.wireguard.add_peer(self.thread_scope, *peer).is_some()
     }
 
     fn set_preshared_key(&self, peer: &PublicKey, psk: [u8; 32]) {

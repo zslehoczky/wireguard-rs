@@ -56,6 +56,8 @@ pub struct PeerState<T: Tun, B: UDP> {
     timer_state: TimerState,
 
     peer_handle: PeerHandle<PeerDeps<T, B>>,
+
+    timer_event_worker_enabled: AtomicBool,
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
@@ -66,7 +68,6 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
         device_interface: Arc<dyn DeviceInterface<PeerDeps<T, B>>>,
-        timer_event_receiver: Receiver<TimerEvent>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -81,30 +82,39 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             tx_bytes: AtomicU64::new(0),
             timer_state,
             peer_handle: PeerHandle::new(device_interface),
+            timer_event_worker_enabled: AtomicBool::new(true),
         });
 
         result.peer_handle.set_peer_state(result.clone());
 
-        let timer_callbacks = Arc::downgrade(&result);
-        thread::spawn(move || {
-            for event in timer_event_receiver {
-                if let Some(timer_callbacks) = timer_callbacks.upgrade() {
+        result
+    }
+
+    pub fn start_timer_event_worker<'scope, 'peer>(
+        &'peer self,
+        peer_thread_scope: &'scope thread::Scope<'scope, 'peer>,
+        timer_event_receiver: Receiver<TimerEvent>,
+    ) -> thread::ScopedJoinHandle<'scope, ()> {
+        peer_thread_scope.spawn(|| {
+            let timer_event_receiver = timer_event_receiver; // move into closure
+
+            while self.timer_event_worker_enabled.load(Ordering::Acquire) {
+                if let Ok(event) = timer_event_receiver.recv_timeout(Duration::from_millis(100)) {
                     match event {
-                        TimerEvent::NewHandshake => timer_callbacks.new_handshake(),
-                        TimerEvent::RetransmitHandshake => timer_callbacks.retransmit_handshake(),
-                        TimerEvent::SendKeepalive => timer_callbacks.send_keepalive(),
-                        TimerEvent::SendPersistentKeepalive => {
-                            timer_callbacks.send_persistent_keepalive()
-                        }
-                        TimerEvent::ZeroKeyMaterial => timer_callbacks.zero_key_material(),
+                        TimerEvent::NewHandshake => self.new_handshake(),
+                        TimerEvent::RetransmitHandshake => self.retransmit_handshake(),
+                        TimerEvent::SendKeepalive => self.send_keepalive(),
+                        TimerEvent::SendPersistentKeepalive => self.send_persistent_keepalive(),
+                        TimerEvent::ZeroKeyMaterial => self.zero_key_material(),
                     }
-                } else {
-                    break;
                 }
             }
-        });
+        })
+    }
 
-        result
+    pub fn stop_timer_event_worker(&self) {
+        self.timer_event_worker_enabled
+            .store(false, Ordering::Release);
     }
 
     /* Queue a handshake request for the parallel workers
