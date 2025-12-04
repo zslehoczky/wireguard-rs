@@ -23,15 +23,7 @@ use super::constants::{
 use super::peer_interface::PeerInterface;
 use super::peer_state_interface::PeerStateInterface;
 use super::timer_state::TimerState;
-use super::{DeviceInterface, Peer, PeerHandle, PeerTimers};
-
-trait TimerCallbacks: Send + Sync {
-    fn new_handshake(&self);
-    fn retransmit_handshake(&self);
-    fn send_keepalive(&self);
-    fn send_persistent_keepalive(&self);
-    fn zero_key_material(&self);
-}
+use super::{DeviceInterface, Peer, PeerHandle, PeerTimers, TimerCallbacks};
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)

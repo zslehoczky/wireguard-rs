@@ -51,3 +51,11 @@ pub trait PeerTimers: Send + Sync {
     fn zero_key_material(&self) -> &dyn TimerControls;
     fn send_persistent_keepalive(&self) -> &dyn TimerControls;
 }
+
+trait TimerCallbacks: Send + Sync {
+    fn new_handshake(&self);
+    fn retransmit_handshake(&self);
+    fn send_keepalive(&self);
+    fn send_persistent_keepalive(&self);
+    fn zero_key_material(&self);
+}
