@@ -1,8 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
-
-use crate::wireguard::TimerCallbacks;
 
 use super::PeerTimers;
 use super::constants::{KEEPALIVE_TIMEOUT, REJECT_AFTER_TIME, REKEY_TIMEOUT};
@@ -176,9 +173,5 @@ impl TimerState {
 
     pub fn get_timers(&self) -> &dyn PeerTimers {
         self.timers.as_ref()
-    }
-
-    pub fn set_timer_callbacks(&self, timer_callbacks: Arc<dyn TimerCallbacks>) {
-        self.timers.set_timer_callbacks(timer_callbacks);
     }
 }

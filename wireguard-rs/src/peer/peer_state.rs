@@ -3,15 +3,17 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
+use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use crossbeam_channel::Receiver;
 use log::debug;
 use spin::Mutex;
 use wg_traits::{tun::Tun, udp::UDP};
 use x25519_dalek::PublicKey;
 
 use crate::router::{KeyPair, message_data_len};
-use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerCallbacks, WireGuard};
+use crate::wireguard::{PeerDeps, TIME_HORIZON, TimerEvent, WireGuard};
 use crate::workers::HandshakeJob;
 
 use super::constants::{
@@ -22,6 +24,14 @@ use super::peer_interface::PeerInterface;
 use super::peer_state_interface::PeerStateInterface;
 use super::timer_state::TimerState;
 use super::{DeviceInterface, Peer, PeerHandle, PeerTimers};
+
+trait TimerCallbacks: Send + Sync {
+    fn retransmit_handshake(&self);
+    fn send_keepalive(&self);
+    fn new_handshake(&self);
+    fn zero_key_material(&self);
+    fn send_persistent_keepalive(&self);
+}
 
 pub struct PeerState<T: Tun, B: UDP> {
     // internal id (for logging)
@@ -49,13 +59,14 @@ pub struct PeerState<T: Tun, B: UDP> {
 }
 
 impl<T: Tun, B: UDP> PeerState<T, B> {
-    pub fn new_as_arc(
+    pub fn new(
         id: u64,
         wg: WireGuard<T, B>,
         pk: PublicKey,
         timers: Box<dyn PeerTimers>,
         timers_enabled: bool,
         device_interface: Arc<dyn DeviceInterface<PeerDeps<T, B>>>,
+        timer_event_receiver: Receiver<TimerEvent>,
     ) -> Arc<Self> {
         let timer_state = TimerState::new(timers, timers_enabled);
 
@@ -72,8 +83,26 @@ impl<T: Tun, B: UDP> PeerState<T, B> {
             peer_handle: PeerHandle::new(device_interface),
         });
 
-        result.timer_state.set_timer_callbacks(result.clone());
         result.peer_handle.set_peer_state(result.clone());
+
+        let timer_callbacks = Arc::downgrade(&result);
+        thread::spawn(move || {
+            for event in timer_event_receiver {
+                if let Some(timer_callbacks) = timer_callbacks.upgrade() {
+                    match event {
+                        TimerEvent::NewHandshake => timer_callbacks.new_handshake(),
+                        TimerEvent::RetransmitHandshake => timer_callbacks.retransmit_handshake(),
+                        TimerEvent::SendKeepalive => timer_callbacks.send_keepalive(),
+                        TimerEvent::SendPersistentKeepalive => {
+                            timer_callbacks.send_persistent_keepalive()
+                        }
+                        TimerEvent::ZeroKeyMaterial => timer_callbacks.zero_key_material(),
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
 
         result
     }

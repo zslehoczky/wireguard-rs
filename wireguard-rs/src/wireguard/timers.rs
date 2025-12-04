@@ -1,38 +1,47 @@
-use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use spin::RwLock;
+use crossbeam_channel::Sender;
 
 use crate::peer::{self, TimerControls, TimerStopControl};
 
 use super::constants::{TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK};
 
-pub trait TimerCallbacks: Send + Sync {
-    fn retransmit_handshake(&self);
-    fn send_keepalive(&self);
-    fn new_handshake(&self);
-    fn zero_key_material(&self);
-    fn send_persistent_keepalive(&self);
+pub enum TimerEvent {
+    NewHandshake,
+    RetransmitHandshake,
+    SendKeepalive,
+    SendPersistentKeepalive,
+    ZeroKeyMaterial,
 }
 
-fn retransmit_handshake(timer_callbacks: &dyn TimerCallbacks) {
-    timer_callbacks.retransmit_handshake();
+fn new_handshake(
+    timer_event_sender: &Sender<TimerEvent>,
+) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
+    timer_event_sender.send(TimerEvent::NewHandshake)
 }
 
-fn send_keepalive(timer_callbacks: &dyn TimerCallbacks) {
-    timer_callbacks.send_keepalive();
+fn retransmit_handshake(
+    timer_event_sender: &Sender<TimerEvent>,
+) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
+    timer_event_sender.send(TimerEvent::RetransmitHandshake)
 }
 
-fn new_handshake(timer_callbacks: &dyn TimerCallbacks) {
-    timer_callbacks.new_handshake();
+fn send_keepalive(
+    timer_event_sender: &Sender<TimerEvent>,
+) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
+    timer_event_sender.send(TimerEvent::SendKeepalive)
 }
 
-fn zero_key_material(timer_callbacks: &dyn TimerCallbacks) {
-    timer_callbacks.zero_key_material();
+fn send_persistent_keepalive(
+    timer_event_sender: &Sender<TimerEvent>,
+) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
+    timer_event_sender.send(TimerEvent::SendPersistentKeepalive)
 }
 
-fn send_persistent_keepalive(timer_callbacks: &dyn TimerCallbacks) {
-    timer_callbacks.send_persistent_keepalive();
+fn zero_key_material(
+    timer_event_sender: &Sender<TimerEvent>,
+) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
+    timer_event_sender.send(TimerEvent::ZeroKeyMaterial)
 }
 
 struct Timer {
@@ -62,8 +71,6 @@ impl peer::TimerControls for Timer {
 }
 
 pub struct PeerTimers {
-    timer_callbacks: Arc<RwLock<Option<Weak<dyn TimerCallbacks>>>>,
-
     retransmit_handshake: Timer,
     send_keepalive: Timer,
     send_persistent_keepalive: Timer,
@@ -72,26 +79,18 @@ pub struct PeerTimers {
 }
 
 impl PeerTimers {
-    fn new(runner: &hjul::Runner) -> Self {
-        let timer_callbacks: Arc<RwLock<Option<Weak<dyn TimerCallbacks>>>> =
-            Arc::new(RwLock::new(None));
-
-        let spawn_timer = |callback: fn(&dyn TimerCallbacks)| {
-            let timer_callbacks = timer_callbacks.clone();
+    fn new(runner: &hjul::Runner, timer_event_sender: Sender<TimerEvent>) -> Self {
+        let spawn_timer = |callback: fn(
+            &Sender<TimerEvent>,
+        )
+            -> Result<(), crossbeam_channel::SendError<TimerEvent>>| {
+            let timer_event_sender = timer_event_sender.clone();
             runner.timer(move || {
-                if let Some(timer_callbacks) = timer_callbacks
-                    .read()
-                    .as_ref()
-                    .and_then(Weak::<dyn TimerCallbacks>::upgrade)
-                {
-                    callback(timer_callbacks.as_ref());
-                }
+                let _ = callback(&timer_event_sender);
             })
         };
 
         Self {
-            timer_callbacks: timer_callbacks.clone(),
-
             retransmit_handshake: Timer::new(spawn_timer(retransmit_handshake)),
             send_keepalive: Timer::new(spawn_timer(send_keepalive)),
             send_persistent_keepalive: Timer::new(spawn_timer(send_persistent_keepalive)),
@@ -112,10 +111,6 @@ impl peer::TimerStopControl for PeerTimers {
 }
 
 impl peer::PeerTimers for PeerTimers {
-    fn set_timer_callbacks(&self, timer_callbacks: Arc<dyn TimerCallbacks>) {
-        *self.timer_callbacks.write() = Some(Arc::downgrade(&timer_callbacks));
-    }
-
     fn all(&self) -> &dyn TimerStopControl {
         self
     }
@@ -152,7 +147,7 @@ impl Timers {
         }
     }
 
-    pub fn create_peer_timers(&self) -> PeerTimers {
-        PeerTimers::new(&self.runner)
+    pub fn create_peer_timers(&self, timer_event_sender: Sender<TimerEvent>) -> PeerTimers {
+        PeerTimers::new(&self.runner, timer_event_sender)
     }
 }

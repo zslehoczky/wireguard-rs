@@ -14,13 +14,11 @@ mod peer_state_interface;
 mod send_queue;
 mod timer_state;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use wg_traits::{Endpoint, tun, udp};
 
 use crate::router::KeyPair;
-use crate::wireguard::TimerCallbacks;
 
 pub use device_interface::DeviceInterface;
 pub use peer::{Peer, PeerHandle};
@@ -45,8 +43,6 @@ pub trait TimerControls: TimerStopControl {
 }
 
 pub trait PeerTimers: Send + Sync {
-    fn set_timer_callbacks(&self, timer_callbacks: Arc<dyn TimerCallbacks>);
-
     fn all(&self) -> &dyn TimerStopControl;
 
     fn retransmit_handshake(&self) -> &dyn TimerControls;

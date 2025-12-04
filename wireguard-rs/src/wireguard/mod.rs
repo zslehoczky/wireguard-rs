@@ -13,7 +13,7 @@ use crate::peer::PeerDependencies;
 
 pub use config::WireGuardConfig;
 pub use constants::TIME_HORIZON;
-pub use timers::TimerCallbacks;
+pub use timers::TimerEvent;
 pub use wireguard::WireGuard;
 
 pub struct PeerDeps<T: Tun, U: UDP> {

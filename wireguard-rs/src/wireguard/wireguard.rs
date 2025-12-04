@@ -228,16 +228,19 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         // prevent up/down while inserting
         let enabled = self.enabled.read();
 
-        // create new router peer
-        let peer_timers = Box::new(self.timers.create_peer_timers());
+        let (timer_sender, timer_receiver) = crossbeam_channel::unbounded();
 
-        let peer_state = PeerState::new_as_arc(
+        // create new router peer
+        let peer_timers = Box::new(self.timers.create_peer_timers(timer_sender));
+
+        let peer_state = PeerState::new(
             OsRng.r#gen(),
             self.clone(),
             pk,
             peer_timers,
             *enabled,
             self.inner.clone(),
+            timer_receiver,
         );
 
         self.peers.insert(pk, peer_state.clone());
