@@ -279,6 +279,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
 
         let (sender, receiver) = crossbeam_channel::unbounded();
 
+        // TODO remove this and make UDP reader "cancelable": either by recv_timeout, or explicit close
         thread::spawn(move || {
             loop {
                 let mut msg = vec![0; MAX_UDP_PACKET_SIZE];
