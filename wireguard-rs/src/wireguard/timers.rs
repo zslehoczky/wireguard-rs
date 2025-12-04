@@ -6,42 +6,13 @@ use crate::peer::{self, TimerControls, TimerStopControl};
 
 use super::constants::{TIMERS_CAPACITY, TIMERS_SLOTS, TIMERS_TICK};
 
+#[derive(Clone, Copy)]
 pub enum TimerEvent {
     NewHandshake,
     RetransmitHandshake,
     SendKeepalive,
     SendPersistentKeepalive,
     ZeroKeyMaterial,
-}
-
-fn new_handshake(
-    timer_event_sender: &Sender<TimerEvent>,
-) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
-    timer_event_sender.send(TimerEvent::NewHandshake)
-}
-
-fn retransmit_handshake(
-    timer_event_sender: &Sender<TimerEvent>,
-) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
-    timer_event_sender.send(TimerEvent::RetransmitHandshake)
-}
-
-fn send_keepalive(
-    timer_event_sender: &Sender<TimerEvent>,
-) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
-    timer_event_sender.send(TimerEvent::SendKeepalive)
-}
-
-fn send_persistent_keepalive(
-    timer_event_sender: &Sender<TimerEvent>,
-) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
-    timer_event_sender.send(TimerEvent::SendPersistentKeepalive)
-}
-
-fn zero_key_material(
-    timer_event_sender: &Sender<TimerEvent>,
-) -> Result<(), crossbeam_channel::SendError<TimerEvent>> {
-    timer_event_sender.send(TimerEvent::ZeroKeyMaterial)
 }
 
 struct Timer {
@@ -71,31 +42,28 @@ impl peer::TimerControls for Timer {
 }
 
 pub struct PeerTimers {
+    new_handshake: Timer,
     retransmit_handshake: Timer,
     send_keepalive: Timer,
     send_persistent_keepalive: Timer,
     zero_key_material: Timer,
-    new_handshake: Timer,
 }
 
 impl PeerTimers {
     fn new(runner: &hjul::Runner, timer_event_sender: Sender<TimerEvent>) -> Self {
-        let spawn_timer = |callback: fn(
-            &Sender<TimerEvent>,
-        )
-            -> Result<(), crossbeam_channel::SendError<TimerEvent>>| {
+        let spawn_timer = |timer_event: TimerEvent| {
             let timer_event_sender = timer_event_sender.clone();
             runner.timer(move || {
-                let _ = callback(&timer_event_sender);
+                let _ = timer_event_sender.send(timer_event);
             })
         };
 
         Self {
-            retransmit_handshake: Timer::new(spawn_timer(retransmit_handshake)),
-            send_keepalive: Timer::new(spawn_timer(send_keepalive)),
-            send_persistent_keepalive: Timer::new(spawn_timer(send_persistent_keepalive)),
-            zero_key_material: Timer::new(spawn_timer(zero_key_material)),
-            new_handshake: Timer::new(spawn_timer(new_handshake)),
+            new_handshake: Timer::new(spawn_timer(TimerEvent::NewHandshake)),
+            retransmit_handshake: Timer::new(spawn_timer(TimerEvent::RetransmitHandshake)),
+            send_keepalive: Timer::new(spawn_timer(TimerEvent::SendKeepalive)),
+            send_persistent_keepalive: Timer::new(spawn_timer(TimerEvent::SendPersistentKeepalive)),
+            zero_key_material: Timer::new(spawn_timer(TimerEvent::ZeroKeyMaterial)),
         }
     }
 }
