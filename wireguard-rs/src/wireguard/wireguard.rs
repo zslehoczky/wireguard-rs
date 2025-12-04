@@ -275,11 +275,13 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     /// Any previous reader thread is stopped by closing the previous reader,
     /// which unblocks the thread and causes an error on reader.read
     pub fn add_udp_reader(&self, reader: B::Reader) -> thread::JoinHandle<()> {
+        const MAX_UDP_PACKET_SIZE: usize = 4096; // TODO take this from mtu
+
         let (sender, receiver) = crossbeam_channel::unbounded();
 
         thread::spawn(move || {
             loop {
-                let mut msg = vec![0; 4096];
+                let mut msg = vec![0; MAX_UDP_PACKET_SIZE];
 
                 let (size, src) = match reader.read(&mut msg) {
                     Err(e) => {
