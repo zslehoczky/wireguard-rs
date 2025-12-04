@@ -70,17 +70,21 @@ impl PeerTimers {
 
 impl peer::TimerStopControl for PeerTimers {
     fn stop(&self) {
+        self.new_handshake.stop();
         self.retransmit_handshake.stop();
         self.send_keepalive.stop();
         self.send_persistent_keepalive.stop();
         self.zero_key_material.stop();
-        self.new_handshake.stop();
     }
 }
 
 impl peer::PeerTimers for PeerTimers {
     fn all(&self) -> &dyn TimerStopControl {
         self
+    }
+
+    fn new_handshake(&self) -> &dyn TimerControls {
+        &self.new_handshake
     }
 
     fn retransmit_handshake(&self) -> &dyn TimerControls {
@@ -91,16 +95,12 @@ impl peer::PeerTimers for PeerTimers {
         &self.send_keepalive
     }
 
-    fn new_handshake(&self) -> &dyn TimerControls {
-        &self.new_handshake
+    fn send_persistent_keepalive(&self) -> &dyn TimerControls {
+        &self.send_persistent_keepalive
     }
 
     fn zero_key_material(&self) -> &dyn TimerControls {
         &self.zero_key_material
-    }
-
-    fn send_persistent_keepalive(&self) -> &dyn TimerControls {
-        &self.send_persistent_keepalive
     }
 }
 

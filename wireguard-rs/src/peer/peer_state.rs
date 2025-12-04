@@ -26,11 +26,11 @@ use super::timer_state::TimerState;
 use super::{DeviceInterface, Peer, PeerHandle, PeerTimers};
 
 trait TimerCallbacks: Send + Sync {
+    fn new_handshake(&self);
     fn retransmit_handshake(&self);
     fn send_keepalive(&self);
-    fn new_handshake(&self);
-    fn zero_key_material(&self);
     fn send_persistent_keepalive(&self);
+    fn zero_key_material(&self);
 }
 
 pub struct PeerState<T: Tun, B: UDP> {
@@ -354,6 +354,19 @@ impl<T: Tun, B: UDP> fmt::Display for PeerState<T, B> {
 }
 
 impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
+    fn new_handshake(&self) {
+        let peer_handle = self.get_peer_handle();
+
+        // clear source and retry
+        log::debug!(
+            "Retrying handshake with {} because we stopped hearing back after {} seconds",
+            peer_handle,
+            (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT).as_secs()
+        );
+        peer_handle.clear_src();
+        self.packet_send_queued_handshake_initiation(false);
+    }
+
     fn retransmit_handshake(&self) {
         let peer_handle = self.get_peer_handle();
         let timer_state = &self.timer_state;
@@ -402,28 +415,6 @@ impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
         }
     }
 
-    fn new_handshake(&self) {
-        let peer_handle = self.get_peer_handle();
-
-        // clear source and retry
-        log::debug!(
-            "Retrying handshake with {} because we stopped hearing back after {} seconds",
-            peer_handle,
-            (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT).as_secs()
-        );
-        peer_handle.clear_src();
-        self.packet_send_queued_handshake_initiation(false);
-    }
-
-    fn zero_key_material(&self) {
-        let peer_handle = self.get_peer_handle();
-
-        log::trace!("{} : timer fired (zero_key_material)", peer_handle);
-
-        // null all key-material
-        peer_handle.zero_keys();
-    }
-
     fn send_persistent_keepalive(&self) {
         let peer_handle = self.get_peer_handle();
         let timer_state = &self.timer_state;
@@ -440,5 +431,14 @@ impl<T: Tun, B: UDP> TimerCallbacks for PeerState<T, B> {
                 .send_persistent_keepalive()
                 .start(Duration::from_secs(timer_state.get_keepalive_interval()));
         }
+    }
+
+    fn zero_key_material(&self) {
+        let peer_handle = self.get_peer_handle();
+
+        log::trace!("{} : timer fired (zero_key_material)", peer_handle);
+
+        // null all key-material
+        peer_handle.zero_keys();
     }
 }
