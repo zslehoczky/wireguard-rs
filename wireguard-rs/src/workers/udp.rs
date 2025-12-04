@@ -19,7 +19,7 @@ pub fn udp_worker<T: Tun, B: UDP>(
 ) {
     while wireguard_device.is_enabled() {
         // read UDP packet into vector
-        let (mut msg, size, src) = match reader.recv_timeout(Duration::from_secs(1)) {
+        let (mut msg, size, src) = match reader.recv_timeout(Duration::from_millis(100)) {
             Ok(v) => v,
             Err(_) => {
                 continue;
