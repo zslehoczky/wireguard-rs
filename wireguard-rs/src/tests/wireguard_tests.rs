@@ -34,9 +34,9 @@ fn create_wireguard_device() -> (
     )
 }
 
-fn initialize_workers<'scope, 'env>(
-    thread_scope: &'scope thread::Scope<'scope, 'env>,
-    wireguard_device: &'env WireGuard<dummy::TunTest, dummy::PairBind>,
+fn initialize_workers<'scope, 'wireguard>(
+    thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
+    wireguard_device: &'wireguard WireGuard<dummy::TunTest, dummy::PairBind>,
     handshake_receiver: Receiver<HandshakeJob<dummy::UnitEndpoint>>,
     tun_reader: dummy::TunReader,
     bind_reader: dummy::PairReader<dummy::UnitEndpoint>,
@@ -51,7 +51,7 @@ fn initialize_workers<'scope, 'env>(
 
     wireguard_device.up(1500);
     wireguard_device.set_writer(bind_writer);
-    wireguard_device.add_udp_reader(bind_reader);
+    wireguard_device.add_udp_reader(thread_scope, bind_reader);
 }
 
 fn test_pure_wireguard_inner(

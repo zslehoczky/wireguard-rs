@@ -62,7 +62,7 @@ pub fn run_workers<S: Status, T: Tun, B: PlatformUDP>(
 
         // config consumer
         thread_scope.spawn(|| {
-            let mut wireguard_config = WireGuardConfig::new(&wireguard_device);
+            let mut wireguard_config = WireGuardConfig::new(&wireguard_device, thread_scope);
             config_worker(&mut wireguard_config, config_receiver);
         });
 

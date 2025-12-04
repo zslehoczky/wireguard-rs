@@ -252,18 +252,18 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.peers.remove(pk);
     }
 
-    pub fn add_handshake_reader<'scope, 'env>(
-        &'env self,
-        thread_scope: &'scope thread::Scope<'scope, 'env>,
+    pub fn add_handshake_reader<'scope, 'wireguard>(
+        &'wireguard self,
+        thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
         handshake_receiver: crossbeam_channel::Receiver<HandshakeJob<B::Endpoint>>,
         n_handshake_workers: NonZeroUsize,
     ) -> Vec<thread::ScopedJoinHandle<'scope, ()>> {
         spawn_handshake_workers(thread_scope, self, handshake_receiver, n_handshake_workers)
     }
 
-    pub fn add_tun_readers<'scope, 'env>(
-        &'env self,
-        thread_scope: &'scope thread::Scope<'scope, 'env>,
+    pub fn add_tun_readers<'scope, 'wireguard>(
+        &'wireguard self,
+        thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
         tun_readers: Vec<T::Reader>,
     ) -> Vec<thread::ScopedJoinHandle<'scope, ()>> {
         spawn_tun_workers(thread_scope, self, tun_readers)
@@ -274,7 +274,11 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
     ///
     /// Any previous reader thread is stopped by closing the previous reader,
     /// which unblocks the thread and causes an error on reader.read
-    pub fn add_udp_reader(&self, reader: B::Reader) -> thread::JoinHandle<()> {
+    pub fn add_udp_reader<'scope, 'wireguard>(
+        &'wireguard self,
+        thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
+        reader: B::Reader,
+    ) -> thread::ScopedJoinHandle<'scope, ()> {
         const MAX_UDP_PACKET_SIZE: usize = 4096; // TODO take this from mtu
 
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -299,7 +303,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         });
 
         let wireguard_device = self.clone();
-        thread::spawn(move || udp_worker(&wireguard_device, receiver))
+        thread_scope.spawn(move || udp_worker(&wireguard_device, receiver))
     }
 
     pub fn set_writer(&self, writer: B::Writer) {

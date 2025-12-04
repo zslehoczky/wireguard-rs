@@ -1,4 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
+use std::thread;
 use std::time::{Duration, SystemTime};
 
 use wg_crypto::PSK;
@@ -13,62 +14,66 @@ use crate::wireguard::WireGuard;
 
 const PROTOCOL_VERSION: usize = 1;
 
-pub struct WireGuardConfig<'device, T: tun::Tun, B: udp::PlatformUDP> {
-    wireguard: &'device WireGuard<T, B>,
+pub struct WireGuardConfig<'scope, 'wireguard, T: tun::Tun, B: udp::PlatformUDP> {
+    wireguard: &'wireguard WireGuard<T, B>,
     port: u16,
     bind: Option<B::Owner>,
     fwmark: Option<u32>,
+    thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
 }
 
-impl<'device, T: tun::Tun, B: udp::PlatformUDP> WireGuardConfig<'device, T, B> {
-    pub fn new(wg: &'device WireGuard<T, B>) -> Self {
+impl<'scope, 'wireguard, T: tun::Tun, B: udp::PlatformUDP>
+    WireGuardConfig<'scope, 'wireguard, T, B>
+{
+    pub fn new(
+        wg: &'wireguard WireGuard<T, B>,
+        thread_scope: &'scope thread::Scope<'scope, 'wireguard>,
+    ) -> Self {
         WireGuardConfig {
             wireguard: wg,
             port: 0,
             bind: None,
             fwmark: None,
+            thread_scope,
         }
+    }
+
+    fn start_listener(&mut self) -> Result<(), ConfigError> {
+        self.bind = None;
+
+        // create new listener
+        let (mut readers, writer, mut owner) = match B::bind(self.port) {
+            Ok(r) => r,
+            Err(_) => {
+                return Err(ConfigError::FailedToBind);
+            }
+        };
+
+        // set fwmark
+        let _ = owner.set_fwmark(self.fwmark); // TODO: handle
+
+        // set writer on WireGuard
+        self.wireguard.set_writer(writer);
+
+        // add readers
+        while let Some(reader) = readers.pop() {
+            self.wireguard.add_udp_reader(self.thread_scope, reader);
+        }
+
+        // create new UDP state
+        self.bind = Some(owner);
+        Ok(())
     }
 }
 
-/// Exposed configuration interface
-fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
-    cfg: &mut WireGuardConfig<T, B>,
-) -> Result<(), ConfigError> {
-    cfg.bind = None;
-
-    // create new listener
-    let (mut readers, writer, mut owner) = match B::bind(cfg.port) {
-        Ok(r) => r,
-        Err(_) => {
-            return Err(ConfigError::FailedToBind);
-        }
-    };
-
-    // set fwmark
-    let _ = owner.set_fwmark(cfg.fwmark); // TODO: handle
-
-    // set writer on WireGuard
-    cfg.wireguard.set_writer(writer);
-
-    // add readers
-    while let Some(reader) = readers.pop() {
-        cfg.wireguard.add_udp_reader(reader);
-    }
-
-    // create new UDP state
-    cfg.bind = Some(owner);
-    Ok(())
-}
-
-impl<'device, T: tun::Tun, B: udp::PlatformUDP>
+impl<'scope, 'wireguard, T: tun::Tun, B: udp::PlatformUDP>
     Configuration<ConfigError, PeerState, PublicKey, StaticSecret>
-    for WireGuardConfig<'device, T, B>
+    for WireGuardConfig<'scope, 'wireguard, T, B>
 {
     fn up(&mut self, mtu: usize) -> Result<(), ConfigError> {
         log::info!("configuration, set device up");
         self.wireguard.up(mtu);
-        start_listener(self)
+        self.start_listener()
     }
 
     fn down(&mut self) {
@@ -106,7 +111,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
 
         // start or restart listener
         // Always call start_listener to ensure the port is bound
-        let result = start_listener(self);
+        let result = self.start_listener();
 
         // Workaround for macOS: manually bring device up if not already
         // On macOS, RTM_IFINFO events aren't always sent when ifconfig is run
