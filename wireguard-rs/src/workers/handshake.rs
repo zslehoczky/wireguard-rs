@@ -40,7 +40,7 @@ pub fn handshake_worker<T: Tun, B: UDP>(
         // check if under load
         let mut under_load = false;
         let job: HandshakeJob<B::Endpoint> = job;
-        let pending = wireguard_device.decrement_pending();
+        let pending = wireguard_device.get_handshake_queue_len();
         debug_assert!(pending < MAX_QUEUED_INCOMING_HANDSHAKES + (1 << 16));
 
         // immediate go under load if too many handshakes pending

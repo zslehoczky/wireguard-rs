@@ -39,7 +39,6 @@ pub struct WireguardInner<T: Tun, B: UDP> {
     peers: DashMap<PublicKey, Arc<PeerState<T, B>>>,
     router: Router<PeerDeps<T, B>>,
     last_under_load: Mutex<Instant>,
-    pending: AtomicUsize, // number of pending handshake packets in queue
     handshake_sender: Mutex<Option<Sender<HandshakeJob<B::Endpoint>>>>,
     timers: Timers,
     tun_writer: T::Writer,
@@ -54,7 +53,6 @@ impl<T: Tun, B: UDP> WireguardInner<T, B> {
             mtu: AtomicUsize::new(0),
             last_under_load: Mutex::new(Instant::now() - TIME_HORIZON),
             router: Router::new(),
-            pending: AtomicUsize::new(0),
             crypto_device: RwLock::new(crypto::Device::new()),
             peers: DashMap::default(),
             handshake_sender: Mutex::new(Some(handshake_sender)),
@@ -236,7 +234,7 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
             // prevent up/down while inserting
             let enabled = self.enabled.read();
 
-            let (timer_event_sender, timer_event_receiver) = crossbeam_channel::unbounded();
+            let (timer_event_sender, timer_event_receiver) = crossbeam_channel::bounded(0);
 
             let peer_timers = Box::new(self.timers.create_peer_timers(timer_event_sender));
 
@@ -375,12 +373,8 @@ impl<T: Tun, B: UDP> WireGuard<T, B> {
         self.mtu.load(Ordering::SeqCst)
     }
 
-    pub fn increment_pending(&self) -> usize {
-        self.pending.fetch_add(1, Ordering::SeqCst)
-    }
-
-    pub fn decrement_pending(&self) -> usize {
-        self.pending.fetch_sub(1, Ordering::SeqCst)
+    pub fn get_handshake_queue_len(&self) -> usize {
+        self.handshake_sender.lock().as_ref().map_or(0, |s| s.len())
     }
 
     pub fn get_elapsed_since_last_under_load(&self) -> Duration {

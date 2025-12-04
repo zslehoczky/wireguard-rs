@@ -50,7 +50,6 @@ pub fn udp_worker<T: Tun, B: UDP>(
                     "{} : reader, received (possible) handshake message",
                     wireguard_device
                 );
-                wireguard_device.increment_pending();
                 wireguard_device.send_to_handshake_queue(HandshakeJob::Message(msg, src));
             }
         }
