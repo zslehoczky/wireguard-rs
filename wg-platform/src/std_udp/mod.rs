@@ -7,10 +7,7 @@ use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
 
 fn clone_udp_socket(socket: &UdpSocket) -> UdpSocket {
-    SockRef::from(socket)
-        .try_clone()
-        .expect("cloning UDP sockets should work")
-        .into()
+    socket.try_clone().expect("cloning UDP sockets should work")
 }
 
 pub struct StdUDP {
@@ -133,8 +130,6 @@ impl StdUDP {
         if let Ok(socket4) = &socket4 {
             let sockref4 = SockRef::from(&socket4);
             sockref4.set_reuse_address(true)?;
-
-            port = socket4.local_addr()?.port();
         }
 
         // check if failed to bind on both
