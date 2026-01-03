@@ -34,8 +34,8 @@ pub enum StdEndpoint {
 impl StdEndpoint {
     pub fn from_address(addr: SocketAddr) -> Self {
         match addr {
-            SocketAddr::V4(addr) => StdEndpoint::V4(Some(SocketAddrV4::from(addr))),
-            SocketAddr::V6(addr) => StdEndpoint::V6(Some(SocketAddrV6::from(addr))),
+            SocketAddr::V4(addr) => StdEndpoint::V4(Some(addr)),
+            SocketAddr::V6(addr) => StdEndpoint::V6(Some(addr)),
         }
     }
 
@@ -154,22 +154,21 @@ impl StdUDP {
         }
 
         // check if failed to bind on both
-        if socket4.is_err() && socket6.is_err() {
+        if socket4.is_err()
+            && let Err(err6) = socket6
+        {
             log::trace!("failed to bind for either IP version");
-            return Err(socket6.unwrap_err());
+            return Err(err6);
         }
 
         let sock4 = socket4.ok().map(Arc::new);
         let sock6 = socket6.ok().map(Arc::new);
 
         // create readers
-        let mut readers: Vec<StdUDPReader> = Vec::with_capacity(2);
-        readers.push(StdUDPReader::V4(
-            sock4.as_ref().map(Arc::downgrade).unwrap_or_default(),
-        ));
-        readers.push(StdUDPReader::V6(
-            sock6.as_ref().map(Arc::downgrade).unwrap_or_default(),
-        ));
+        let readers: Vec<StdUDPReader> = vec![
+            StdUDPReader::V4(sock4.as_ref().map(Arc::downgrade).unwrap_or_default()),
+            StdUDPReader::V6(sock6.as_ref().map(Arc::downgrade).unwrap_or_default()),
+        ];
 
         debug_assert_eq!(readers.len(), 2);
 
