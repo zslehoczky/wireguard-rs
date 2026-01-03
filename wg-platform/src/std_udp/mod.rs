@@ -1,29 +1,45 @@
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
-use std::sync::{Arc, Weak};
+use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
 use socket2::SockRef;
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
 
+fn clone_udp_socket(socket: &UdpSocket) -> UdpSocket {
+    SockRef::from(socket)
+        .try_clone()
+        .expect("cloning UDP sockets should work")
+        .into()
+}
+
 pub struct StdUDP;
 
 pub struct StdUDPOwner {
     port: u16,
-    _sock4: Option<Arc<UdpSocket>>,
-    _sock6: Option<Arc<UdpSocket>>,
+    socket4: Option<UdpSocket>,
+    socket6: Option<UdpSocket>,
+}
+
+impl Drop for StdUDPOwner {
+    fn drop(&mut self) {
+        self.socket4
+            .as_ref()
+            .map(|socket| SockRef::from(socket).shutdown(Shutdown::Both));
+        self.socket6
+            .as_ref()
+            .map(|socket| SockRef::from(socket).shutdown(Shutdown::Both));
+    }
 }
 
 pub enum StdUDPReader {
-    V4(Weak<UdpSocket>),
-    V6(Weak<UdpSocket>),
+    V4(UdpSocket),
+    V6(UdpSocket),
 }
 
-#[derive(Clone)]
 pub struct StdUDPWriter {
-    sock4: Weak<UdpSocket>,
-    sock6: Weak<UdpSocket>,
+    socket4: Option<UdpSocket>,
+    socket6: Option<UdpSocket>,
 }
 
 pub enum StdEndpoint {
@@ -65,18 +81,8 @@ impl StdEndpoint {
 impl StdUDPReader {
     pub fn read(&self, buf: &mut [u8]) -> Result<(usize, StdEndpoint), io::Error> {
         let socket = match self {
-            Self::V4(socket) => match socket.upgrade() {
-                Some(socket) => socket,
-                None => {
-                    return Ok((0, StdEndpoint::V4(None)));
-                }
-            },
-            Self::V6(socket) => match socket.upgrade() {
-                Some(socket) => socket,
-                None => {
-                    return Ok((0, StdEndpoint::V6(None)));
-                }
-            },
+            Self::V4(socket) => socket,
+            Self::V6(socket) => socket,
         };
 
         let (len, src) = socket.recv_from(buf)?;
@@ -88,13 +94,18 @@ impl StdUDPReader {
 impl StdUDPWriter {
     pub fn write(&self, buf: &[u8], dst: &StdEndpoint) -> Result<(), io::Error> {
         let src = match dst.to_address() {
-            SocketAddr::V4(_) => &self.sock4,
-            SocketAddr::V6(_) => &self.sock6,
+            SocketAddr::V4(_) => &self.socket4,
+            SocketAddr::V6(_) => &self.socket6,
         };
 
-        let src = match src.upgrade() {
+        let src = match src {
             Some(src) => src,
-            None => return Ok(()),
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "socket not connected for protocol",
+                ));
+            }
         };
 
         let _len = src.send_to(buf, dst.to_address())?;
@@ -161,28 +172,32 @@ impl StdUDP {
             return Err(err6);
         }
 
-        let sock4 = socket4.ok().map(Arc::new);
-        let sock6 = socket6.ok().map(Arc::new);
+        let socket4 = socket4.ok();
+        let socket6 = socket6.ok();
 
         // create readers
-        let readers: Vec<StdUDPReader> = vec![
-            StdUDPReader::V4(sock4.as_ref().map(Arc::downgrade).unwrap_or_default()),
-            StdUDPReader::V6(sock6.as_ref().map(Arc::downgrade).unwrap_or_default()),
-        ];
+        let mut readers = Vec::with_capacity(2);
 
-        debug_assert_eq!(readers.len(), 2);
+        if let Some(socket) = &socket4 {
+            readers.push(StdUDPReader::V4(clone_udp_socket(socket)));
+        }
+        if let Some(socket) = &socket6 {
+            readers.push(StdUDPReader::V6(clone_udp_socket(socket)));
+        }
+
+        debug_assert!(!readers.is_empty());
 
         // create writer
         let writer = StdUDPWriter {
-            sock4: sock4.as_ref().map(Arc::downgrade).unwrap_or_default(),
-            sock6: sock6.as_ref().map(Arc::downgrade).unwrap_or_default(),
+            socket4: socket4.as_ref().map(clone_udp_socket),
+            socket6: socket6.as_ref().map(clone_udp_socket),
         };
 
         // create owner
         let owner = StdUDPOwner {
             port,
-            _sock4: sock4,
-            _sock6: sock6,
+            socket4,
+            socket6,
         };
 
         Ok((readers, writer, owner))
