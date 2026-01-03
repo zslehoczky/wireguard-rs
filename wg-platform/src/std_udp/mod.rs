@@ -99,16 +99,19 @@ impl StdUDPOwner {
     pub fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), io::Error> {
         let value = value.unwrap_or(0);
 
-        self.socket4
-            .as_ref()
-            .map(|socket| SockRef::from(socket).set_mark(value))?;
-        self.socket6
-            .as_ref()
-            .map(|socket| SockRef::from(socket).set_mark(value))
+        if let Some(socket) = &self.socket4 {
+            SockRef::from(socket).set_mark(value)?;
+        }
+        if let Some(socket) = &self.socket6 {
+            SockRef::from(socket).set_mark(value)?;
+        }
+
+        Ok(())
     }
 
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
     pub fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), io::Error> {
+        log::debug!("set_fwmark not implemented");
         Ok(())
     }
 }
