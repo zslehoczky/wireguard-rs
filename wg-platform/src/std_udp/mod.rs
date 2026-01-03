@@ -47,37 +47,6 @@ pub enum StdEndpoint {
     V6(Option<SocketAddrV6>),
 }
 
-impl StdEndpoint {
-    pub fn from_address(addr: SocketAddr) -> Self {
-        match addr {
-            SocketAddr::V4(addr) => StdEndpoint::V4(Some(addr)),
-            SocketAddr::V6(addr) => StdEndpoint::V6(Some(addr)),
-        }
-    }
-
-    pub fn to_address(&self) -> SocketAddr {
-        match self {
-            StdEndpoint::V4(addr) => {
-                SocketAddr::from(addr.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))
-            }
-            StdEndpoint::V6(addr) => {
-                SocketAddr::from(addr.unwrap_or(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0)))
-            }
-        }
-    }
-
-    pub fn clear_src(&mut self) {
-        match self {
-            StdEndpoint::V4(addr) => {
-                *addr = None;
-            }
-            StdEndpoint::V6(addr) => {
-                *addr = None;
-            }
-        };
-    }
-}
-
 impl StdUDPReader {
     pub fn read(&self, buf: &mut [u8]) -> Result<(usize, StdEndpoint), io::Error> {
         let socket = match self {
@@ -93,9 +62,9 @@ impl StdUDPReader {
 
 impl StdUDPWriter {
     pub fn write(&self, buf: &[u8], dst: &StdEndpoint) -> Result<(), io::Error> {
-        let src = match dst.to_address() {
-            SocketAddr::V4(_) => &self.socket4,
-            SocketAddr::V6(_) => &self.socket6,
+        let src = match dst {
+            StdEndpoint::V4(_) => &self.socket4,
+            StdEndpoint::V6(_) => &self.socket6,
         };
 
         let src = match src {
@@ -108,9 +77,16 @@ impl StdUDPWriter {
             }
         };
 
-        let _len = src.send_to(buf, dst.to_address())?;
+        if let Some(dst) = dst.to_address() {
+            let _len = src.send_to(buf, dst)?;
 
-        Ok(())
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "unknown destination address",
+            ))
+        }
     }
 }
 
@@ -208,15 +184,28 @@ impl StdUDP {
 
 impl Endpoint for StdEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
-        StdEndpoint::from_address(addr)
+        match addr {
+            SocketAddr::V4(addr) => StdEndpoint::V4(Some(addr)),
+            SocketAddr::V6(addr) => StdEndpoint::V6(Some(addr)),
+        }
     }
 
-    fn to_address(&self) -> SocketAddr {
-        self.to_address()
+    fn to_address(&self) -> Option<SocketAddr> {
+        match self {
+            StdEndpoint::V4(addr) => addr.map(SocketAddr::from),
+            StdEndpoint::V6(addr) => addr.map(SocketAddr::from),
+        }
     }
 
     fn clear_src(&mut self) {
-        self.clear_src()
+        match self {
+            StdEndpoint::V4(addr) => {
+                *addr = None;
+            }
+            StdEndpoint::V6(addr) => {
+                *addr = None;
+            }
+        };
     }
 }
 

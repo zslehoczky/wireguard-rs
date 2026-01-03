@@ -72,11 +72,7 @@ fn handle_message<T: Tun, B: UDP>(
         Instant::now(),
         &mut OsRng,
         &msg[..],
-        if under_load {
-            Some(src.to_address())
-        } else {
-            None
-        },
+        if under_load { src.to_address() } else { None },
     ) {
         Ok(output) => {
             // send response (might be cookie reply or handshake response)
