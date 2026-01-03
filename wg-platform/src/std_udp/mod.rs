@@ -13,15 +13,13 @@ fn clone_udp_socket(socket: &UdpSocket) -> UdpSocket {
         .into()
 }
 
-pub struct StdUDP;
-
-pub struct StdUDPOwner {
+pub struct StdUDP {
     port: u16,
     socket4: Option<UdpSocket>,
     socket6: Option<UdpSocket>,
 }
 
-impl Drop for StdUDPOwner {
+impl Drop for StdUDP {
     fn drop(&mut self) {
         self.socket4
             .as_ref()
@@ -90,7 +88,7 @@ impl StdUDPWriter {
     }
 }
 
-impl StdUDPOwner {
+impl StdUDP {
     pub fn get_port(&self) -> u16 {
         self.port
     }
@@ -114,12 +112,8 @@ impl StdUDPOwner {
         log::debug!("set_fwmark not implemented");
         Ok(())
     }
-}
 
-impl StdUDP {
-    pub fn bind(
-        mut port: u16,
-    ) -> Result<(Vec<StdUDPReader>, StdUDPWriter, StdUDPOwner), io::Error> {
+    pub fn bind(mut port: u16) -> Result<(Vec<StdUDPReader>, StdUDPWriter, StdUDP), io::Error> {
         log::debug!("bind to port {}", port);
 
         // attempt to bind on ipv6
@@ -173,7 +167,7 @@ impl StdUDP {
         };
 
         // create owner
-        let owner = StdUDPOwner {
+        let owner = StdUDP {
             port,
             socket4,
             socket6,
@@ -235,7 +229,7 @@ impl UDP for StdUDP {
     type Reader = StdUDPReader;
 }
 
-impl Owner for StdUDPOwner {
+impl Owner for StdUDP {
     type Error = io::Error;
 
     fn get_port(&self) -> u16 {
@@ -248,7 +242,7 @@ impl Owner for StdUDPOwner {
 }
 
 impl PlatformUDP for StdUDP {
-    type Owner = StdUDPOwner;
+    type Owner = Self;
 
     fn bind(port: u16) -> Result<(Vec<Self::Reader>, Self::Writer, Self::Owner), Self::Error> {
         StdUDP::bind(port)
