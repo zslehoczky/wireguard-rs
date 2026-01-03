@@ -123,10 +123,10 @@ impl StdUDPOwner {
     pub fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), io::Error> {
         let value = value.unwrap_or(0);
 
-        self.sock4
+        self.socket4
             .as_ref()
             .map(|socket| SockRef::from(socket).set_mark(value))?;
-        self.sock6
+        self.socket6
             .as_ref()
             .map(|socket| SockRef::from(socket).set_mark(value))
     }
