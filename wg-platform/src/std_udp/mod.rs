@@ -87,8 +87,6 @@ impl StdUDP {
     }
 
     pub fn bind(mut port: u16) -> io::Result<(Vec<StdUDPReader>, StdUDPWriter, StdUDP)> {
-        log::debug!("bind to port {}", port);
-
         // attempt to bind on ipv6
         let socket6 = Self::bind6(port);
 
@@ -222,8 +220,7 @@ impl Owner for StdUDP {
 
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
     fn set_fwmark(&mut self, _value: u32) -> io::Result<()> {
-        log::debug!("set_fwmark not available for this OS");
-        Ok(())
+        unimplemented!("set_fwmark not available for this OS");
     }
 }
 
