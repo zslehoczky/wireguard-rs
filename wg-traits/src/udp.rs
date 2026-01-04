@@ -30,7 +30,7 @@ pub trait Owner: Send {
 
     fn get_port(&self) -> u16;
 
-    fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), Self::Error>;
+    fn set_fwmark(&mut self, value: u32) -> Result<(), Self::Error>;
 }
 
 /// On some platforms the application can itself bind to a socket.

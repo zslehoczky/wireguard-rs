@@ -173,7 +173,7 @@ impl UDP for PairBind {
 impl Owner for VoidOwner {
     type Error = BindError;
 
-    fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), Self::Error> {
+    fn set_fwmark(&mut self, _value: u32) -> Result<(), Self::Error> {
         Ok(())
     }
 

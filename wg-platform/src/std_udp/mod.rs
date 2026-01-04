@@ -209,9 +209,7 @@ impl Owner for StdUDP {
     }
 
     #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    fn set_fwmark(&mut self, value: Option<u32>) -> io::Result<()> {
-        let value = value.unwrap_or(0);
-
+    fn set_fwmark(&mut self, value: u32) -> io::Result<()> {
         if let Some(socket) = &self.socket4 {
             SockRef::from(socket).set_mark(value)?;
         }
@@ -223,7 +221,7 @@ impl Owner for StdUDP {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
-    fn set_fwmark(&mut self, _value: Option<u32>) -> io::Result<()> {
+    fn set_fwmark(&mut self, _value: u32) -> io::Result<()> {
         log::debug!("set_fwmark not available for this OS");
         Ok(())
     }

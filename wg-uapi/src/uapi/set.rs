@@ -141,8 +141,7 @@ impl<'a, C: Configuration<ConfigError, PeerState, PublicKey, StaticSecret>> Line
                 // opt: set fwmark
                 "fwmark" => match value.parse() {
                     Ok(fwmark) => {
-                        self.config
-                            .set_fwmark(if fwmark == 0 { None } else { Some(fwmark) })?;
+                        self.config.set_fwmark(fwmark)?;
                         Ok(())
                     }
                     Err(_) => Err(ConfigError::InvalidFwmark),

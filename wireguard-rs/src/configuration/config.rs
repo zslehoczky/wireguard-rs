@@ -50,7 +50,9 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     cfg.bind = Some(owner);
 
     // set fwmark
-    cfg.set_fwmark(cfg.fwmark)?;
+    if let Some(value) = cfg.fwmark {
+        cfg.set_fwmark(value)?;
+    }
 
     // set writer on WireGuard
     cfg.wireguard.set_writer(writer);
@@ -131,7 +133,7 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
         result
     }
 
-    fn set_fwmark(&mut self, mark: Option<u32>) -> Result<(), ConfigError> {
+    fn set_fwmark(&mut self, mark: u32) -> Result<(), ConfigError> {
         log::trace!("Config, Set fwmark: {:?}", mark);
         match self.bind.as_mut() {
             Some(bind) => bind.set_fwmark(mark).map_err(|e| {

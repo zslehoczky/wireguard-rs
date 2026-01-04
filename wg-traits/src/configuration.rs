@@ -38,7 +38,7 @@ pub trait Configuration<ConfigError, PeerState, PublicKey, StaticSecret> {
     ///
     /// An error if this operation is not supported by the underlying
     /// "bind" implementation.
-    fn set_fwmark(&mut self, mark: Option<u32>) -> Result<(), ConfigError>;
+    fn set_fwmark(&mut self, mark: u32) -> Result<(), ConfigError>;
 
     /// Remove the peer from the
     ///
