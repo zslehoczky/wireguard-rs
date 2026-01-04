@@ -38,8 +38,8 @@ pub struct StdUDPWriter {
 }
 
 pub enum StdEndpoint {
-    V4(Option<SocketAddrV4>),
-    V6(Option<SocketAddrV6>),
+    V4(SocketAddrV4),
+    V6(SocketAddrV6),
 }
 
 impl StdUDP {
@@ -130,15 +130,15 @@ impl StdUDP {
 impl Endpoint for StdEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
         match addr {
-            SocketAddr::V4(addr) => StdEndpoint::V4(Some(addr)),
-            SocketAddr::V6(addr) => StdEndpoint::V6(Some(addr)),
+            SocketAddr::V4(addr) => StdEndpoint::V4(addr),
+            SocketAddr::V6(addr) => StdEndpoint::V6(addr),
         }
     }
 
-    fn to_address(&self) -> Option<SocketAddr> {
+    fn to_address(&self) -> SocketAddr {
         match self {
-            StdEndpoint::V4(addr) => addr.map(SocketAddr::from),
-            StdEndpoint::V6(addr) => addr.map(SocketAddr::from),
+            StdEndpoint::V4(addr) => SocketAddr::from(*addr),
+            StdEndpoint::V6(addr) => SocketAddr::from(*addr),
         }
     }
 }
@@ -177,16 +177,9 @@ impl Writer<StdEndpoint> for StdUDPWriter {
             }
         };
 
-        if let Some(dst) = dst.to_address() {
-            let _len = src.send_to(buf, dst)?;
+        let _len = src.send_to(buf, dst.to_address())?;
 
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                "unknown destination address",
-            ))
-        }
+        Ok(())
     }
 }
 

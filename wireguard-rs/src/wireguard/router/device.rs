@@ -129,10 +129,7 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> Device<E, C, 
     ///
     /// # Returns
     pub fn recv(&self, src: E, msg: Vec<u8>) -> Result<(), RouterError> {
-        log::trace!(
-            "receive, src: {}",
-            src.to_address().expect("address should be valid")
-        );
+        log::trace!("receive, src: {}", src.to_address());
 
         // parse / cast
         let (header, _) = match LayoutVerified::new_from_prefix(&msg[..]) {
