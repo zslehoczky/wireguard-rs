@@ -213,7 +213,7 @@ impl Owner for StdUDP {
 
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
     fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), io::Error> {
-        log::debug!("set_fwmark not implemented");
+        log::debug!("set_fwmark not available for this OS");
         Ok(())
     }
 }
