@@ -46,6 +46,12 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
         }
     };
 
+    // create new UDP state
+    cfg.bind = Some(owner);
+
+    // set fwmark
+    cfg.set_fwmark(cfg.fwmark)?;
+
     // set writer on WireGuard
     cfg.wireguard.set_writer(writer);
 
@@ -53,12 +59,6 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     while let Some(reader) = readers.pop() {
         cfg.wireguard.add_udp_reader(reader);
     }
-
-    // create new UDP state
-    cfg.bind = Some(owner);
-
-    // set fwmark
-    cfg.set_fwmark(cfg.fwmark)?;
 
     Ok(())
 }
