@@ -98,11 +98,13 @@ impl StdUDP {
         let socket4 = Self::bind4(port);
 
         // check if failed to bind on both
-        if socket4.is_err()
-            && let Err(error) = socket6
+        if let Err(error4) = &socket4
+            && let Err(error6) = &socket6
         {
-            log::trace!("failed to bind for either IP version");
-            return Err(error);
+            return Err(io::Error::other(format!(
+                "Failed to bind UDP socket for either IPv4 or IPv6. \
+                    IPv! error: {error4}; IPv6 error: {error6}"
+            )));
         }
 
         let socket4 = socket4.ok();
@@ -181,7 +183,7 @@ impl Writer<StdEndpoint> for StdUDPWriter {
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::NotConnected,
-                    "socket not connected for protocol",
+                    "Socket not connected for protocol",
                 ));
             }
         };

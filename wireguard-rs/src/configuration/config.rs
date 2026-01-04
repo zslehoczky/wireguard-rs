@@ -41,7 +41,8 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     // create new listener
     let (mut readers, writer, owner) = match B::bind(cfg.port) {
         Ok(r) => r,
-        Err(_) => {
+        Err(e) => {
+            log::error!("Error while UDP bind: {e}");
             return Err(ConfigError::FailedToBind);
         }
     };
