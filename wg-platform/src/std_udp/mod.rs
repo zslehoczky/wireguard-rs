@@ -141,17 +141,6 @@ impl Endpoint for StdEndpoint {
             StdEndpoint::V6(addr) => addr.map(SocketAddr::from),
         }
     }
-
-    fn clear_src(&mut self) {
-        match self {
-            StdEndpoint::V4(addr) => {
-                *addr = None;
-            }
-            StdEndpoint::V6(addr) => {
-                *addr = None;
-            }
-        };
-    }
 }
 
 impl Reader<StdEndpoint> for StdUDPReader {
