@@ -39,17 +39,12 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     cfg.bind = None;
 
     // create new listener
-    let (mut readers, writer, mut owner) = match B::bind(cfg.port) {
+    let (mut readers, writer, owner) = match B::bind(cfg.port) {
         Ok(r) => r,
         Err(_) => {
             return Err(ConfigError::FailedToBind);
         }
     };
-
-    // set fwmark
-    owner
-        .set_fwmark(cfg.fwmark)
-        .map_err(|_| ConfigError::IOError)?;
 
     // set writer on WireGuard
     cfg.wireguard.set_writer(writer);
@@ -61,6 +56,10 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
 
     // create new UDP state
     cfg.bind = Some(owner);
+
+    // set fwmark
+    cfg.set_fwmark(cfg.fwmark)?;
+
     Ok(())
 }
 
