@@ -1,12 +1,12 @@
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
-use socket2::SockRef;
+use socket2::{SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
 
-fn clone_udp_socket(socket: &UdpSocket) -> UdpSocket {
+fn clone_socket(socket: &Socket) -> Socket {
     socket.try_clone().expect("cloning UDP sockets should work")
 }
 
@@ -114,30 +114,42 @@ impl StdUDP {
         log::debug!("bind to port {}", port);
 
         // attempt to bind on ipv6
-        let socket6 = UdpSocket::bind(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0));
+        let address = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0));
+        let socket6 = Socket::new(
+            socket2::Domain::for_address(address),
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        socket6.set_reuse_address(true)?;
+        socket6.set_only_v6(true)?;
+
+        let socket6 = socket6.bind(&SockAddr::from(address)).map(|_| socket6);
 
         if let Ok(socket6) = &socket6 {
-            let sockref6 = SockRef::from(&socket6);
-            sockref6.set_reuse_address(true)?;
-            sockref6.set_only_v6(true)?;
-
-            port = socket6.local_addr()?.port();
+            port = socket6
+                .local_addr()?
+                .as_socket_ipv6()
+                .as_ref()
+                .map_or(port, SocketAddrV6::port);
         }
 
         // attempt to bind on ipv4 on the same port
-        let socket4 = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
+        let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
+        let socket4 = Socket::new(
+            socket2::Domain::for_address(address),
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        socket4.set_reuse_address(true)?;
 
-        if let Ok(socket4) = &socket4 {
-            let sockref4 = SockRef::from(&socket4);
-            sockref4.set_reuse_address(true)?;
-        }
+        let socket4 = socket4.bind(&SockAddr::from(address)).map(|_| socket4);
 
         // check if failed to bind on both
         if socket4.is_err()
-            && let Err(err6) = socket6
+            && let Err(error) = socket6
         {
             log::trace!("failed to bind for either IP version");
-            return Err(err6);
+            return Err(error);
         }
 
         let socket4 = socket4.ok();
@@ -147,25 +159,25 @@ impl StdUDP {
         let mut readers = Vec::with_capacity(2);
 
         if let Some(socket) = &socket4 {
-            readers.push(StdUDPReader::V4(clone_udp_socket(socket)));
+            readers.push(StdUDPReader::V4(clone_socket(socket).into()));
         }
         if let Some(socket) = &socket6 {
-            readers.push(StdUDPReader::V6(clone_udp_socket(socket)));
+            readers.push(StdUDPReader::V6(clone_socket(socket).into()));
         }
 
         debug_assert!(!readers.is_empty());
 
         // create writer
         let writer = StdUDPWriter {
-            socket4: socket4.as_ref().map(clone_udp_socket),
-            socket6: socket6.as_ref().map(clone_udp_socket),
+            socket4: socket4.as_ref().map(|socket| clone_socket(socket).into()),
+            socket6: socket6.as_ref().map(|socket| clone_socket(socket).into()),
         };
 
         // create owner
         let owner = StdUDP {
             port,
-            socket4,
-            socket6,
+            socket4: socket4.map(Into::into),
+            socket6: socket6.map(Into::into),
         };
 
         Ok((readers, writer, owner))
