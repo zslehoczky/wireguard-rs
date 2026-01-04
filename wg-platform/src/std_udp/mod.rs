@@ -22,12 +22,12 @@ fn create_socket(address: SocketAddr) -> io::Result<Socket> {
     )
 }
 
-fn get_socket_port(socket: &Socket) -> io::Result<Option<u16>> {
+fn get_socket_port(socket: &Socket) -> io::Result<u16> {
     Ok(socket
         .local_addr()?
-        .as_socket_ipv6()
-        .as_ref()
-        .map(SocketAddrV6::port))
+        .as_socket()
+        .expect("socket should be convertible to either IPv4 or IPv6")
+        .port())
 }
 
 fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
@@ -35,7 +35,6 @@ fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
 }
 
 pub struct StdUDP {
-    port: u16,
     socket4: Option<UdpSocket>,
     socket6: Option<UdpSocket>,
 }
@@ -91,7 +90,7 @@ impl StdUDP {
         let socket6 = Self::bind6(port);
 
         if let Ok(socket6) = &socket6 {
-            port = get_socket_port(socket6)?.unwrap_or(port);
+            port = get_socket_port(socket6)?;
         }
 
         // attempt to bind on ipv4 on the same port
@@ -103,7 +102,7 @@ impl StdUDP {
         {
             return Err(io::Error::other(format!(
                 "Failed to bind UDP socket for either IPv4 or IPv6. \
-                    IPv! error: {error4}; IPv6 error: {error6}"
+                IPv! error: {error4}; IPv6 error: {error6}"
             )));
         }
 
@@ -127,10 +126,11 @@ impl StdUDP {
 
         // create owner
         let owner = StdUDP {
-            port,
             socket4: socket4.map(Into::into),
             socket6: socket6.map(Into::into),
         };
+
+        debug_assert!(owner.socket4.is_some() || owner.socket6.is_some());
 
         Ok((readers, writer, owner))
     }
@@ -205,7 +205,14 @@ impl Owner for StdUDP {
     type Error = io::Error;
 
     fn get_port(&self) -> u16 {
-        self.port
+        [&self.socket4, &self.socket6]
+            .into_iter()
+            .flatten()
+            .next()
+            .expect("there should always be at least one bound socket")
+            .local_addr()
+            .expect("bound sockets should always have an address")
+            .port()
     }
 
     #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
