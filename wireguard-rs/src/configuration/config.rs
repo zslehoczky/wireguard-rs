@@ -134,7 +134,10 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
     fn set_fwmark(&mut self, mark: Option<u32>) -> Result<(), ConfigError> {
         log::trace!("Config, Set fwmark: {:?}", mark);
         match self.bind.as_mut() {
-            Some(bind) => bind.set_fwmark(mark).map_err(|_| ConfigError::IOError),
+            Some(bind) => bind.set_fwmark(mark).map_err(|e| {
+                log::debug!("Error while setting fwmark: {e}");
+                ConfigError::IOError
+            }),
             None => Ok(()),
         }
     }
