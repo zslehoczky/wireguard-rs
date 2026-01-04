@@ -42,88 +42,37 @@ pub enum StdEndpoint {
     V6(Option<SocketAddrV6>),
 }
 
-impl StdUDPReader {
-    pub fn read(&self, buf: &mut [u8]) -> Result<(usize, StdEndpoint), io::Error> {
-        let socket = match self {
-            Self::V4(socket) => socket,
-            Self::V6(socket) => socket,
-        };
-
-        let (len, src) = socket.recv_from(buf)?;
-
-        Ok((len, StdEndpoint::from_address(src)))
-    }
-}
-
-impl StdUDPWriter {
-    pub fn write(&self, buf: &[u8], dst: &StdEndpoint) -> Result<(), io::Error> {
-        let src = match dst {
-            StdEndpoint::V4(_) => &self.socket4,
-            StdEndpoint::V6(_) => &self.socket6,
-        };
-
-        let src = match src {
-            Some(src) => src,
-            None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "socket not connected for protocol",
-                ));
-            }
-        };
-
-        if let Some(dst) = dst.to_address() {
-            let _len = src.send_to(buf, dst)?;
-
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                "unknown destination address",
-            ))
-        }
-    }
-}
-
 impl StdUDP {
-    pub fn get_port(&self) -> u16 {
-        self.port
+    fn bind4(port: u16) -> Result<Socket, io::Error> {
+        let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
+        let socket = Socket::new(
+            socket2::Domain::for_address(address),
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        socket.set_reuse_address(true)?;
+
+        socket.bind(&SockAddr::from(address)).map(|_| socket)
     }
 
-    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    pub fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), io::Error> {
-        let value = value.unwrap_or(0);
+    fn bind6(port: u16) -> Result<Socket, io::Error> {
+        let address = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0));
+        let socket = Socket::new(
+            socket2::Domain::for_address(address),
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        socket.set_reuse_address(true)?;
+        socket.set_only_v6(true)?;
 
-        if let Some(socket) = &self.socket4 {
-            SockRef::from(socket).set_mark(value)?;
-        }
-        if let Some(socket) = &self.socket6 {
-            SockRef::from(socket).set_mark(value)?;
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
-    pub fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), io::Error> {
-        log::debug!("set_fwmark not implemented");
-        Ok(())
+        socket.bind(&SockAddr::from(address)).map(|_| socket)
     }
 
     pub fn bind(mut port: u16) -> Result<(Vec<StdUDPReader>, StdUDPWriter, StdUDP), io::Error> {
         log::debug!("bind to port {}", port);
 
         // attempt to bind on ipv6
-        let address = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0));
-        let socket6 = Socket::new(
-            socket2::Domain::for_address(address),
-            socket2::Type::DGRAM,
-            Some(socket2::Protocol::UDP),
-        )?;
-        socket6.set_reuse_address(true)?;
-        socket6.set_only_v6(true)?;
-
-        let socket6 = socket6.bind(&SockAddr::from(address)).map(|_| socket6);
+        let socket6 = Self::bind6(port);
 
         if let Ok(socket6) = &socket6 {
             port = socket6
@@ -134,15 +83,7 @@ impl StdUDP {
         }
 
         // attempt to bind on ipv4 on the same port
-        let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
-        let socket4 = Socket::new(
-            socket2::Domain::for_address(address),
-            socket2::Type::DGRAM,
-            Some(socket2::Protocol::UDP),
-        )?;
-        socket4.set_reuse_address(true)?;
-
-        let socket4 = socket4.bind(&SockAddr::from(address)).map(|_| socket4);
+        let socket4 = Self::bind4(port);
 
         // check if failed to bind on both
         if socket4.is_err()
@@ -216,16 +157,47 @@ impl Endpoint for StdEndpoint {
 impl Reader<StdEndpoint> for StdUDPReader {
     type Error = io::Error;
 
-    fn read(&self, buf: &mut [u8]) -> Result<(usize, StdEndpoint), Self::Error> {
-        self.read(buf)
+    fn read(&self, buf: &mut [u8]) -> Result<(usize, StdEndpoint), io::Error> {
+        let socket = match self {
+            Self::V4(socket) => socket,
+            Self::V6(socket) => socket,
+        };
+
+        let (len, src) = socket.recv_from(buf)?;
+
+        Ok((len, StdEndpoint::from_address(src)))
     }
 }
 
 impl Writer<StdEndpoint> for StdUDPWriter {
     type Error = io::Error;
 
-    fn write(&self, buf: &[u8], dst: &mut StdEndpoint) -> Result<(), Self::Error> {
-        self.write(buf, dst)
+    fn write(&self, buf: &[u8], dst: &StdEndpoint) -> Result<(), io::Error> {
+        let src = match dst {
+            StdEndpoint::V4(_) => &self.socket4,
+            StdEndpoint::V6(_) => &self.socket6,
+        };
+
+        let src = match src {
+            Some(src) => src,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "socket not connected for protocol",
+                ));
+            }
+        };
+
+        if let Some(dst) = dst.to_address() {
+            let _len = src.send_to(buf, dst)?;
+
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "unknown destination address",
+            ))
+        }
     }
 }
 
@@ -240,11 +212,27 @@ impl Owner for StdUDP {
     type Error = io::Error;
 
     fn get_port(&self) -> u16 {
-        self.get_port()
+        self.port
     }
 
-    fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), Self::Error> {
-        self.set_fwmark(value)
+    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+    fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), io::Error> {
+        let value = value.unwrap_or(0);
+
+        if let Some(socket) = &self.socket4 {
+            SockRef::from(socket).set_mark(value)?;
+        }
+        if let Some(socket) = &self.socket6 {
+            SockRef::from(socket).set_mark(value)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
+    fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), io::Error> {
+        log::debug!("set_fwmark not implemented");
+        Ok(())
     }
 }
 
