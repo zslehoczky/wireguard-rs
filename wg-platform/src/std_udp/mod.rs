@@ -206,10 +206,10 @@ impl Owner for StdUDP {
 
     #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
     fn set_fwmark(&mut self, value: u32) -> io::Result<()> {
-        if let Some(socket) = &self.socket4 {
+        if let Some(socket) = &self.socket_v4 {
             SockRef::from(socket).set_mark(value)?;
         }
-        if let Some(socket) = &self.socket6 {
+        if let Some(socket) = &self.socket_v6 {
             SockRef::from(socket).set_mark(value)?;
         }
 
