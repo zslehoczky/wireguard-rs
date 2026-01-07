@@ -1,33 +1,25 @@
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
-use socket2::{SockAddr, SockRef, Socket};
+use socket2::{Domain, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
 
-fn bind_socket(socket: Socket, address: SocketAddr) -> io::Result<Socket> {
-    socket.bind(&SockAddr::from(address)).map(|_| socket)
-}
-
-fn clone_socket(socket: &Socket) -> Socket {
+fn clone_socket(socket: &UdpSocket) -> UdpSocket {
     socket.try_clone().expect("cloning UDP sockets should work")
 }
 
-fn create_socket(address: SocketAddr) -> io::Result<Socket> {
-    Socket::new(
-        socket2::Domain::for_address(address),
-        socket2::Type::DGRAM,
-        Some(socket2::Protocol::UDP),
-    )
+fn create_address_v4(port: u16) -> SockAddr {
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).into()
 }
 
-fn get_socket_port(socket: &Socket) -> io::Result<u16> {
-    Ok(socket
-        .local_addr()?
-        .as_socket()
-        .expect("socket should be convertible to either IPv4 or IPv6")
-        .port())
+fn create_address_v6(port: u16) -> SockAddr {
+    SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0)).into()
+}
+
+fn create_socket(domain: Domain) -> io::Result<Socket> {
+    Socket::new(domain, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))
 }
 
 fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
@@ -35,14 +27,14 @@ fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
 }
 
 pub struct StdUDP {
-    socket4: Option<UdpSocket>,
-    socket6: Option<UdpSocket>,
+    socket_v4: Option<UdpSocket>,
+    socket_v6: Option<UdpSocket>,
 }
 
 impl Drop for StdUDP {
     fn drop(&mut self) {
-        self.socket4.as_ref().map(shutdown_socket);
-        self.socket6.as_ref().map(shutdown_socket);
+        self.socket_v4.as_ref().map(shutdown_socket);
+        self.socket_v6.as_ref().map(shutdown_socket);
     }
 }
 
@@ -52,14 +44,27 @@ pub enum StdUDPReader {
 }
 
 impl StdUDPReader {
-    fn new(socket: &Socket) -> Self {
-        StdUDPReader::V4(clone_socket(socket).into())
+    fn create_for_sockets(
+        socket_v4: &Option<UdpSocket>,
+        socket_v6: &Option<UdpSocket>,
+    ) -> Vec<Self> {
+        let mut result = Vec::new();
+
+        if let Some(socket) = socket_v4 {
+            result.push(StdUDPReader::V4(clone_socket(socket)));
+        }
+
+        if let Some(socket) = socket_v6 {
+            result.push(StdUDPReader::V6(clone_socket(socket)));
+        }
+
+        result
     }
 }
 
 pub struct StdUDPWriter {
-    socket4: Option<UdpSocket>,
-    socket6: Option<UdpSocket>,
+    socket_v4: Option<UdpSocket>,
+    socket_v6: Option<UdpSocket>,
 }
 
 pub enum StdEndpoint {
@@ -68,69 +73,67 @@ pub enum StdEndpoint {
 }
 
 impl StdUDP {
-    fn bind4(port: u16) -> io::Result<Socket> {
-        let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
-        let socket = create_socket(address)?;
+    fn bind_v4(port: u16) -> io::Result<Socket> {
+        let socket = create_socket(Domain::IPV4)?;
         socket.set_reuse_address(true)?;
-
-        bind_socket(socket, address)
+        socket.bind(&create_address_v4(port))?;
+        Ok(socket)
     }
 
-    fn bind6(port: u16) -> io::Result<Socket> {
-        let address = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0));
-        let socket = create_socket(address)?;
+    fn bind_v6(port: u16) -> io::Result<Socket> {
+        let socket = create_socket(Domain::IPV6)?;
         socket.set_reuse_address(true)?;
         socket.set_only_v6(true)?;
-
-        bind_socket(socket, address)
+        socket.bind(&create_address_v6(port))?;
+        Ok(socket)
     }
 
     pub fn bind(mut port: u16) -> io::Result<(Vec<StdUDPReader>, StdUDPWriter, StdUDP)> {
-        // attempt to bind on ipv6
-        let socket6 = Self::bind6(port);
+        let socket_v6 = Self::bind_v6(port);
 
-        if let Ok(socket6) = &socket6 {
-            port = get_socket_port(socket6)?;
+        if let Ok(socket) = &socket_v6 {
+            // When port number 0 is given, socket will be bound to a random port.
+            // We update the port number to the actual bound port,
+            // so that v4 could be bound to the same port and not be randomized.
+            port = socket
+                .local_addr()
+                .expect("socket should be bound")
+                .as_socket()
+                .expect("socket address should be convertible to IPv6")
+                .port();
         }
 
-        // attempt to bind on ipv4 on the same port
-        let socket4 = Self::bind4(port);
+        let socket_v4 = Self::bind_v4(port);
 
-        // check if failed to bind on both
-        if let Err(error4) = &socket4
-            && let Err(error6) = &socket6
-        {
-            return Err(io::Error::other(format!(
-                "Failed to bind UDP socket for either IPv4 or IPv6. \
-                IPv! error: {error4}; IPv6 error: {error6}"
-            )));
-        }
+        let (socket_v4, socket_v6) = match (socket_v4, socket_v6) {
+            (Err(err4), Err(err6)) => {
+                return Err(io::Error::other(format!(
+                    "Failed to bind UDP sockets for both IPv4 and IPv6. \
+                     IPv4 error: {err4}; IPv6 error: {err6}"
+                )));
+            }
+            (socket_v4, socket_v6) => (
+                socket_v4.ok().map(Into::into),
+                socket_v6.ok().map(Into::into),
+            ),
+        };
 
-        let socket4 = socket4.ok();
-        let socket6 = socket6.ok();
+        debug_assert!(socket_v4.is_some() || socket_v4.is_some());
 
         // create readers
-        let readers: Vec<_> = [&socket4, &socket6]
-            .into_iter()
-            .flatten()
-            .map(StdUDPReader::new)
-            .collect();
-
-        debug_assert!(!readers.is_empty());
+        let readers = StdUDPReader::create_for_sockets(&socket_v4, &socket_v6);
 
         // create writer
         let writer = StdUDPWriter {
-            socket4: socket4.as_ref().map(clone_socket).map(Into::into),
-            socket6: socket6.as_ref().map(clone_socket).map(Into::into),
+            socket_v4: socket_v4.as_ref().map(clone_socket),
+            socket_v6: socket_v6.as_ref().map(clone_socket),
         };
 
         // create owner
         let owner = StdUDP {
-            socket4: socket4.map(Into::into),
-            socket6: socket6.map(Into::into),
+            socket_v4,
+            socket_v6,
         };
-
-        debug_assert!(owner.socket4.is_some() || owner.socket6.is_some());
 
         Ok((readers, writer, owner))
     }
@@ -174,19 +177,14 @@ impl Writer<StdEndpoint> for StdUDPWriter {
 
     fn write(&self, buf: &[u8], dst: &StdEndpoint) -> io::Result<()> {
         let src = match dst {
-            StdEndpoint::V4(_) => &self.socket4,
-            StdEndpoint::V6(_) => &self.socket6,
+            StdEndpoint::V4(_) => &self.socket_v4,
+            StdEndpoint::V6(_) => &self.socket_v6,
         };
 
-        let src = match src {
-            Some(src) => src,
-            None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "Socket not connected for protocol",
-                ));
-            }
-        };
+        let src = src.as_ref().ok_or(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "Socket not connected for protocol",
+        ))?;
 
         let _len = src.send_to(buf, dst.to_address())?;
 
@@ -205,13 +203,13 @@ impl Owner for StdUDP {
     type Error = io::Error;
 
     fn get_port(&self) -> u16 {
-        [&self.socket4, &self.socket6]
+        [&self.socket_v4, &self.socket_v6]
             .into_iter()
             .flatten()
             .next()
-            .expect("there should always be at least one bound socket")
+            .expect("there should be at least one bound socket")
             .local_addr()
-            .expect("bound sockets should always have an address")
+            .expect("bound sockets should have an address")
             .port()
     }
 
@@ -229,7 +227,9 @@ impl Owner for StdUDP {
 
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
     fn set_fwmark(&mut self, _value: u32) -> io::Result<()> {
-        unimplemented!("set_fwmark not available for this OS");
+        Err(io::Error::other(
+            "Setting FWMARK is not available for this OS",
+        ))
     }
 }
 
