@@ -38,9 +38,8 @@ impl Drop for StdUDP {
     }
 }
 
-pub enum StdUDPReader {
-    V4(UdpSocket),
-    V6(UdpSocket),
+pub struct StdUDPReader {
+    wrapped: UdpSocket,
 }
 
 impl StdUDPReader {
@@ -48,14 +47,18 @@ impl StdUDPReader {
         socket_v4: &Option<UdpSocket>,
         socket_v6: &Option<UdpSocket>,
     ) -> Vec<Self> {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(2);
 
         if let Some(socket) = socket_v4 {
-            result.push(StdUDPReader::V4(clone_socket(socket)));
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
         }
 
         if let Some(socket) = socket_v6 {
-            result.push(StdUDPReader::V6(clone_socket(socket)));
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
         }
 
         result
@@ -67,9 +70,8 @@ pub struct StdUDPWriter {
     socket_v6: Option<UdpSocket>,
 }
 
-pub enum StdEndpoint {
-    V4(SocketAddrV4),
-    V6(SocketAddrV6),
+pub struct StdEndpoint {
+    wrapped: SocketAddr,
 }
 
 impl StdUDP {
@@ -143,17 +145,11 @@ impl StdUDP {
 
 impl Endpoint for StdEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
-        match addr {
-            SocketAddr::V4(addr) => StdEndpoint::V4(addr),
-            SocketAddr::V6(addr) => StdEndpoint::V6(addr),
-        }
+        Self { wrapped: addr }
     }
 
     fn to_address(&self) -> SocketAddr {
-        match self {
-            StdEndpoint::V4(addr) => SocketAddr::from(*addr),
-            StdEndpoint::V6(addr) => SocketAddr::from(*addr),
-        }
+        self.wrapped
     }
 }
 
@@ -161,12 +157,7 @@ impl Reader<StdEndpoint> for StdUDPReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
-        let socket = match self {
-            Self::V4(socket) => socket,
-            Self::V6(socket) => socket,
-        };
-
-        let (len, src) = socket.recv_from(buf)?;
+        let (len, src) = self.wrapped.recv_from(buf)?;
 
         Ok((len, StdEndpoint::from_address(src)))
     }
@@ -176,9 +167,9 @@ impl Writer<StdEndpoint> for StdUDPWriter {
     type Error = io::Error;
 
     fn write(&self, buf: &[u8], dst: &StdEndpoint) -> io::Result<()> {
-        let src = match dst {
-            StdEndpoint::V4(_) => &self.socket_v4,
-            StdEndpoint::V6(_) => &self.socket_v6,
+        let src = match dst.wrapped {
+            SocketAddr::V4(_) => &self.socket_v4,
+            SocketAddr::V6(_) => &self.socket_v6,
         };
 
         let src = src.as_ref().ok_or(io::Error::new(
