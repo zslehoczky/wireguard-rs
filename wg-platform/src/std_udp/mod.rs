@@ -26,6 +26,82 @@ fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
     SockRef::from(socket).shutdown(Shutdown::Both)
 }
 
+pub struct StdUDPReader {
+    wrapped: UdpSocket,
+}
+
+impl StdUDPReader {
+    fn create_for_sockets(
+        socket_v4: &Option<UdpSocket>,
+        socket_v6: &Option<UdpSocket>,
+    ) -> Vec<Self> {
+        let mut result = Vec::with_capacity(2);
+
+        if let Some(socket) = socket_v4 {
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
+        }
+
+        if let Some(socket) = socket_v6 {
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
+        }
+
+        result
+    }
+}
+
+impl Reader<StdEndpoint> for StdUDPReader {
+    type Error = io::Error;
+
+    fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
+        let (len, src) = self.wrapped.recv_from(buf)?;
+
+        Ok((len, StdEndpoint::from_address(src)))
+    }
+}
+
+pub struct StdUDPWriter {
+    socket_v4: Option<UdpSocket>,
+    socket_v6: Option<UdpSocket>,
+}
+
+impl Writer<StdEndpoint> for StdUDPWriter {
+    type Error = io::Error;
+
+    fn write(&self, buf: &[u8], dst: &StdEndpoint) -> io::Result<()> {
+        let src = match dst.wrapped {
+            SocketAddr::V4(_) => &self.socket_v4,
+            SocketAddr::V6(_) => &self.socket_v6,
+        };
+
+        let src = src.as_ref().ok_or(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "Socket not connected for protocol",
+        ))?;
+
+        let _len = src.send_to(buf, dst.to_address())?;
+
+        Ok(())
+    }
+}
+
+pub struct StdEndpoint {
+    wrapped: SocketAddr,
+}
+
+impl Endpoint for StdEndpoint {
+    fn from_address(addr: SocketAddr) -> Self {
+        Self { wrapped: addr }
+    }
+
+    fn to_address(&self) -> SocketAddr {
+        self.wrapped
+    }
+}
+
 pub struct StdUDP {
     socket_v4: Option<UdpSocket>,
     socket_v6: Option<UdpSocket>,
@@ -102,84 +178,6 @@ impl Drop for StdUDP {
     fn drop(&mut self) {
         self.socket_v4.as_ref().map(shutdown_socket);
         self.socket_v6.as_ref().map(shutdown_socket);
-    }
-}
-
-pub struct StdUDPReader {
-    wrapped: UdpSocket,
-}
-
-impl StdUDPReader {
-    fn create_for_sockets(
-        socket_v4: &Option<UdpSocket>,
-        socket_v6: &Option<UdpSocket>,
-    ) -> Vec<Self> {
-        let mut result = Vec::with_capacity(2);
-
-        if let Some(socket) = socket_v4 {
-            result.push(StdUDPReader {
-                wrapped: clone_socket(socket),
-            });
-        }
-
-        if let Some(socket) = socket_v6 {
-            result.push(StdUDPReader {
-                wrapped: clone_socket(socket),
-            });
-        }
-
-        result
-    }
-}
-
-pub struct StdUDPWriter {
-    socket_v4: Option<UdpSocket>,
-    socket_v6: Option<UdpSocket>,
-}
-
-pub struct StdEndpoint {
-    wrapped: SocketAddr,
-}
-
-// Trait implementations
-
-impl Endpoint for StdEndpoint {
-    fn from_address(addr: SocketAddr) -> Self {
-        Self { wrapped: addr }
-    }
-
-    fn to_address(&self) -> SocketAddr {
-        self.wrapped
-    }
-}
-
-impl Reader<StdEndpoint> for StdUDPReader {
-    type Error = io::Error;
-
-    fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
-        let (len, src) = self.wrapped.recv_from(buf)?;
-
-        Ok((len, StdEndpoint::from_address(src)))
-    }
-}
-
-impl Writer<StdEndpoint> for StdUDPWriter {
-    type Error = io::Error;
-
-    fn write(&self, buf: &[u8], dst: &StdEndpoint) -> io::Result<()> {
-        let src = match dst.wrapped {
-            SocketAddr::V4(_) => &self.socket_v4,
-            SocketAddr::V6(_) => &self.socket_v6,
-        };
-
-        let src = src.as_ref().ok_or(io::Error::new(
-            io::ErrorKind::NotConnected,
-            "Socket not connected for protocol",
-        ))?;
-
-        let _len = src.send_to(buf, dst.to_address())?;
-
-        Ok(())
     }
 }
 
