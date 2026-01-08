@@ -1,7 +1,7 @@
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
-use socket2::{Domain, SockAddr, SockRef, Socket};
+use socket2::{Domain, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
@@ -19,7 +19,7 @@ fn create_address_v6(port: u16) -> SockAddr {
 }
 
 fn create_socket(domain: Domain) -> io::Result<Socket> {
-    Socket::new(domain, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))
+    Socket::new(domain, socket2::Type::DGRAM, Some(Protocol::UDP))
 }
 
 fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
