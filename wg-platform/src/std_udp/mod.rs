@@ -31,49 +31,6 @@ pub struct StdUDP {
     socket_v6: Option<UdpSocket>,
 }
 
-impl Drop for StdUDP {
-    fn drop(&mut self) {
-        self.socket_v4.as_ref().map(shutdown_socket);
-        self.socket_v6.as_ref().map(shutdown_socket);
-    }
-}
-
-pub struct StdUDPReader {
-    wrapped: UdpSocket,
-}
-
-impl StdUDPReader {
-    fn create_for_sockets(
-        socket_v4: &Option<UdpSocket>,
-        socket_v6: &Option<UdpSocket>,
-    ) -> Vec<Self> {
-        let mut result = Vec::with_capacity(2);
-
-        if let Some(socket) = socket_v4 {
-            result.push(StdUDPReader {
-                wrapped: clone_socket(socket),
-            });
-        }
-
-        if let Some(socket) = socket_v6 {
-            result.push(StdUDPReader {
-                wrapped: clone_socket(socket),
-            });
-        }
-
-        result
-    }
-}
-
-pub struct StdUDPWriter {
-    socket_v4: Option<UdpSocket>,
-    socket_v6: Option<UdpSocket>,
-}
-
-pub struct StdEndpoint {
-    wrapped: SocketAddr,
-}
-
 impl StdUDP {
     fn bind_v4(port: u16) -> io::Result<Socket> {
         let socket = create_socket(Domain::IPV4)?;
@@ -139,6 +96,49 @@ impl StdUDP {
 
         Ok((readers, writer, owner))
     }
+}
+
+impl Drop for StdUDP {
+    fn drop(&mut self) {
+        self.socket_v4.as_ref().map(shutdown_socket);
+        self.socket_v6.as_ref().map(shutdown_socket);
+    }
+}
+
+pub struct StdUDPReader {
+    wrapped: UdpSocket,
+}
+
+impl StdUDPReader {
+    fn create_for_sockets(
+        socket_v4: &Option<UdpSocket>,
+        socket_v6: &Option<UdpSocket>,
+    ) -> Vec<Self> {
+        let mut result = Vec::with_capacity(2);
+
+        if let Some(socket) = socket_v4 {
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
+        }
+
+        if let Some(socket) = socket_v6 {
+            result.push(StdUDPReader {
+                wrapped: clone_socket(socket),
+            });
+        }
+
+        result
+    }
+}
+
+pub struct StdUDPWriter {
+    socket_v4: Option<UdpSocket>,
+    socket_v6: Option<UdpSocket>,
+}
+
+pub struct StdEndpoint {
+    wrapped: SocketAddr,
 }
 
 // Trait implementations
