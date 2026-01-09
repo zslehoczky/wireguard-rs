@@ -1,21 +1,26 @@
 use std::io;
+use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
-use socket2::{Domain, Protocol, SockAddr, SockRef, Socket};
+use nix::sys::socket::setsockopt;
+use nix::sys::socket::sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo};
+use socket2::{Domain, MaybeUninitSlice, MsgHdrMut, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
+
+const CONTROL_BUFFER_LEN: usize = 4096;
 
 fn clone_socket(socket: &UdpSocket) -> UdpSocket {
     socket.try_clone().expect("cloning UDP sockets should work")
 }
 
 fn create_address_v4(port: u16) -> SockAddr {
-    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).into()
+    SocketAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).into()
 }
 
 fn create_address_v6(port: u16) -> SockAddr {
-    SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0)).into()
+    SocketAddr::from(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0)).into()
 }
 
 fn create_socket(domain: Domain) -> io::Result<Socket> {
@@ -57,9 +62,37 @@ impl Reader<StdEndpoint> for StdUDPReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
-        let (len, src) = self.wrapped.recv_from(buf)?;
+        let mut src = create_address_v4(0);
 
-        Ok((len, StdEndpoint::from_address(src)))
+        let mut buf_to_write = vec![MaybeUninit::uninit(); buf.len()];
+        let mut slices_to_write = [MaybeUninitSlice::new(buf_to_write.as_mut_slice())];
+
+        let mut control_buf = vec![MaybeUninit::uninit(); CONTROL_BUFFER_LEN];
+
+        let mut message_header = MsgHdrMut::new()
+            .with_addr(&mut src)
+            .with_buffers(&mut slices_to_write)
+            .with_control(control_buf.as_mut_slice());
+
+        // receive packet with ancillary info
+        let recv_len = SockRef::from(&self.wrapped).recvmsg(&mut message_header, 0)?;
+
+        let control_len = message_header.control_len();
+
+        let mut remote_endpoint =
+            StdEndpoint::from_address(src.as_socket().expect("socket should be IP type"));
+
+        control_buf.truncate(control_len);
+        remote_endpoint.control_buf = control_buf;
+
+        buf_to_write
+            .into_iter()
+            .take(recv_len)
+            .map(|e| unsafe { MaybeUninit::assume_init(e) })
+            .zip(buf)
+            .for_each(|(recv_val, out_val)| *out_val = recv_val);
+
+        Ok((recv_len, remote_endpoint))
     }
 }
 
@@ -90,11 +123,15 @@ impl Writer<StdEndpoint> for StdUDPWriter {
 
 pub struct StdEndpoint {
     wrapped: SocketAddr,
+    control_buf: Vec<MaybeUninit<u8>>,
 }
 
 impl Endpoint for StdEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
-        Self { wrapped: addr }
+        Self {
+            wrapped: addr,
+            control_buf: vec![],
+        }
     }
 
     fn to_address(&self) -> SocketAddr {
@@ -111,6 +148,7 @@ impl StdUDP {
     fn bind_v4(port: u16) -> io::Result<Socket> {
         let socket = create_socket(Domain::IPV4)?;
         socket.set_reuse_address(true)?;
+        setsockopt(&socket, Ipv4PacketInfo, &true)?;
         socket.bind(&create_address_v4(port))?;
         Ok(socket)
     }
@@ -119,6 +157,7 @@ impl StdUDP {
         let socket = create_socket(Domain::IPV6)?;
         socket.set_reuse_address(true)?;
         socket.set_only_v6(true)?;
+        setsockopt(&socket, Ipv6RecvPacketInfo, &true)?;
         socket.bind(&create_address_v6(port))?;
         Ok(socket)
     }
