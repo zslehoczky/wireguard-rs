@@ -2,7 +2,6 @@ use std::io::{self, IoSlice, IoSliceMut};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 use std::os::fd::AsRawFd;
 
-use nix::cmsg_space;
 use nix::errno::Errno;
 use nix::sys::socket::sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo};
 use nix::sys::socket::{
@@ -13,6 +12,19 @@ use socket2::{Domain, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
+
+// calculate size of space which can hold either in_pktinfo or in6_pktinfo
+const fn get_pktinfo_buffer_size() -> usize {
+    const IPV4_PKTINFO_SIZE: usize = size_of::<libc::in_pktinfo>();
+    const IPV6_PKTINFO_SIZE: usize = size_of::<libc::in6_pktinfo>();
+    const PKTINFO_UNION_SIZE: usize = if IPV6_PKTINFO_SIZE > IPV4_PKTINFO_SIZE {
+        IPV6_PKTINFO_SIZE
+    } else {
+        IPV4_PKTINFO_SIZE
+    };
+    // SAFETY: CMSG_SPACE is always safe
+    (unsafe { libc::CMSG_SPACE(PKTINFO_UNION_SIZE as libc::c_uint) }) as usize
+}
 
 fn clone_socket(socket: &UdpSocket) -> UdpSocket {
     socket.try_clone().expect("cloning UDP sockets should work")
@@ -75,9 +87,7 @@ impl Reader<StdEndpoint> for StdUDPReader {
     fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
         let mut slices_to_write = [IoSliceMut::new(buf)];
 
-        // reserve space for both an IPv4 and an IPv6 PKTINFO header
-        // this guarantees that either one will fit into the buffer
-        let mut control_buf = cmsg_space!(libc::in_pktinfo, libc::in6_pktinfo);
+        let mut control_buf = [0u8; get_pktinfo_buffer_size()];
 
         // receive packet with ancillary data
         let recvmsg_result: RecvMsg<'_, '_, SockaddrStorage> = recvmsg(
