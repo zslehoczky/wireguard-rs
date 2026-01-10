@@ -57,7 +57,7 @@ impl Reader<UnitEndpoint> for VoidBind {
 impl Writer<UnitEndpoint> for VoidBind {
     type Error = BindError;
 
-    fn write(&self, _buf: &[u8], _dst: &mut UnitEndpoint) -> Result<(), Self::Error> {
+    fn write(&self, _buf: &[u8], _dst: &UnitEndpoint) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -102,7 +102,7 @@ impl Reader<UnitEndpoint> for PairReader<UnitEndpoint> {
 
 impl Writer<UnitEndpoint> for PairWriter<UnitEndpoint> {
     type Error = BindError;
-    fn write(&self, buf: &[u8], _dst: &mut UnitEndpoint) -> Result<(), Self::Error> {
+    fn write(&self, buf: &[u8], _dst: &UnitEndpoint) -> Result<(), Self::Error> {
         debug!(
             "dummy({}): write ({}, {})",
             self.id,
@@ -173,7 +173,7 @@ impl UDP for PairBind {
 impl Owner for VoidOwner {
     type Error = BindError;
 
-    fn set_fwmark(&mut self, _value: Option<u32>) -> Result<(), Self::Error> {
+    fn set_fwmark(&mut self, _value: u32) -> Result<(), Self::Error> {
         Ok(())
     }
 

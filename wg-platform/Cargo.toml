@@ -11,11 +11,10 @@ anyhow.workspace = true
 log.workspace = true
 hex = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+socket2 = { version = "0.6", features = ["all"] }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
 nix.workspace = true
 
 [features]

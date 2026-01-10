@@ -10,7 +10,7 @@ pub trait Reader<E: Endpoint>: Send + Sync {
 pub trait Writer<E: Endpoint>: Send + Sync + 'static {
     type Error: Error;
 
-    fn write(&self, buf: &[u8], dst: &mut E) -> Result<(), Self::Error>;
+    fn write(&self, buf: &[u8], dst: &E) -> Result<(), Self::Error>;
 }
 
 pub trait UDP: Send + Sync + 'static {
@@ -30,7 +30,7 @@ pub trait Owner: Send {
 
     fn get_port(&self) -> u16;
 
-    fn set_fwmark(&mut self, value: Option<u32>) -> Result<(), Self::Error>;
+    fn set_fwmark(&mut self, value: u32) -> Result<(), Self::Error>;
 }
 
 /// On some platforms the application can itself bind to a socket.

@@ -48,8 +48,6 @@ treebitmap = { package = "ip_network_table-deps-treebitmap", version = "0.5" }
 
 # Unix dependencies
 libc = "0.2"
-
-# macOS dependencies
 nix = { version = "0.30", features = ["ioctl", "net", "socket", "uio"] }
 
 # Dev dependencies

@@ -39,15 +39,21 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
     cfg.bind = None;
 
     // create new listener
-    let (mut readers, writer, mut owner) = match B::bind(cfg.port) {
+    let (mut readers, writer, owner) = match B::bind(cfg.port) {
         Ok(r) => r,
-        Err(_) => {
+        Err(e) => {
+            log::error!("Error while UDP bind: {e}");
             return Err(ConfigError::FailedToBind);
         }
     };
 
+    // create new UDP state
+    cfg.bind = Some(owner);
+
     // set fwmark
-    let _ = owner.set_fwmark(cfg.fwmark); // TODO: handle
+    if let Some(value) = cfg.fwmark {
+        cfg.set_fwmark(value)?;
+    }
 
     // set writer on WireGuard
     cfg.wireguard.set_writer(writer);
@@ -57,8 +63,6 @@ fn start_listener<T: tun::Tun, B: udp::PlatformUDP>(
         cfg.wireguard.add_udp_reader(reader);
     }
 
-    // create new UDP state
-    cfg.bind = Some(owner);
     Ok(())
 }
 
@@ -130,16 +134,13 @@ impl<'device, T: tun::Tun, B: udp::PlatformUDP>
         result
     }
 
-    fn set_fwmark(&mut self, mark: Option<u32>) -> Result<(), ConfigError> {
+    fn set_fwmark(&mut self, mark: u32) -> Result<(), ConfigError> {
         log::trace!("Config, Set fwmark: {:?}", mark);
         match self.bind.as_mut() {
-            Some(bind) => {
-                if bind.set_fwmark(mark).is_err() {
-                    Err(ConfigError::IOError)
-                } else {
-                    Ok(())
-                }
-            }
+            Some(bind) => bind.set_fwmark(mark).map_err(|e| {
+                log::error!("Error while setting fwmark: {e}");
+                ConfigError::IOError
+            }),
             None => Ok(()),
         }
     }
