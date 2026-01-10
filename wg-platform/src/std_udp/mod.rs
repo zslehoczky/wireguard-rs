@@ -95,7 +95,7 @@ impl Reader<StdEndpoint> for StdUDPReader {
             } else if let Some(&address) = recv_address.as_sockaddr_in6() {
                 address.into()
             } else {
-                unreachable!("socekt address should be either IPv4 or IPv6");
+                unreachable!("socket address should be either IPv4 or IPv6");
             }
         };
 
