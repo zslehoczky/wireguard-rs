@@ -1,4 +1,5 @@
-use std::io;
+use std::cmp::max;
+use std::io::{self, IoSlice};
 use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
@@ -7,12 +8,10 @@ use nix::sys::socket::{
     setsockopt,
     sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo},
 };
-use socket2::{Domain, MaybeUninitSlice, MsgHdrMut, Protocol, SockAddr, SockRef, Socket};
+use socket2::{Domain, MaybeUninitSlice, MsgHdr, MsgHdrMut, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
-
-const CONTROL_BUFFER_LEN: usize = 4096;
 
 fn clone_socket(socket: &UdpSocket) -> UdpSocket {
     socket.try_clone().expect("cloning UDP sockets should work")
@@ -73,19 +72,27 @@ impl Reader<StdEndpoint> for StdUDPReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
+        // we only need the SockAddr instance, regardless of IP version and port number,
+        // as it will be overwritten
         let mut src = create_address_v4(0);
 
         let mut buf_to_write = vec![MaybeUninit::uninit(); buf.len()];
         let mut slices_to_write = [MaybeUninitSlice::new(buf_to_write.as_mut_slice())];
 
-        let mut control_buf = vec![MaybeUninit::uninit(); CONTROL_BUFFER_LEN];
+        let mut control_buf = vec![
+            MaybeUninit::uninit();
+            max(
+                size_of::<libc::sockaddr_in>(),
+                size_of::<libc::sockaddr_in6>()
+            )
+        ];
 
         let mut message_header = MsgHdrMut::new()
             .with_addr(&mut src)
             .with_buffers(&mut slices_to_write)
             .with_control(control_buf.as_mut_slice());
 
-        // receive packet with ancillary info
+        // receive packet with ancillary data
         let recv_len = SockRef::from(&self.wrapped).recvmsg(&mut message_header, 0)?;
 
         let control_len = message_header.control_len();
@@ -93,8 +100,11 @@ impl Reader<StdEndpoint> for StdUDPReader {
         let mut remote_endpoint =
             StdEndpoint::from_address(src.as_socket().expect("socket should be IP type"));
 
-        control_buf.truncate(control_len);
-        remote_endpoint.control_buf = control_buf;
+        remote_endpoint.control_buf = control_buf
+            .into_iter()
+            .take(control_len)
+            .map(|e| unsafe { MaybeUninit::assume_init(e) })
+            .collect();
 
         buf_to_write
             .into_iter()
@@ -116,6 +126,7 @@ impl Writer<StdEndpoint> for StdUDPWriter {
     type Error = io::Error;
 
     fn write(&self, buf: &[u8], dst: &StdEndpoint) -> io::Result<()> {
+        // choose source socket based on destination's IP version
         let src = match dst.wrapped {
             SocketAddr::V4(_) => &self.socket_v4,
             SocketAddr::V6(_) => &self.socket_v6,
@@ -126,7 +137,16 @@ impl Writer<StdEndpoint> for StdUDPWriter {
             "Socket not connected for protocol",
         ))?;
 
-        let _len = src.send_to(buf, dst.to_address())?;
+        let address = dst.to_address().into();
+        let buffers = [IoSlice::new(buf)];
+
+        let message_header = MsgHdr::new()
+            .with_addr(&address)
+            .with_buffers(&buffers)
+            .with_control(dst.control_buf.as_slice());
+
+        // send packet with ancillary data
+        let _len = SockRef::from(&src).sendmsg(&message_header, 0)?;
 
         Ok(())
     }
@@ -134,7 +154,7 @@ impl Writer<StdEndpoint> for StdUDPWriter {
 
 pub struct StdEndpoint {
     wrapped: SocketAddr,
-    control_buf: Vec<MaybeUninit<u8>>,
+    control_buf: Vec<u8>,
 }
 
 impl Endpoint for StdEndpoint {
