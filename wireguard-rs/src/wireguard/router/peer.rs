@@ -509,7 +509,9 @@ impl<E: Endpoint, C: Callbacks, T: tun::Writer, B: udp::Writer<E>> PeerHandle<E,
     }
 
     pub fn clear_src(&self) {
-        *self.peer.endpoint.lock() = None;
+        if let Some(e) = (*self.peer.endpoint.lock()).as_mut() {
+            e.clear_src()
+        }
     }
 
     pub fn purge_staged_packets(&self) {

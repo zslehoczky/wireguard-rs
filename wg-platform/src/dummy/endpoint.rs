@@ -13,4 +13,6 @@ impl Endpoint for UnitEndpoint {
     fn to_address(&self) -> SocketAddr {
         "127.0.0.1:8080".parse().unwrap()
     }
+
+    fn clear_src(&mut self) {}
 }

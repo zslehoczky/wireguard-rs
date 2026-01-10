@@ -179,6 +179,10 @@ impl Endpoint for StdEndpoint {
     fn to_address(&self) -> SocketAddr {
         self.wrapped
     }
+
+    fn clear_src(&mut self) {
+        self.packet_info = None;
+    }
 }
 
 pub struct StdUDP {
