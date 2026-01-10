@@ -1,14 +1,15 @@
-use std::cmp::max;
-use std::io::{self, IoSlice};
-use std::mem::MaybeUninit;
+use std::io::{self, IoSlice, IoSliceMut};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::os::fd::AsRawFd;
 
+use nix::cmsg_space;
 use nix::errno::Errno;
+use nix::sys::socket::ControlMessage;
 use nix::sys::socket::{
-    setsockopt,
+    ControlMessageOwned, MsgFlags, RecvMsg, SockaddrStorage, recvmsg, sendmsg, setsockopt,
     sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo},
 };
-use socket2::{Domain, MaybeUninitSlice, MsgHdr, MsgHdrMut, Protocol, SockAddr, SockRef, Socket};
+use socket2::{Domain, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
 use wg_traits::udp::{Owner, PlatformUDP, Reader, UDP, Writer};
@@ -72,48 +73,47 @@ impl Reader<StdEndpoint> for StdUDPReader {
     type Error = io::Error;
 
     fn read(&self, buf: &mut [u8]) -> io::Result<(usize, StdEndpoint)> {
-        // we only need the SockAddr instance, regardless of IP version and port number,
-        // as it will be overwritten
-        let mut src = create_address_v4(0);
+        let mut slices_to_write = [IoSliceMut::new(buf)];
 
-        let mut buf_to_write = vec![MaybeUninit::uninit(); buf.len()];
-        let mut slices_to_write = [MaybeUninitSlice::new(buf_to_write.as_mut_slice())];
-
-        let mut control_buf = vec![
-            MaybeUninit::uninit();
-            max(
-                size_of::<libc::sockaddr_in>(),
-                size_of::<libc::sockaddr_in6>()
-            )
-        ];
-
-        let mut message_header = MsgHdrMut::new()
-            .with_addr(&mut src)
-            .with_buffers(&mut slices_to_write)
-            .with_control(control_buf.as_mut_slice());
+        // reserve space for both an IPv4 and an IPv6 PKTINFO header
+        // this guarantees that either one will fit into the buffer
+        let mut control_buf = cmsg_space!(libc::in_pktinfo, libc::in6_pktinfo);
 
         // receive packet with ancillary data
-        let recv_len = SockRef::from(&self.wrapped).recvmsg(&mut message_header, 0)?;
+        let recvmsg_result: RecvMsg<'_, '_, SockaddrStorage> = recvmsg(
+            self.wrapped.as_raw_fd(),
+            &mut slices_to_write,
+            Some(&mut control_buf),
+            MsgFlags::empty(),
+        )?;
 
-        let control_len = message_header.control_len();
+        let recv_address = {
+            let recv_address = recvmsg_result.address.expect("address should exist");
 
-        let mut remote_endpoint =
-            StdEndpoint::from_address(src.as_socket().expect("socket should be IP type"));
+            if let Some(&address) = recv_address.as_sockaddr_in() {
+                address.into()
+            } else if let Some(&address) = recv_address.as_sockaddr_in6() {
+                address.into()
+            } else {
+                unreachable!("socekt address should be either IPv4 or IPv6");
+            }
+        };
 
-        remote_endpoint.control_buf = control_buf
-            .into_iter()
-            .take(control_len)
-            .map(|e| unsafe { MaybeUninit::assume_init(e) })
-            .collect();
+        let mut remote_endpoint = StdEndpoint::from_address(recv_address);
 
-        buf_to_write
-            .into_iter()
-            .take(recv_len)
-            .map(|e| unsafe { MaybeUninit::assume_init(e) })
-            .zip(buf)
-            .for_each(|(recv_val, out_val)| *out_val = recv_val);
+        let packet_info = match recvmsg_result
+            .cmsgs()?
+            .next()
+            .ok_or(io::Error::other("No control messages could be found"))?
+        {
+            ControlMessageOwned::Ipv4PacketInfo(info) => PktInfo::V4(info),
+            ControlMessageOwned::Ipv6PacketInfo(info) => PktInfo::V6(info),
+            _ => unreachable!("message type should be either IPv4 or IPv6 packet info"),
+        };
 
-        Ok((recv_len, remote_endpoint))
+        remote_endpoint.packet_info = Some(packet_info);
+
+        Ok((recvmsg_result.bytes, remote_endpoint))
     }
 }
 
@@ -137,31 +137,42 @@ impl Writer<StdEndpoint> for StdUDPWriter {
             "Socket not connected for protocol",
         ))?;
 
-        let address = dst.to_address().into();
-        let buffers = [IoSlice::new(buf)];
+        let address: SockaddrStorage = dst.to_address().into();
+        let slices_to_read = [IoSlice::new(buf)];
 
-        let message_header = MsgHdr::new()
-            .with_addr(&address)
-            .with_buffers(&buffers)
-            .with_control(dst.control_buf.as_slice());
+        let control_message = dst.packet_info.as_ref().map(|p| match p {
+            PktInfo::V4(info) => ControlMessage::Ipv4PacketInfo(info),
+            PktInfo::V6(info) => ControlMessage::Ipv6PacketInfo(info),
+        });
 
         // send packet with ancillary data
-        let _len = SockRef::from(&src).sendmsg(&message_header, 0)?;
+        sendmsg(
+            src.as_raw_fd(),
+            &slices_to_read,
+            control_message.as_slice(),
+            MsgFlags::empty(),
+            Some(&address),
+        )?;
 
         Ok(())
     }
 }
 
+enum PktInfo {
+    V4(libc::in_pktinfo),
+    V6(libc::in6_pktinfo),
+}
+
 pub struct StdEndpoint {
     wrapped: SocketAddr,
-    control_buf: Vec<u8>,
+    packet_info: Option<PktInfo>, // remote endpoint should be reached via the interface described here
 }
 
 impl Endpoint for StdEndpoint {
     fn from_address(addr: SocketAddr) -> Self {
         Self {
             wrapped: addr,
-            control_buf: vec![],
+            packet_info: None,
         }
     }
 
