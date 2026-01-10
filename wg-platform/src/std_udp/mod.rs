@@ -4,10 +4,10 @@ use std::os::fd::AsRawFd;
 
 use nix::cmsg_space;
 use nix::errno::Errno;
-use nix::sys::socket::ControlMessage;
+use nix::sys::socket::sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo};
 use nix::sys::socket::{
-    ControlMessageOwned, MsgFlags, RecvMsg, SockaddrStorage, recvmsg, sendmsg, setsockopt,
-    sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo},
+    ControlMessage, ControlMessageOwned, MsgFlags, RecvMsg, SockaddrStorage, recvmsg, sendmsg,
+    setsockopt,
 };
 use socket2::{Domain, Protocol, SockAddr, SockRef, Socket};
 
