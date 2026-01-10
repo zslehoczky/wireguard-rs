@@ -2,8 +2,11 @@ use std::io;
 use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
 
-use nix::sys::socket::setsockopt;
-use nix::sys::socket::sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo};
+use nix::errno::Errno;
+use nix::sys::socket::{
+    setsockopt,
+    sockopt::{Ipv4PacketInfo, Ipv6RecvPacketInfo},
+};
 use socket2::{Domain, MaybeUninitSlice, MsgHdrMut, Protocol, SockAddr, SockRef, Socket};
 
 use wg_traits::Endpoint;
@@ -25,6 +28,14 @@ fn create_address_v6(port: u16) -> SockAddr {
 
 fn create_socket(domain: Domain) -> io::Result<Socket> {
     Socket::new(domain, socket2::Type::DGRAM, Some(Protocol::UDP))
+}
+
+fn set_recv_packet_info_v4(socket: &Socket, value: bool) -> Result<(), Errno> {
+    setsockopt(socket, Ipv4PacketInfo, &value)
+}
+
+fn set_recv_packet_info_v6(socket: &Socket, value: bool) -> Result<(), Errno> {
+    setsockopt(socket, Ipv6RecvPacketInfo, &value)
 }
 
 fn shutdown_socket(socket: &UdpSocket) -> io::Result<()> {
@@ -148,7 +159,7 @@ impl StdUDP {
     fn bind_v4(port: u16) -> io::Result<Socket> {
         let socket = create_socket(Domain::IPV4)?;
         socket.set_reuse_address(true)?;
-        setsockopt(&socket, Ipv4PacketInfo, &true)?;
+        set_recv_packet_info_v4(&socket, true)?;
         socket.bind(&create_address_v4(port))?;
         Ok(socket)
     }
@@ -157,7 +168,7 @@ impl StdUDP {
         let socket = create_socket(Domain::IPV6)?;
         socket.set_reuse_address(true)?;
         socket.set_only_v6(true)?;
-        setsockopt(&socket, Ipv6RecvPacketInfo, &true)?;
+        set_recv_packet_info_v6(&socket, true)?;
         socket.bind(&create_address_v6(port))?;
         Ok(socket)
     }
